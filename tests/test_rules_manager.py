@@ -474,18 +474,18 @@ def test_render_to_markdown_format(rules_manager: RulesManager) -> None:
         assert "# Immutable Rules" in content
         assert "# Mutable Rules" in content
 
-        # Check for rule headings with proper format
-        assert "## Rule 101 (I)" in content
-        assert "## Rule 102 (I)" in content
-        assert "## Rule 201 (M)" in content
-        assert "## Rule 202 (M)" in content
+        # Check for rule headings with proper format (### not ##)
+        assert "### 101 (I)" in content
+        assert "### 102 (I)" in content
+        assert "### 201 (M)" in content
+        assert "### 202 (M)" in content
 
         # Check for rule text
         assert "All players must follow the rules." in content
         assert "Players can propose rule changes." in content
 
-        # Check for separators
-        assert "---" in content
+        # Ensure no horizontal rules (---) are present
+        assert "---" not in content
     finally:
         temp_path.unlink()
 
@@ -521,10 +521,10 @@ def test_render_to_markdown_sorting() -> None:
             content = f.read()
 
         # Find positions of rule headings
-        pos_101 = content.find("## Rule 101 (I)")
-        pos_102 = content.find("## Rule 102 (I)")
-        pos_201 = content.find("## Rule 201 (M)")
-        pos_301 = content.find("## Rule 301 (M)")
+        pos_101 = content.find("### 101 (I)")
+        pos_102 = content.find("### 102 (I)")
+        pos_201 = content.find("### 201 (M)")
+        pos_301 = content.find("### 301 (M)")
 
         # Verify immutable rules come before mutable rules
         assert pos_101 < pos_201
@@ -571,9 +571,9 @@ def test_render_to_markdown_alphanumeric_sorting() -> None:
         with temp_path.open("r", encoding="utf-8") as f:
             content = f.read()
 
-        pos_a10 = content.find("## Rule A10 (M)")
-        pos_b5 = content.find("## Rule B5 (M)")
-        pos_z99 = content.find("## Rule Z99 (M)")
+        pos_a10 = content.find("### A10 (M)")
+        pos_b5 = content.find("### B5 (M)")
+        pos_z99 = content.find("### Z99 (M)")
 
         # Verify alphanumeric order
         assert pos_a10 < pos_b5 < pos_z99
@@ -608,8 +608,8 @@ def test_render_to_markdown_only_immutable() -> None:
 
         assert "# Immutable Rules" in content
         assert "# Mutable Rules" not in content
-        assert "## Rule 101 (I)" in content
-        assert "## Rule 102 (I)" in content
+        assert "### 101 (I)" in content
+        assert "### 102 (I)" in content
     finally:
         temp_path.unlink()
 
@@ -635,7 +635,7 @@ def test_render_to_markdown_only_mutable() -> None:
 
         assert "# Immutable Rules" not in content
         assert "# Mutable Rules" in content
-        assert "## Rule 201 (M)" in content
-        assert "## Rule 202 (M)" in content
+        assert "### 201 (M)" in content
+        assert "### 202 (M)" in content
     finally:
         temp_path.unlink()
