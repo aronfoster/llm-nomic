@@ -31,7 +31,7 @@ lint:
 
 # Run type checker
 typecheck:
-	PYTHONPATH=.:src mypy src
+	PYTHONPATH=.:src python3 -m mypy src
 
 # Run tests
 test:
