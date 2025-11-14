@@ -195,7 +195,7 @@ class RulesManager:
                 status=RuleStatus.MUTABLE,
             )
             self.rules.append(new_rule)
-            logger.debug(f"Added new rule {proposal.rule_id}")
+            logger.info(f"Added new rule {proposal.rule_id}")
 
         elif proposal.type == ProposalType.AMEND:
             # Validation
@@ -217,7 +217,7 @@ class RulesManager:
 
             # Update the rule text
             rule.text = proposal.new_text
-            logger.debug(f"Amended rule {proposal.rule_id}")
+            logger.info(f"Amended rule {proposal.rule_id}")
 
         elif proposal.type == ProposalType.REPEAL:
             # Validation
@@ -229,9 +229,15 @@ class RulesManager:
             if rule is None:
                 raise ValueError(f"Rule {proposal.rule_id} not found.")
 
+            # Check if rule is mutable
+            if rule.status != RuleStatus.MUTABLE:
+                raise ValueError(
+                    f"Cannot repeal immutable rule {proposal.rule_id}."
+                )
+
             # Remove the rule
             self.rules.remove(rule)
-            logger.debug(f"Repealed rule {proposal.rule_id}")
+            logger.info(f"Repealed rule {proposal.rule_id}")
 
         elif proposal.type == ProposalType.TRANSMUTE:
             # Validation
@@ -248,6 +254,6 @@ class RulesManager:
                 rule.status = RuleStatus.IMMUTABLE
             else:
                 rule.status = RuleStatus.MUTABLE
-            logger.debug(
+            logger.info(
                 f"Transmuted rule {proposal.rule_id} to {rule.status.value}"
             )
