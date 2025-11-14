@@ -114,3 +114,4 @@ llm-nomic/
 
 # Scratch Notes
 * Eventually have multiple starting rulesets to pick from
+* Do we require that all the xxx_API_KEYs exist? We need to allow users to fill in only the ones they're using.
