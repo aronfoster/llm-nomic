@@ -1,0 +1,23 @@
+# Pre-commit hooks configuration
+# These hooks run automatically on git commit
+# Only includes fast, auto-formatting tools (excludes slow checks like mypy and pytest)
+
+repos:
+  # Black - Python code formatter
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        name: black
+        language_version: python3.10
+        args: ['--line-length=79']
+        files: ^(src|tests)/
+
+  # Ruff - Fast Python linter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        name: ruff
+        args: ['--fix']
+        files: ^(src|tests)/
