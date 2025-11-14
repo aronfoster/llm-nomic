@@ -8,6 +8,8 @@ openai
 anthropic
 google-generativeai
 
-# Testing
+# Testing & Code Quality
 pytest
 mypy
+black
+ruff

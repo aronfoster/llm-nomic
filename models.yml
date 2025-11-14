@@ -1,0 +1,34 @@
+# Master list of all models available to the Nomic Engine.
+# The 'create_game.py' script will read this to let the user
+# choose models for their game.
+
+models:
+  - id: "claude-3-5-sonnet"
+    provider: "anthropic"
+    api_model_id: "claude-3-5-sonnet-20240620"
+    env_key_name: "ANTHROPIC_API_KEY"
+
+  - id: "claude-3-opus"
+    provider: "anthropic"
+    api_model_id: "claude-3-opus-20240229"
+    env_key_name: "ANTHROPIC_API_KEY"
+
+  - id: "gpt-4o"
+    provider: "openai"
+    api_model_id: "gpt-4o"
+    env_key_name: "OPENAI_API_KEY"
+
+  - id: "gpt-4-turbo"
+    provider: "openai"
+    api_model_id: "gpt-4-turbo"
+    env_key_name: "OPENAI_API_KEY"
+
+  - id: "gemini-1-5-pro"
+    provider: "google"
+    api_model_id: "models/gemini-1.5-pro-latest"
+    env_key_name: "GOOGLE_API_KEY"
+
+  - id: "local-llama-3"
+    provider: "local"
+    api_model_id: "http://localhost:11434/v1" # Example for Ollama
+    env_key_name: null # Local models don't need keys

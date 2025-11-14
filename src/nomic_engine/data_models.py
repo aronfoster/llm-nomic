@@ -55,3 +55,16 @@ class Vote(BaseModel):
     player_name: str
     vote: Literal['YES', 'NO', 'ABSTAIN']
     reason: Optional[str] = None
+
+# --- Root Model Library (for models.yml) ---
+
+class ModelDefinition(BaseModel):
+    """Defines a single available LLM."""
+    id: str = Field(..., description="The unique friendly ID for this engine (e.g., 'claude-3-5-sonnet').")
+    provider: str = Field(..., description="The provider (e.g., 'anthropic', 'openai', 'local').")
+    api_model_id: str = Field(..., description="The actual model ID used by the API.")
+    env_key_name: Optional[str] = Field(None, description="The name of the environment variable for the API key.")
+
+class ModelLibrary(BaseModel):
+    """The root object for models.yml."""
+    models: List[ModelDefinition]
