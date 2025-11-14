@@ -6,9 +6,29 @@ Core Pydantic models to enforce data types and structure for:
 - Internal data (Proposal, Vote)
 """
 
+from enum import Enum
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+# --- Enums ---
+
+
+class RuleStatus(str, Enum):
+    """Enum for rule status values."""
+
+    IMMUTABLE = "immutable"
+    MUTABLE = "mutable"
+
+
+class ProposalType(str, Enum):
+    """Enum for proposal type values."""
+
+    ADD = "Add"
+    AMEND = "Amend"
+    REPEAL = "Repeal"
+    TRANSMUTE = "Transmute"
+
 
 # --- Rule Data Model (for rules.jsonl) ---
 
@@ -20,9 +40,7 @@ class Rule(BaseModel):
         ..., description="The unique ID, e.g., '101' or '301'"
     )
     text: str = Field(..., description="The full text of the rule.")
-    status: Literal["immutable", "mutable"] = Field(
-        ..., description="The status of the rule."
-    )
+    status: RuleStatus = Field(..., description="The status of the rule.")
 
 
 # --- Game Instance Configuration (for config.yml) ---
@@ -72,8 +90,6 @@ class GameState(BaseModel):
 
 
 # --- Internal Data Models (for game logic) ---
-
-ProposalType = Literal["Amend", "Repeal", "Add", "Transmute"]
 
 
 class Proposal(BaseModel):
