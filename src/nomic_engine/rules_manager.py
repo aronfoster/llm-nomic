@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Union
 
-from nomic_engine.data_models import (
+from .data_models import (
     Proposal,
     ProposalType,
     Rule,

@@ -31,11 +31,11 @@ lint:
 
 # Run type checker
 typecheck:
-	mypy src
+	PYTHONPATH=.:src python3 -m mypy src
 
 # Run tests
 test:
-	pytest tests
+	PYTHONPATH=.:src python3 -m pytest tests
 
 # Run full CI suite - this is what developers should run before pushing
 ci: lint typecheck test
