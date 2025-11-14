@@ -52,9 +52,10 @@ def parse_rules_md(filepath: Union[str, Path]) -> list[Rule]:
     current_rule: Rule | None = None
 
     # Regex pattern to match rule headings: ### {rule_id} ({I|M})
-    rule_heading_pattern = re.compile(r"^###\s+(\S+)\s+\(([IM])\)\s*$")
+    rule_heading_pattern = re.compile(r"^###\s+(\S+)\s+\(([A-Za-z])\)\s*$")
 
     with path.open("r", encoding="utf-8") as f:
+        logger.debug(f"Opened rules file: {filepath}")
         for line in f:
             # Remove trailing newline for easier matching
             line = line.rstrip("\n")
@@ -73,14 +74,19 @@ def parse_rules_md(filepath: Union[str, Path]) -> list[Rule]:
             match = rule_heading_pattern.match(line)
             if match:
                 rule_id = match.group(1)
-                status_char = match.group(2)
+                status_char = match.group(2).upper()
 
                 # The status_char is the authoritative source of truth
-                engine_status = (
-                    RuleStatus.IMMUTABLE
-                    if status_char == "I"
-                    else RuleStatus.MUTABLE
-                )
+                # Validate that it's either I or M
+                if status_char == "I":
+                    engine_status = RuleStatus.IMMUTABLE
+                elif status_char == "M":
+                    engine_status = RuleStatus.MUTABLE
+                else:
+                    raise ValueError(
+                        f"Invalid status character '{status_char}' for rule "
+                        f"{rule_id}. Must be 'I' (immutable) or 'M' (mutable)."
+                    )
 
                 # Log warning if section and status mismatch
                 if current_section and engine_status != current_section:

@@ -272,3 +272,59 @@ def test_parse_preserves_rule_order():
         assert rules[2].rule_id == "101"
     finally:
         Path(temp_path).unlink()
+
+
+def test_parse_invalid_status_character():
+    """Test that ValueError is raised for invalid status characters."""
+    # Create a temporary file with an invalid status character
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", delete=False, encoding="utf-8"
+    ) as f:
+        f.write("# Immutable Rules\n")
+        f.write("\n")
+        f.write("### 101 (X)\n")
+        f.write("Rule with invalid status.\n")
+        temp_path = f.name
+
+    try:
+        with pytest.raises(ValueError) as exc_info:
+            parse_rules_md(temp_path)
+
+        # Validate error message
+        assert "Invalid status character 'X'" in str(exc_info.value)
+        assert "rule 101" in str(exc_info.value)
+        assert "Must be 'I' (immutable) or 'M' (mutable)" in str(
+            exc_info.value
+        )
+    finally:
+        Path(temp_path).unlink()
+
+
+def test_parse_case_insensitive_status():
+    """Test that status characters are case-insensitive."""
+    # Create a temporary file with lowercase status characters
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", delete=False, encoding="utf-8"
+    ) as f:
+        f.write("# Immutable Rules\n")
+        f.write("\n")
+        f.write("### 101 (i)\n")
+        f.write("Immutable rule with lowercase i.\n")
+        f.write("\n")
+        f.write("# Mutable Rules\n")
+        f.write("\n")
+        f.write("### 201 (m)\n")
+        f.write("Mutable rule with lowercase m.\n")
+        temp_path = f.name
+
+    try:
+        rules = parse_rules_md(temp_path)
+
+        # Validate that lowercase status characters work
+        assert len(rules) == 2
+        assert rules[0].rule_id == "101"
+        assert rules[0].status == RuleStatus.IMMUTABLE
+        assert rules[1].rule_id == "201"
+        assert rules[1].status == RuleStatus.MUTABLE
+    finally:
+        Path(temp_path).unlink()
