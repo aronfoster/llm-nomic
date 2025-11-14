@@ -41,7 +41,7 @@ jobs:
 
       # 5. Run Black (Formatter - check mode)
       - name: Run Black
-        run: black --check src tests
+        run: black --check --line-length=79 src tests
 
       # 6. Run MyPy (Type Checker)
       - name: Run MyPy
@@ -49,4 +49,4 @@ jobs:
 
       # 7. Run Pytest (Unit Tests)
       - name: Run Pytest
-        run: pytest
+        run: pytest tests
