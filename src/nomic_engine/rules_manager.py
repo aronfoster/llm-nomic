@@ -129,24 +129,20 @@ class RulesManager:
             # Write immutable rules section
             if immutable_rules:
                 f.write("# Immutable Rules\n\n")
-                for i, rule in enumerate(immutable_rules):
-                    f.write(f"## Rule {rule.rule_id} (I)\n")
-                    f.write(f"{rule.text}\n")
-                    if i < len(immutable_rules) - 1:
-                        f.write("\n---\n\n")
+                for rule in immutable_rules:
+                    f.write(f"### {rule.rule_id} (I)\n")
+                    f.write(f"{rule.text}\n\n")
 
-            # Add separator between sections if both exist
+            # Add blank line between sections if both exist
             if immutable_rules and mutable_rules:
-                f.write("\n\n---\n\n")
+                f.write("\n")
 
             # Write mutable rules section
             if mutable_rules:
                 f.write("# Mutable Rules\n\n")
-                for i, rule in enumerate(mutable_rules):
-                    f.write(f"## Rule {rule.rule_id} (M)\n")
-                    f.write(f"{rule.text}\n")
-                    if i < len(mutable_rules) - 1:
-                        f.write("\n---\n\n")
+                for rule in mutable_rules:
+                    f.write(f"### {rule.rule_id} (M)\n")
+                    f.write(f"{rule.text}\n\n")
 
         logger.debug(
             f"Successfully rendered {len(self.rules)} rules to {filepath}"
