@@ -1,117 +1,108 @@
 # **Project Plan: Nomic LLM Engine**
 
-This plan is refined for a "clean code" approach, incorporating strong typing, unit testing, and a more robust data model. It explicitly designates the Human as the Judge for v1 and makes the engine the sole authority on game state.
+This document tracks the high-level plan for the `llm-nomic` project.
 
-## **1\. Core Principles**
+## **1. Core Principles**
 
-1. **Security First (API Keys):** API keys are loaded *only* from environment variables (via a .env file). The .gitignore file will block this file from *ever* being committed.  
-2. **Engine vs. Instance (Neutrality):** The Python application (the "Engine") is stateless. All game state is read from and written to a "Game Instance" directory.  
-3. **Authoritative Data (The Engine is the Law):**  
-   * **Rules:** The *authoritative* rules are stored in rules.jsonl (machine-readable). A rules.md file is generated from this as a *human-readable render*.  
-   * **State:** The *authoritative* game state (scores, turn order) is stored in game\_state.json. The engine is the *only* thing that calculates and updates this state. LLMs are *told* the score; they are *never* asked to calculate it.
+Our architecture is built on these principles:
 
-## **2\. The "Game Instance" Concept (Revised)**
+1.  **Security First:** API keys are loaded *only* from environment variables.
+2.  **Engine vs. Instance:** The Game Engine is stateless and operates on "Game Instance" directories.
+3.  **Authoritative Data:** The Game Instance is the sole authority on game state. `rules.jsonl` and `game_state.json` are the sources of truth.
 
-A "Game Instance" is a self-contained directory. The engine is pointed at this directory to run the game.
+## **2. The "Game Instance" Concept (Implemented)**
 
-nomic-game-1/  
-├── config.yml           \# Static setup: Player names, model IDs (e.g., 'gpt-4o'), etc.  
-├── game\_state.json      \# Dynamic state: { "scores": {...}, "current\_turn": "...", "move\_number": 1 }  
-├── rules.jsonl          \# \*\*Authoritative\*\* rules. One JSON object per line.  
-├── rules.md             \# Human-readable \*render\* of rules.jsonl, updated by the engine.  
-├── game\_log.jsonl       \# Machine-readable log of all actions, prompts, and raw LLM responses.  
-└── game\_transcript.md   \# Human-readable, formatted log of the game.
+A "Game Instance" is a self-contained directory. We create new ones with `create_game.py`.
 
-## **3\. Phased Development Plan**
+```
+games/my-first-game/
+├── config.yml           # Static setup: Player names, model IDs
+├── game_state.json      # Dynamic state: Scores, turn order
+├── rules.jsonl          # **Authoritative** machine-readable rules
+├── rules.md             # Human-readable render of the rules
+├── game_log.jsonl       # Machine-readable log of all turns
+└── game_transcript.md   # Human-readable log
+```
 
-### **Phase 1: The Core Engine (CLI)**
+## **3. Phase 1: Engine Foundation (Completed)**
 
-**Goal:** Create a testable, type-safe engine that can execute a single, 5-step turn, with a Human Judge validating all actions.
+We have successfully built and tested the entire data and tooling foundation for the project.
 
-1. **Project Setup (The "Skeleton"):**  
-   * Create requirements.txt: Add python-dotenv (security), pydantic (for data models), pyyaml (for config.yml), pytest (testing), mypy (type checking).  
-   * Create .gitignore: Add .env, \_\_pycache\_\_/, .mypy\_cache/, \*.pyc.  
-   * Create .env.template: A non-secret file showing *what* keys are needed (e.g., OPENAI\_API\_KEY=YOUR\_KEY\_HERE).  
-2. **Data Models (src/nomic\_engine/data\_models.py):**  
-   * Define pydantic models for all data to enforce strong typing.  
-   * Rule(rule\_id: int, text: str, status: Literal\['immutable', 'mutable'\])  
-   * PlayerConfig(name: str, model\_id: str)  
-   * GameState(scores: dict\[str, int\], current\_turn\_player: str, move\_number: int)  
-   * Proposal(...)  
-3. **Security & Config (src/nomic\_engine/config.py):**  
-   * A module to safely load environment variables using python-dotenv.  
-   * Provides a function get\_api\_key(model\_id: str) \-\> str.  
-4. **Game Instance Manager (src/nomic\_engine/game\_manager.py):**  
-   * A class GameManager initialized with a game\_dir\_path.  
-   * load\_game(): Reads all files (config.yml, game\_state.json, rules.jsonl) into their Pydantic data models.  
-   * save\_game\_state(state: GameState): Saves the GameState model back to game\_state.json.  
-5. **Rules Manager (src/nomic\_engine/rules\_manager.py):**  
-   * A class RulesManager that holds the list of Rule objects.  
-   * load\_from\_jsonl(filepath): Loads rules.jsonl.  
-   * apply\_proposal(proposal: Proposal): Modifies the internal list of Rule objects. (This is the "judge's" action).  
-   * save\_rules(filepath\_jsonl, filepath\_md): Saves the *updated* rules to rules.jsonl and re-renders the *entire* rulebook to rules.md.  
-6. **Player Abstraction (src/nomic\_engine/players/):**  
-   * base\_player.py: Abstract BasePlayer with methods: propose(state, rules), discuss(...), vote(...).  
-   * human\_player.py: HumanPlayer class that implements methods via input().  
-   * llm\_player.py: LLMPlayer class that builds a prompt (see Key Challenges) and calls the API (using a separate api\_clients.py module).  
-7. **Game Loop (src/nomic\_engine/game\_loop.py):**  
-   * The GameLoop class that takes the loaded GameManager context.  
-   * run\_turn(): Executes the 5-step turn logic (Propose, Discuss, Revise, Vote, Resolve).  
-   * resolve(proposal, votes):  
-     * **Human Judge Hook:** Prompts the human: "Is this proposal valid? (y/n)"  
-     * **State Calculation:** If 'y' and passed, *this* is where points are calculated and scores are updated (e.g., state.scores\[player\] \+= 10).  
-     * Calls RulesManager.apply\_proposal(...).  
-     * Calls GameManager.save\_game\_state(...).  
-8. **Main Entrypoint (src/nomic\_engine/main.py):**  
-   * Uses argparse to get \--game\_dir.  
-   * Initializes GameManager and GameLoop.  
-   * Calls game\_loop.run().
+  * **DONE:** Full CI/CD and local tooling (`make`, `pytest`, `mypy`, `ruff`, `pre-commit`).
+  * **DONE:** Core `data_models.py` (Pydantic models with Enums).
+  * **DONE:** Secure `config.py` (loads from `.env` and `models.yml`).
+  * **DONE:** `rules_manager.py` (the "Rule Book" logic).
+  * **DONE:** `utils/parsers.py` (the "Rules MD" importer).
+  * **DONE:** `create_game.py` (the "Game Factory" script).
+  * **DONE:** Comprehensive unit tests for all core logic.
 
-## **4\. Key Challenges**
+## **4. Phase 2: The Game Loop (Next Up)**
 
-* **Prompt Engineering:** The prompt must be meticulously constructed, *providing* all state (rules, history, scores) to the LLM. The LLM is a *player*, not a *scorekeeper*.  
-* **Response Parsing:** We will instruct the LLM to reply using the *exact* Markdown template from your original rule-draft.txt. This is easier to parse than JSON. We'll use simple string/regex parsing to extract the proposal.  
-* **Testability:** The "clean code" structure (e.g., data\_models.py, rules\_manager.py) makes unit testing possible. We can write a pytest test for rules\_manager.py *without* needing any APIs.
+This is the next major sprint. The goal is to get a game *running* from start to finish on the command line, with a human player and a human judge.
 
-## **5\. Refined File Structure (The "Engine")**
+### **Task 8: `GameManager` (The "Loader")**
 
-This structure is designed for "clean code" and testability.
+  * **File:** `src/nomic_engine/game_manager.py`
+  * **Goal:** Create a class that loads a "Game Instance" directory into memory.
+  * **Requirements:**
+      * `__init__(self, game_dir_path)`: Stores the path.
+      * `load_game()`: Reads `config.yml`, `game_state.json`, and `rules.jsonl` (using `RulesManager.load_from_jsonl`) into Pydantic objects held by the class.
+      * `save_game_state(state: GameState)`: Saves the `GameState` model back to `game_state.json`.
+      * `save_rules()`: A helper that calls `self.rules_manager.save_to_jsonl(...)` and `...render_to_markdown(...)`.
+      * `log_event(...)`: A helper to append structured data to `game_log.jsonl` and formatted text to `game_transcript.md`.
 
-llm-nomic/  
-├── .gitignore            \# \<-- Blocks .env, \_\_pycache\_\_, etc.  
-├── .env.template         \# Example for developers  
-├── .env                  \# \<-- YOUR SECRET KEYS (not committed)  
-├── requirements.txt      \# (pydantic, pyyaml, python-dotenv, pytest, mypy)  
-├── pyproject.toml        \# Config for pytest, mypy  
-│  
-├── src/  
-│   └── nomic\_engine/  
-│       ├── \_\_init\_\_.py  
-│       ├── main.py           \# Entrypoint  
-│       ├── game\_loop.py      \# Turn logic, state calculation  
-│       ├── game\_manager.py   \# Loads/saves a Game Instance  
-│       ├── rules\_manager.py  \# Loads/saves/applies rules  
-│       ├── data\_models.py    \# Pydantic models (types)  
-│       ├── config.py         \# Secure API key loading  
-│       │  
-│       ├── players/  
-│       │   ├── \_\_init\_\_.py  
-│       │   ├── base\_player.py  
-│       │   ├── human\_player.py  
-│       │   └── llm\_player.py  
-│       │  
-│       └── utils/  
-│           ├── \_\_init\_\_.py  
-│           ├── api\_clients.py    \# Functions for calling OpenAI, Anthropic, etc.  
-│           ├── prompt\_builder.py \# Logic to assemble the master prompt  
-│           └── parsers.py        \# Parses LLM's markdown response  
-│  
-└── tests/  
-    ├── test\_rules\_manager.py  
-    ├── test\_game\_loop\_scoring.py  
-    └── ...  
+### **Task 9: `Player` Abstractions (The "Players")**
 
+  * **File:** `src/nomic_engine/players/base_player.py`
+      * **Goal:** Define the "Player" interface.
+      * **Requirements:** Create an abstract base class `BasePlayer` with abstract methods:
+          * `propose(...) -> Proposal`
+          * `discuss(...) -> str | None`
+          * `vote(...) -> Vote`
+  * **File:** `src/nomic_engine/players/human_player.py`
+      * **Goal:** Implement the interface for a human user.
+      * **Requirements:**
+          * Implement `propose`, `discuss`, and `vote` by prompting the user with `input()` and parsing their text.
 
-# Scratch Notes
-* Eventually have multiple starting rulesets to pick from
-* Do we require that all the xxx_API_KEYs exist? We need to allow users to fill in only the ones they're using.
+### **Task 10: `GameLoop` (The "Conductor")**
+
+  * **File:** `src/nomic_engine/game_loop.py`
+  * **Goal:** This is the core "turn" logic.
+  * **Requirements:**
+      * `GameLoop` class initialized with a `GameManager` and a list of `BasePlayer` objects.
+      * `run_turn()`: The main method that executes the 5 steps from our ruleset:
+        1.  `propose()`: Get proposal from `current_player`.
+        2.  `discuss()`: Loop all *other* players and get their discussion.
+        3.  `revise()`: (v1) Skip this or ask the proposer to re-submit.
+        4.  `vote()`: Loop all *other* players and get their votes.
+        5.  `resolve()`:
+              * Tally votes.
+              * **Human Judge Hook:** Print the proposal and votes, and ask the Human Judge (via `input()`) "Is this proposal legal? (y/n)".
+              * **State Calculation:** If "y", calculate score changes based on Rules 202, 204, 206. Update the `GameState`.
+              * **Apply Rule:** If the vote passes, call `game_manager.rules_manager.apply_proposal(...)`.
+              * **Save State:** Call `game_manager.save_game_state(...)` and `game_manager.save_rules()`.
+              * Log the entire turn to the transcript.
+
+### **Task 11: `main.py` (The "Entrypoint")**
+
+  * **File:** `src/nomic_engine/main.py`
+  * **Goal:** Tie everything together and start the game.
+  * **Requirements:**
+      * Use `argparse` to get `--game_dir`.
+      * Initialize `GameManager` and call `load_game()`.
+      * Create the list of `Player` objects (e.g., `HumanPlayer(...)`) based on the loaded `config.yml`.
+      * Initialize `GameLoop` with the manager and player list.
+      * Start the main loop (e.g., `while True: game_loop.run_turn()`).
+
+## **5. Phase 3: LLM Integration & Future Ideas**
+
+This is the long-term backlog.
+
+  * **Implement `llm_player.py`:**
+      * Create `src/nomic_engine/utils/api_clients.py`: A module to abstract the `openai`, `anthropic`, etc. API calls.
+      * **Key Requirement:** The API client must *only* require the key for the *specific model* being called, not all keys in `.env`.
+      * Create `src/nomic_engine/utils/prompt_builder.py`: A class that assembles the massive system prompt (rules, game history, task) for the LLM.
+      * Implement the `LLMPlayer` class that uses the prompt builder and API client to fulfill the `propose`, `discuss`, and `vote` methods.
+  * **LLM as Judge:** Explore replacing the "Human Judge Hook" with an LLM call.
+  * **Static Site Generator:** Build the `build_site.py` script to convert a `game_log.jsonl` into a shareable HTML file.
+  * **Multiple Rulesets:** Allow `create_game.py` to select from different initial ruleset files.
