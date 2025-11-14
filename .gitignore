@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+venv/
+*.egg-info/
+
+# Secrets
+.env
+*.env
+
+# Local Game Data
+game_instances/

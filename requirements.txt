@@ -1,0 +1,13 @@
+# Core
+python-dotenv
+pydantic
+pyyaml
+
+# API Clients
+openai
+anthropic
+google-generativeai
+
+# Testing
+pytest
+mypy
