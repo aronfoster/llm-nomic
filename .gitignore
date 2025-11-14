@@ -11,4 +11,4 @@ venv/
 *.env
 
 # Local Game Data
-game_instances/
+games/

@@ -9,5 +9,17 @@ minversion = "6.0"
 addopts = "-ra -q"
 testpaths = [
     "tests",
-"src"
+    "src"
 ]
+
+[tool.black]
+line-length = 79
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 79
+target-version = "py310"
+
+[tool.ruff.lint]
+# E (pycodestyle errors), W (warnings), F (Pyflakes), I (isort)
+select = ["E", "W", "F", "I"]
