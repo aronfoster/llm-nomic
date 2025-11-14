@@ -228,13 +228,13 @@ class RulesManager:
             rule = self._find_rule_by_id(proposal.rule_id)
             if rule is None:
                 raise ValueError(f"Rule {proposal.rule_id} not found.")
-            
+
             # Check if rule is mutable
             if rule.status != RuleStatus.MUTABLE:
                 raise ValueError(
                     f"Cannot repeal immutable rule {proposal.rule_id}."
                 )
-            
+
             # Remove the rule
             self.rules.remove(rule)
             logger.info(f"Repealed rule {proposal.rule_id}")
