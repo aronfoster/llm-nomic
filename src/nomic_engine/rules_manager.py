@@ -8,7 +8,12 @@ import logging
 from pathlib import Path
 from typing import Optional, Union
 
-from nomic_engine.data_models import Proposal, Rule
+from nomic_engine.data_models import (
+    Proposal,
+    ProposalType,
+    Rule,
+    RuleStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +49,7 @@ class RulesManager:
         filepath = Path(filepath)
         rules: list[Rule] = []
 
-        logger.info(f"Loading rules from {filepath}")
+        logger.debug(f"Loading rules from {filepath}")
 
         with filepath.open("r", encoding="utf-8") as f:
             for line_number, line in enumerate(f, start=1):
@@ -69,7 +74,7 @@ class RulesManager:
                     )
                     raise
 
-        logger.info(f"Successfully loaded {len(rules)} rules from {filepath}")
+        logger.debug(f"Successfully loaded {len(rules)} rules from {filepath}")
         return cls(rules)
 
     def save_to_jsonl(self, filepath: Union[str, Path]) -> None:
@@ -83,14 +88,14 @@ class RulesManager:
             IOError: If the file cannot be written
         """
         filepath = Path(filepath)
-        logger.info(f"Saving {len(self.rules)} rules to {filepath}")
+        logger.debug(f"Saving {len(self.rules)} rules to {filepath}")
 
         with filepath.open("w", encoding="utf-8") as f:
             for rule in self.rules:
                 json_line = rule.model_dump_json()
                 f.write(json_line + "\n")
 
-        logger.info(f"Successfully saved rules to {filepath}")
+        logger.debug(f"Successfully saved rules to {filepath}")
 
     def render_to_markdown(self, filepath: Union[str, Path]) -> None:
         """
@@ -106,11 +111,15 @@ class RulesManager:
             IOError: If the file cannot be written
         """
         filepath = Path(filepath)
-        logger.info(f"Rendering rules to markdown at {filepath}")
+        logger.debug(f"Rendering rules to markdown at {filepath}")
 
         # Separate and sort rules
-        immutable_rules = [r for r in self.rules if r.status == "immutable"]
-        mutable_rules = [r for r in self.rules if r.status == "mutable"]
+        immutable_rules = [
+            r for r in self.rules if r.status == RuleStatus.IMMUTABLE
+        ]
+        mutable_rules = [
+            r for r in self.rules if r.status == RuleStatus.MUTABLE
+        ]
 
         # Sort each group by rule_id alphanumerically
         immutable_rules.sort(key=lambda r: r.rule_id)
@@ -139,7 +148,7 @@ class RulesManager:
                     if i < len(mutable_rules) - 1:
                         f.write("\n---\n\n")
 
-        logger.info(
+        logger.debug(
             f"Successfully rendered {len(self.rules)} rules to {filepath}"
         )
 
@@ -168,7 +177,7 @@ class RulesManager:
         Raises:
             ValueError: If the proposal is invalid or cannot be applied
         """
-        if proposal.type == "Add":
+        if proposal.type == ProposalType.ADD:
             # Validation
             if proposal.rule_id is None or proposal.new_text is None:
                 raise ValueError(
@@ -183,12 +192,12 @@ class RulesManager:
             new_rule = Rule(
                 rule_id=proposal.rule_id,
                 text=proposal.new_text,
-                status="mutable",
+                status=RuleStatus.MUTABLE,
             )
             self.rules.append(new_rule)
-            logger.info(f"Added new rule {proposal.rule_id}")
+            logger.debug(f"Added new rule {proposal.rule_id}")
 
-        elif proposal.type == "Amend":
+        elif proposal.type == ProposalType.AMEND:
             # Validation
             if proposal.rule_id is None or proposal.new_text is None:
                 raise ValueError(
@@ -200,11 +209,17 @@ class RulesManager:
             if rule is None:
                 raise ValueError(f"Rule {proposal.rule_id} not found.")
 
+            # Check if rule is mutable
+            if rule.status != RuleStatus.MUTABLE:
+                raise ValueError(
+                    f"Cannot amend immutable rule {proposal.rule_id}."
+                )
+
             # Update the rule text
             rule.text = proposal.new_text
-            logger.info(f"Amended rule {proposal.rule_id}")
+            logger.debug(f"Amended rule {proposal.rule_id}")
 
-        elif proposal.type == "Repeal":
+        elif proposal.type == ProposalType.REPEAL:
             # Validation
             if proposal.rule_id is None:
                 raise ValueError("Repeal proposals must have a rule_id.")
@@ -216,9 +231,9 @@ class RulesManager:
 
             # Remove the rule
             self.rules.remove(rule)
-            logger.info(f"Repealed rule {proposal.rule_id}")
+            logger.debug(f"Repealed rule {proposal.rule_id}")
 
-        elif proposal.type == "Transmute":
+        elif proposal.type == ProposalType.TRANSMUTE:
             # Validation
             if proposal.rule_id is None:
                 raise ValueError("Transmute proposals must have a rule_id.")
@@ -229,8 +244,10 @@ class RulesManager:
                 raise ValueError(f"Rule {proposal.rule_id} not found.")
 
             # Flip the rule's status
-            if rule.status == "mutable":
-                rule.status = "immutable"
+            if rule.status == RuleStatus.MUTABLE:
+                rule.status = RuleStatus.IMMUTABLE
             else:
-                rule.status = "mutable"
-            logger.info(f"Transmuted rule {proposal.rule_id} to {rule.status}")
+                rule.status = RuleStatus.MUTABLE
+            logger.debug(
+                f"Transmuted rule {proposal.rule_id} to {rule.status.value}"
+            )
