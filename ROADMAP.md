@@ -110,3 +110,7 @@ llm-nomic/
     ├── test\_rules\_manager.py  
     ├── test\_game\_loop\_scoring.py  
     └── ...  
+
+
+# Scratch Notes
+* Eventually have multiple starting rulesets to pick from
