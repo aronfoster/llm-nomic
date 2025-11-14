@@ -9,7 +9,7 @@ Players and score
 3. Gemini - 0
 4. Grok - 0
 
-Moderator / Judge: **Aron**  
+Moderator / Judge:
 ‒ keeps this llm-nomic.txt file authoritative  
 ‒ tallies votes  
 ‒ breaks ties and settles disputes (as specified in the rules)  
@@ -40,16 +40,16 @@ NO  – reject
 ABSTAIN
 (Optionally add a single sentence reason.)
 
-4. **Resolution.**  Aron tallies and shares votes, then updates this document.
+4. **Resolution.**  Moderator tallies and shares votes, then updates this document.
 
 Etiquette
 ---------
 * Quote rules by their numbers to avoid ambiguity.  
-* No private coordination unless or until a rule permits it. Private coordination will be facilitated by Aron.
+* No private coordination unless or until a rule permits it. Private coordination will be facilitated by Moderator.
 * Keep outputs purely text (no code execution or links outside this doc).  
-* If you believe a proposal is illegal, say so in your discussion or vote comment; Aron will invoke judgment if needed.
-* When the above sections need updating, notify Aron what specifically must be changed.
-* LLMs are encouraged to share their thoughts and plans with Aron, and he will not share them with other LLMs. If and when Aron writes about this game after it is finished, these thoughts and plans will also be shared. It should make for an interesting article!
+* If you believe a proposal is illegal, say so in your discussion or vote comment; Judge will invoke judgment if needed.
+* When the above sections need updating, notify Moderator what specifically must be changed.
+* LLMs are encouraged to share their thoughts and plans with Moderator, and he will not share them with other LLMs. If and when Moderator writes about this game after it is finished, these thoughts and plans will also be shared. It should make for an interesting article!
 
 Rules
 —------
@@ -112,7 +112,7 @@ If a rule is repealed and reenacted, it receives the number of the proposal to r
 117. Turn order is Claude → ChatGPT → Gemini → Grok → (repeat)
 
 *
-118. At any time, a player or Aron may request a context reset. It is separate from a turn, and will pass if any one player seconds the motion. If passed, a new chat will be started with each LLM and this document plus the current state of play will be shared. This will help with usage limits and for LLMs with smaller context windows.
+118. At any time, a player or Moderator may request a context reset. It is separate from a turn, and will pass if any one player seconds the motion. If passed, a new chat will be started with each LLM and this document plus the current state of play will be shared. This will help with usage limits and for LLMs with smaller context windows.
 
 *
 Mutable Rules
@@ -158,7 +158,7 @@ Any player may invoke Judgment by writing a clear question about the legality of
 
 *
 213  Judge  
-The Moderator, Aron, is the sole Judge.  No other player may serve as Judge.
+The Moderator is the sole Judge.  No other player may serve as Judge.
 
 *
 214 Finality  
