@@ -24,6 +24,7 @@ def get_api_key(model_id: str) -> str:
         ValueError: If the required API key is not found.
     """
     # Simple mapping of model_id fragments to environment variable names
+    # TODO read hardcoded model lists from a file
     if 'gpt-' in model_id:
         key_name = 'OPENAI_API_KEY'
     elif 'claude-' in model_id:
