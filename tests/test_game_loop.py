@@ -188,36 +188,40 @@ def test_step_1_propose_invalid_amend_immutable(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.AMEND,
-        rule_id="101",  # Immutable rule
+        rule_id="101",  # Immutable rule (from fixture)
         new_text="Trying to change immutable rule.",
     )
 
-    # Configure rules_manager to raise ValueError
-    mock_game_manager.rules_manager.apply_proposal.side_effect = ValueError(
-        "Cannot amend immutable rule 101"
-    )
-
+    # The validation will fail because rule 101 is immutable
+    # This is tested on a temporary RulesManager, not the mock
     proposal = game_loop._run_step_1_propose(alice)
 
     assert proposal is None
     alice.propose.assert_called_once()
 
+    # Verify the real rules_manager was never touched
+    mock_game_manager.rules_manager.apply_proposal.assert_not_called()
 
-def test_step_1_propose_dry_run_restores_rules(
+
+def test_step_1_propose_never_touches_real_rules(
     game_loop: GameLoop, mock_players: list[Mock], mock_game_manager: Mock
 ) -> None:
-    """Test _run_step_1_propose restores rules after dry run validation."""
+    """Test _run_step_1_propose never modifies real rules_manager."""
     alice = mock_players[0]
+
+    # Get the original rules reference
+    original_rules = mock_game_manager.rules_manager.rules
 
     proposal = game_loop._run_step_1_propose(alice)
 
-    # Verify that apply_proposal was called for validation
-    mock_game_manager.rules_manager.apply_proposal.assert_called_once()
+    # CRITICAL: The real rules_manager.apply_proposal should NEVER be called
+    # Validation happens on a temporary RulesManager instead
+    mock_game_manager.rules_manager.apply_proposal.assert_not_called()
 
-    # Verify rules were restored (by checking that the list reference
-    # was reset). Note: In a real scenario, the rules list would be
-    # modified during apply_proposal. Here we just verify that the
-    # assignment happened
+    # Verify the rules list reference was never changed
+    assert mock_game_manager.rules_manager.rules is original_rules
+
+    # Verify the proposal was returned successfully
     assert proposal is not None
 
 
@@ -610,9 +614,13 @@ def test_run_turn_stops_on_illegal_proposal(
     mock_game_manager: Mock,
 ) -> None:
     """Test run_turn stops early if proposal is illegal."""
-    # Make proposal validation fail
-    mock_game_manager.rules_manager.apply_proposal.side_effect = ValueError(
-        "Cannot amend immutable rule"
+    # Make Alice propose an ILLEGAL proposal (amend immutable rule)
+    mock_players[0].propose.return_value = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.AMEND,
+        rule_id="101",  # Immutable rule from fixture
+        new_text="Trying to amend immutable rule.",
     )
 
     game_loop.run_turn()
