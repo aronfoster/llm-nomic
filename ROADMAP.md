@@ -108,3 +108,4 @@ This is the long-term backlog.
   * **Multiple Rulesets:** Allow `create_game.py` to select from different initial ruleset files.
   * Explore different capabilities/API configs per provider
     * Claude prompt caching (https://docs.claude.com/en/docs/build-with-claude/prompt-caching)
+  * Write instructions to install and run things in the README.md. Should start from zero.
