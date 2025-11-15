@@ -16,6 +16,17 @@ from pathlib import Path
 
 import yaml
 
+from src.nomic_engine.constants import (
+    CONFIG_FILE,
+    GAME_LOG_FILE,
+    GAMES_DIR,
+    GAME_STATE_FILE,
+    GAME_TRANSCRIPT_FILE,
+    INITIAL_RULES_FILE,
+    MODEL_LIBRARY_FILE,
+    RULES_JSONL_FILE,
+    RULES_MD_FILE,
+)
 from src.nomic_engine.data_models import (
     GameConfig,
     GameState,
@@ -32,11 +43,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Constants
-GAMES_DIR = Path("games")
-INITIAL_RULES_FILE = Path("Nomic_Initial_Ruleset.md")
-MODELS_FILE = Path("models.yml")
-
 
 def load_model_library() -> ModelLibrary:
     """
@@ -48,15 +54,16 @@ def load_model_library() -> ModelLibrary:
     Raises:
         SystemExit: If the file is not found or validation fails
     """
+    models_file = Path(MODEL_LIBRARY_FILE)
     try:
-        logger.info(f"Loading model library from {MODELS_FILE}")
-        with MODELS_FILE.open("r", encoding="utf-8") as f:
+        logger.info(f"Loading model library from {models_file}")
+        with models_file.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         model_library = ModelLibrary(**data)
         logger.info(f"Successfully loaded {len(model_library.models)} models")
         return model_library
     except FileNotFoundError:
-        logger.error(f"Model library file not found: {MODELS_FILE}")
+        logger.error(f"Model library file not found: {models_file}")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Failed to load or validate model library: {e}")
@@ -73,13 +80,14 @@ def load_initial_rules() -> list:
     Raises:
         SystemExit: If the file is not found or parsing fails
     """
+    initial_rules_file = Path(INITIAL_RULES_FILE)
     try:
-        logger.info(f"Loading initial rules from {INITIAL_RULES_FILE}")
-        rules = parse_rules_md(INITIAL_RULES_FILE)
+        logger.info(f"Loading initial rules from {initial_rules_file}")
+        rules = parse_rules_md(initial_rules_file)
         logger.info(f"Successfully loaded {len(rules)} rules")
         return rules
     except FileNotFoundError:
-        logger.error(f"Initial rules file not found: {INITIAL_RULES_FILE}")
+        logger.error(f"Initial rules file not found: {initial_rules_file}")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Failed to parse initial rules: {e}")
@@ -124,7 +132,7 @@ def get_game_name() -> tuple[str, Path]:
             print("Invalid game name. Please use alphanumeric characters.")
             continue
 
-        game_dir = GAMES_DIR / sanitized_name
+        game_dir = Path(GAMES_DIR) / sanitized_name
 
         if game_dir.exists():
             logger.error(f"Game directory already exists: {game_dir}")
@@ -245,7 +253,7 @@ def create_game_files(
     game_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Create config.yml
-    config_path = game_dir / "config.yml"
+    config_path = game_dir / CONFIG_FILE
     logger.info(f"Creating {config_path}")
     game_config = GameConfig(players=players)
     with config_path.open("w", encoding="utf-8") as f:
@@ -254,7 +262,7 @@ def create_game_files(
         yaml.safe_dump(config_dict, f, default_flow_style=False, sort_keys=False)
 
     # 2. Create game_state.json
-    state_path = game_dir / "game_state.json"
+    state_path = game_dir / GAME_STATE_FILE
     logger.info(f"Creating {state_path}")
     game_state = GameState(
         scores={player.name: 0 for player in players},
@@ -268,20 +276,20 @@ def create_game_files(
     # 3. Create rules.jsonl and rules.md
     rules_manager = RulesManager(rules=initial_rules)
 
-    rules_jsonl_path = game_dir / "rules.jsonl"
+    rules_jsonl_path = game_dir / RULES_JSONL_FILE
     logger.info(f"Creating {rules_jsonl_path}")
     rules_manager.save_to_jsonl(rules_jsonl_path)
 
-    rules_md_path = game_dir / "rules.md"
+    rules_md_path = game_dir / RULES_MD_FILE
     logger.info(f"Creating {rules_md_path}")
     rules_manager.render_to_markdown(rules_md_path)
 
     # 4. Create empty log files
-    game_log_path = game_dir / "game_log.jsonl"
+    game_log_path = game_dir / GAME_LOG_FILE
     logger.info(f"Creating {game_log_path}")
     game_log_path.touch()
 
-    game_transcript_path = game_dir / "game_transcript.md"
+    game_transcript_path = game_dir / GAME_TRANSCRIPT_FILE
     logger.info(f"Creating {game_transcript_path}")
     game_transcript_path.touch()
 
@@ -312,12 +320,12 @@ def main() -> None:
     print("=" * 60)
     print()
     print("Game files created:")
-    print(f"  - {game_dir / 'config.yml'}")
-    print(f"  - {game_dir / 'game_state.json'}")
-    print(f"  - {game_dir / 'rules.jsonl'}")
-    print(f"  - {game_dir / 'rules.md'}")
-    print(f"  - {game_dir / 'game_log.jsonl'}")
-    print(f"  - {game_dir / 'game_transcript.md'}")
+    print(f"  - {game_dir / CONFIG_FILE}")
+    print(f"  - {game_dir / GAME_STATE_FILE}")
+    print(f"  - {game_dir / RULES_JSONL_FILE}")
+    print(f"  - {game_dir / RULES_MD_FILE}")
+    print(f"  - {game_dir / GAME_LOG_FILE}")
+    print(f"  - {game_dir / GAME_TRANSCRIPT_FILE}")
     print()
     print("You can now start playing the game!")
 

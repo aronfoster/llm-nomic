@@ -14,3 +14,4 @@ mypy
 black
 ruff
 pre-commit
+types-PyYAML
