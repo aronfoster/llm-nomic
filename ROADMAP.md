@@ -108,6 +108,7 @@ This is the long-term backlog.
   * **Multiple Rulesets:** Allow `create_game.py` to select from different initial ruleset files.
   * Explore different capabilities/API configs per provider
     * Claude prompt caching (https://docs.claude.com/en/docs/build-with-claude/prompt-caching)
+    * Is RAG appropriate?
   * Can we query the provider APIs to get a list of available models? 
   * Can we allow custom model config per game? Might be useful for other local models or for when a new model comes out but the master list hasn't been updated.
   * Should eventually add flags for enabling different capabilities, like prompts that are extra aggressive, encouraging LLMs to be hostile 
