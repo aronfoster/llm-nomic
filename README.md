@@ -1,3 +1,160 @@
 # LLM Nomic Project
 
-This is a python 3.12 project to create games of Suber's 1982 game nomic, to be played by human and LLM players.
+This is a Python 3.12 project to create games of Suber's 1982 game Nomic, to be played by human and LLM players.
+
+## Prerequisites
+
+- Python 3.12 or higher
+- pip (Python package manager)
+- Git
+
+## Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd llm-nomic
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   make install
+   ```
+
+   This will:
+   - Upgrade pip to the latest version
+   - Install all required Python packages from `requirements.txt`
+   - Set up pre-commit hooks for code quality checks
+
+   Alternatively, you can install dependencies manually:
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   pre-commit install
+   ```
+
+3. **Configure API keys (required for LLM players):**
+
+   Copy the template environment file and add your API keys:
+   ```bash
+   cp .env.template .env
+   ```
+
+   Then edit `.env` and add your API keys:
+   ```
+   OPENAI_API_KEY=your_openai_key_here
+   ANTHROPIC_API_KEY=your_anthropic_key_here
+   GOOGLE_API_KEY=your_google_key_here
+   XAI_API_KEY=your_xai_key_here
+   ```
+
+   Note: You only need to provide keys for the LLM providers you plan to use.
+
+## Building and Testing
+
+### Run All Quality Checks
+```bash
+make ci
+```
+This runs the full CI suite (linting, type checking, and tests).
+
+### Individual Commands
+
+- **Format code:**
+  ```bash
+  make format
+  ```
+
+- **Lint code:**
+  ```bash
+  make lint
+  ```
+
+- **Type check:**
+  ```bash
+  make typecheck
+  ```
+
+- **Run tests:**
+  ```bash
+  make test
+  ```
+
+## Launching the Application
+
+### Creating a New Game
+
+To create and launch a new Nomic game:
+
+```bash
+python3 create_game.py
+```
+
+This interactive script will:
+1. Prompt you for a game name
+2. Ask for the number of players
+3. Allow you to configure each player (human or LLM)
+4. For LLM players, let you choose from available models
+5. Generate all required game files in `games/<game-name>/`
+
+**Example game creation session:**
+```
+Enter new game name: My First Game
+How many players? 2
+
+--- Configuring Player 1 ---
+Player name: Alice
+Player type (human/llm): human
+
+--- Configuring Player 2 ---
+Player name: Bob
+Player type (human/llm): llm
+
+Available LLM models:
+  1. gpt-4 (openai)
+  2. claude-3-opus (anthropic)
+  ...
+Choose a model by number: 2
+```
+
+### Game Files
+
+After creation, each game directory contains:
+- `config.yml` - Player configuration
+- `game_state.json` - Current game state (scores, turn order, etc.)
+- `rules.jsonl` - Rules in JSON Lines format
+- `rules.md` - Human-readable rules in Markdown
+- `game_log.jsonl` - Game event log
+- `game_transcript.md` - Human-readable game transcript
+
+## Development Workflow
+
+Before committing code, always run:
+```bash
+make ci
+```
+
+This ensures your code passes all quality checks (linting, type checking, and tests).
+
+## Project Structure
+
+```
+llm-nomic/
+├── src/                        # Source code
+│   └── nomic_engine/          # Core game engine
+├── tests/                      # Test files
+├── games/                      # Game instances (created by create_game.py)
+├── create_game.py             # Interactive game creation script
+├── models.yml                 # Available LLM model definitions
+├── Nomic_Initial_Ruleset.md   # Initial game rules
+├── requirements.txt           # Python dependencies
+├── Makefile                   # Development commands
+└── .env                       # API keys (not in git)
+```
+
+## Getting Help
+
+For available make commands:
+```bash
+make help
+```
