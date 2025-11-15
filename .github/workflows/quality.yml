@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest # Use a standard Linux runner
     strategy:
       matrix:
-        python-version: ["3.10", "3.11"] # Test on multiple Python versions
+        python-version: ["3.12"]
 
     steps:
       # 1. Get the code from the repository

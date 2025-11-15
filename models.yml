@@ -3,30 +3,55 @@
 # choose models for their game.
 
 models:
-  - id: "claude-3-5-sonnet"
+  - id: "claude-haiku-4-5"
     provider: "anthropic"
-    api_model_id: "claude-3-5-sonnet-20240620"
+    api_model_id: "claude-haiku-4-5"
     env_key_name: "ANTHROPIC_API_KEY"
 
-  - id: "claude-3-opus"
+  - id: "claude-sonnet-4-5"
     provider: "anthropic"
-    api_model_id: "claude-3-opus-20240229"
+    api_model_id: "claude-sonnet-4-5"
     env_key_name: "ANTHROPIC_API_KEY"
 
-  - id: "gpt-4o"
+  - id: "gpt-5.1"
     provider: "openai"
-    api_model_id: "gpt-4o"
+    api_model_id: "gpt-5.1"
     env_key_name: "OPENAI_API_KEY"
 
-  - id: "gpt-4-turbo"
+  - id: "gpt-5-mini"
     provider: "openai"
-    api_model_id: "gpt-4-turbo"
+    api_model_id: "gpt-5-mini"
     env_key_name: "OPENAI_API_KEY"
 
-  - id: "gemini-1-5-pro"
+  - id: "gemini-2.5-pro"
     provider: "google"
-    api_model_id: "models/gemini-1.5-pro-latest"
+    api_model_id: "gemini-2.5-pro"
     env_key_name: "GOOGLE_API_KEY"
+
+  - id: "gemini-2.5-flash"
+    provider: "google"
+    api_model_id: "gemini-2.5-flash"
+    env_key_name: "GOOGLE_API_KEY"
+
+  - id: "gemini-2.5-flash-lite"
+    provider: "google"
+    api_model_id: "gemini-2.5-flash-lite"
+    env_key_name: "GOOGLE_API_KEY"
+
+  - id: "grok-code-fast-1"
+    provider: "xai"
+    api_model_id: "grok-code-fast-1"
+    env_key_name: "XAI_API_KEY"
+
+  - id: "grok-4-fast-reasoning"
+    provider: "xai"
+    api_model_id: "grok-4-fast-reasoning"
+    env_key_name: "XAI_API_KEY"
+
+  - id: "grok-4-fast-non-reasoning"
+    provider: "xai"
+    api_model_id: "grok-4-fast-non-reasoning"
+    env_key_name: "XAI_API_KEY"
 
   - id: "local-llama-3"
     provider: "local"

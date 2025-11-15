@@ -5,17 +5,17 @@
 repos:
   # Black - Python code formatter
   - repo: https://github.com/psf/black
-    rev: 24.10.0
+    rev: 25.11.0
     hooks:
       - id: black
         name: black
-        language_version: python3.10
+        language_version: python3.12
         args: ['--line-length=79']
         files: ^(src|tests)/
 
   # Ruff - Fast Python linter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.7.4
+    rev: v0.14.5
     hooks:
       - id: ruff
         name: ruff

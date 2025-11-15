@@ -106,3 +106,5 @@ This is the long-term backlog.
   * **LLM as Judge:** Explore replacing the "Human Judge Hook" with an LLM call.
   * **Static Site Generator:** Build the `build_site.py` script to convert a `game_log.jsonl` into a shareable HTML file.
   * **Multiple Rulesets:** Allow `create_game.py` to select from different initial ruleset files.
+  * Explore different capabilities/API configs per provider
+    * Claude prompt caching (https://docs.claude.com/en/docs/build-with-claude/prompt-caching)
