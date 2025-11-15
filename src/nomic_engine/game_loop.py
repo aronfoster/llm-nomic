@@ -10,6 +10,7 @@ import logging
 from .data_models import Proposal, Vote
 from .game_manager import GameManager
 from .players.base_player import BasePlayer
+from .rules_manager import RulesManager
 
 logger = logging.getLogger(__name__)
 
@@ -172,17 +173,23 @@ class GameLoop:
             f"rule_id={proposal.rule_id}"
         )
 
-        # Validate the proposal with a dry run
+        # Validate the proposal with a side-effect-free dry run
         try:
-            # Make a copy of the rules to avoid modifying them
-            original_rules = self.game_manager.rules_manager.rules.copy()
+            # Create deep copies of all rules (Pydantic model_copy)
+            rules_copy = [
+                rule.model_copy(deep=True)
+                for rule in self.game_manager.rules_manager.rules
+            ]
 
-            # Try to apply the proposal (dry run for validation only)
-            self.game_manager.rules_manager.apply_proposal(proposal)
+            # Create a temporary RulesManager for validation
+            temp_rules_manager = RulesManager(rules=rules_copy)
 
-            # Restore original rules (revert the dry run)
-            self.game_manager.rules_manager.rules = original_rules
+            # Try to apply the proposal on the TEMP manager
+            # The real rules_manager is never touched
+            temp_rules_manager.apply_proposal(proposal)
 
+            # If we get here, the proposal is valid
+            # We discard temp_rules_manager and return success
             logger.info("Proposal validation passed")
             return proposal
 
