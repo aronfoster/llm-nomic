@@ -174,15 +174,15 @@ class GameLoop:
 
         # Validate the proposal with a dry run
         try:
-            # Make a copy of the rules to avoid modifying them
-            original_rules = self.game_manager.rules_manager.rules.copy()
-
-            # Try to apply the proposal (dry run for validation only)
-            self.game_manager.rules_manager.apply_proposal(proposal)
-
-            # Restore original rules (revert the dry run)
-            self.game_manager.rules_manager.rules = original_rules
-
+            # 1. Create a DEEP copy of the rules list
+            rules_copy = [rule.model_copy(deep=True) for rule in self.game_manager.rules_manager.rules]
+        
+            # 2. Create a TEMPORARY, throw-away RulesManager
+            temp_manager = RulesManager(rules=rules_copy)
+        
+            # 3. Do the dry run on the TEMP manager
+            temp_manager.apply_proposal(proposal)
+            
             logger.info("Proposal validation passed")
             return proposal
 
