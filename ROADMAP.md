@@ -36,11 +36,11 @@ We have successfully built and tested the entire data and tooling foundation for
   * **DONE:** `create_game.py` (the "Game Factory" script).
   * **DONE:** Comprehensive unit tests for all core logic.
 
-## **4. Phase 2: The Game Loop (Next Up)**
+## **4. Phase 2: The Game Loop (Completed)**
 
-This is the next major sprint. The goal is to get a game *running* from start to finish on the command line, with a human player and a human judge.
+We have successfully implemented the complete game loop system, allowing games to run from start to finish on the command line.
 
-### **Task 8: `GameManager` (The "Loader")**
+### **Task 8: `GameManager` (The "Loader")** ✓ COMPLETED
 
   * **File:** `src/nomic_engine/game_manager.py`
   * **Goal:** Create a class that loads a "Game Instance" directory into memory.
@@ -51,7 +51,7 @@ This is the next major sprint. The goal is to get a game *running* from start to
       * `save_rules()`: A helper that calls `self.rules_manager.save_to_jsonl(...)` and `...render_to_markdown(...)`.
       * `log_event(...)`: A helper to append structured data to `game_log.jsonl` and formatted text to `game_transcript.md`.
 
-### **Task 9: `Player` Abstractions (The "Players")**
+### **Task 9: `Player` Abstractions (The "Players")** ✓ COMPLETED
 
   * **File:** `src/nomic_engine/players/base_player.py`
       * **Goal:** Define the "Player" interface.
@@ -64,7 +64,7 @@ This is the next major sprint. The goal is to get a game *running* from start to
       * **Requirements:**
           * Implement `propose`, `discuss`, and `vote` by prompting the user with `input()` and parsing their text.
 
-### **Task 10: `GameLoop` (The "Conductor")**
+### **Task 10: `GameLoop` (The "Conductor")** ✓ COMPLETED
 
   * **File:** `src/nomic_engine/game_loop.py`
   * **Goal:** This is the core "turn" logic.
@@ -83,7 +83,7 @@ This is the next major sprint. The goal is to get a game *running* from start to
               * **Save State:** Call `game_manager.save_game_state(...)` and `game_manager.save_rules()`.
               * Log the entire turn to the transcript.
 
-### **Task 11: `main.py` (The "Entrypoint")**
+### **Task 11: `main.py` (The "Entrypoint")** (Next Up)
 
   * **File:** `src/nomic_engine/main.py`
   * **Goal:** Tie everything together and start the game.
@@ -108,4 +108,3 @@ This is the long-term backlog.
   * **Multiple Rulesets:** Allow `create_game.py` to select from different initial ruleset files.
   * Explore different capabilities/API configs per provider
     * Claude prompt caching (https://docs.claude.com/en/docs/build-with-claude/prompt-caching)
-  * Write instructions to install and run things in the README.md. Should start from zero.
