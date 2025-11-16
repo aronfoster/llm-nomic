@@ -12,14 +12,18 @@ Our architecture is built on these principles:
 
 ## Bug List**
 
+### COMPLETED
+
+* ✅ **Proposers can now participate in discussion and voting** (per Rules 111 and 105)
+  * The game loop now includes all players (including the proposer) in both discussion and voting steps
+  * Note: Future enhancement could add a flag to control this behavior based on ruleset
+
 ### HIGH PRIORITY
 
 * New rules need to automatically get a rule ID
 * ILLEGAL PROPOSALS should get logged to game history
-* Proposers are allowed to vote on their own proposals
-  * Should be a flag, default to yes. Based on one of the starting rules
-  * _run_step_5_resolve should treat zero voters as an automatic approval 
-* The engine trusts whatever Proposal object a player returns. There is no enforcement that the proposal’s proposer_name matches the player whose turn it is; that value is used later for scoring, transcripts, and penalties. A malicious (or buggy) player implementation could submit a proposal that attributes itself to another player, causing the wrong person to gain/lose points or to appear responsible for a rule change.
+* _run_step_5_resolve should treat zero voters as an automatic approval
+* The engine trusts whatever Proposal object a player returns. There is no enforcement that the proposal's proposer_name matches the player whose turn it is; that value is used later for scoring, transcripts, and penalties. A malicious (or buggy) player implementation could submit a proposal that attributes itself to another player, causing the wrong person to gain/lose points or to appear responsible for a rule change.
 
 ### Low Priority
 

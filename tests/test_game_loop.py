@@ -240,7 +240,7 @@ def test_step_1_propose_never_touches_real_rules(
 def test_step_2_discuss_collects_all_responses(
     game_loop: GameLoop, mock_players: list[Mock]
 ) -> None:
-    """Test _run_step_2_discuss collects discussions from all other players."""
+    """Test _run_step_2_discuss collects discussions from all players."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -249,15 +249,16 @@ def test_step_2_discuss_collects_all_responses(
         new_text="Test rule.",
     )
 
-    other_players = [mock_players[1], mock_players[2]]  # Bob and Charlie
+    all_players = mock_players  # Alice, Bob, and Charlie
 
-    discussions = game_loop._run_step_2_discuss(proposal, other_players)
+    discussions = game_loop._run_step_2_discuss(proposal, all_players)
 
-    assert len(discussions) == 2
+    assert len(discussions) == 3
+    assert "Alice's discussion" in discussions
     assert "Bob's discussion" in discussions
     assert "Charlie's discussion" in discussions
 
-    for player in other_players:
+    for player in all_players:
         player.discuss.assert_called_once()
 
 
@@ -276,11 +277,12 @@ def test_step_2_discuss_filters_none_responses(
     # Bob abstains (returns None)
     mock_players[1].discuss.return_value = None
 
-    other_players = [mock_players[1], mock_players[2]]
+    all_players = mock_players
 
-    discussions = game_loop._run_step_2_discuss(proposal, other_players)
+    discussions = game_loop._run_step_2_discuss(proposal, all_players)
 
-    assert len(discussions) == 1
+    assert len(discussions) == 2
+    assert "Alice's discussion" in discussions
     assert "Charlie's discussion" in discussions
     assert "Bob's discussion" not in discussions
 
@@ -312,7 +314,7 @@ def test_step_3_revise_returns_original_proposal(game_loop: GameLoop) -> None:
 def test_step_4_vote_collects_all_votes(
     game_loop: GameLoop, mock_players: list[Mock]
 ) -> None:
-    """Test _run_step_4_vote collects votes from all other players."""
+    """Test _run_step_4_vote collects votes from all players."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -321,14 +323,14 @@ def test_step_4_vote_collects_all_votes(
         new_text="Test rule.",
     )
 
-    other_players = [mock_players[1], mock_players[2]]
+    all_players = mock_players
 
-    votes = game_loop._run_step_4_vote(proposal, other_players)
+    votes = game_loop._run_step_4_vote(proposal, all_players)
 
-    assert len(votes) == 2
+    assert len(votes) == 3
     assert all(isinstance(v, Vote) for v in votes)
 
-    for player in other_players:
+    for player in all_players:
         player.vote.assert_called_once()
 
 
@@ -344,7 +346,10 @@ def test_step_4_vote_respects_individual_votes(
         new_text="Test rule.",
     )
 
-    # Bob votes YES, Charlie votes NO
+    # Alice votes YES, Bob votes YES, Charlie votes NO
+    mock_players[0].vote.return_value = Vote(
+        player_name="Alice", vote="YES", reason="My proposal"
+    )
     mock_players[1].vote.return_value = Vote(
         player_name="Bob", vote="YES", reason="Good idea"
     )
@@ -352,14 +357,16 @@ def test_step_4_vote_respects_individual_votes(
         player_name="Charlie", vote="NO", reason="Bad idea"
     )
 
-    other_players = [mock_players[1], mock_players[2]]
+    all_players = mock_players
 
-    votes = game_loop._run_step_4_vote(proposal, other_players)
+    votes = game_loop._run_step_4_vote(proposal, all_players)
 
-    assert votes[0].player_name == "Bob"
+    assert votes[0].player_name == "Alice"
     assert votes[0].vote == "YES"
-    assert votes[1].player_name == "Charlie"
-    assert votes[1].vote == "NO"
+    assert votes[1].player_name == "Bob"
+    assert votes[1].vote == "YES"
+    assert votes[2].player_name == "Charlie"
+    assert votes[2].vote == "NO"
 
 
 # --- Tests for Step 5: Resolve ---
@@ -382,6 +389,7 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
     )
 
     votes = [
+        Vote(player_name="Alice", vote="YES"),
         Vote(player_name="Bob", vote="YES"),
         Vote(player_name="Charlie", vote="YES"),
     ]
@@ -405,7 +413,7 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
     # Verify transcript was logged
     mock_game_manager.logger.log_transcript.assert_called_once()
 
-    # Verify score changes (Rule 202: 12 * 2/2 = 12 points for proposer)
+    # Verify score changes (Rule 202: 12 * 3/3 = 12 points for proposer)
     assert mock_game_state.scores["Alice"] == 12
 
     # Verify turn advanced
@@ -430,6 +438,7 @@ def test_step_5_resolve_judge_veto(
     )
 
     votes = [
+        Vote(player_name="Alice", vote="YES"),
         Vote(player_name="Bob", vote="YES"),
         Vote(player_name="Charlie", vote="YES"),
     ]
@@ -470,6 +479,7 @@ def test_step_5_resolve_failed_proposal_score_penalty(
 
     # Proposal fails (not unanimous)
     votes = [
+        Vote(player_name="Alice", vote="YES"),
         Vote(player_name="Bob", vote="YES"),
         Vote(player_name="Charlie", vote="NO"),
     ]
@@ -480,10 +490,10 @@ def test_step_5_resolve_failed_proposal_score_penalty(
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()
 
     # Verify score changes:
-    # Rule 202: 12 * 1/2 = 6 points for proposer
+    # Rule 202: 12 * 2/3 = 8 points for proposer
     # Rule 206: -10 points for failed proposal
-    # Net: 6 - 10 = -4
-    assert mock_game_state.scores["Alice"] == -4
+    # Net: 8 - 10 = -2
+    assert mock_game_state.scores["Alice"] == -2
 
     # Verify turn advanced anyway
     assert mock_game_state.current_player_name == "Bob"
@@ -505,18 +515,19 @@ def test_step_5_resolve_score_calculation_rule_202(
         new_text="Test rule.",
     )
 
-    # 1 YES out of 2 voters = 1/2 favorable fraction
+    # 2 YES out of 3 voters = 2/3 favorable fraction
     votes = [
+        Vote(player_name="Alice", vote="YES"),
         Vote(player_name="Bob", vote="YES"),
         Vote(player_name="Charlie", vote="NO"),
     ]
 
     game_loop._run_step_5_resolve(proposal, votes)
 
-    # Rule 202: round(12 * 1/2) = round(6) = 6
+    # Rule 202: round(12 * 2/3) = round(8) = 8
     # Rule 206: -10 for failed proposal
-    # Net: 6 - 10 = -4
-    assert mock_game_state.scores["Alice"] == -4
+    # Net: 8 - 10 = -2
+    assert mock_game_state.scores["Alice"] == -2
 
 
 @patch("builtins.input", return_value="y")
@@ -535,6 +546,7 @@ def test_step_5_resolve_turn_advances_correctly(
     )
 
     votes = [
+        Vote(player_name="Alice", vote="YES"),
         Vote(player_name="Bob", vote="YES"),
         Vote(player_name="Charlie", vote="YES"),
     ]
@@ -564,6 +576,7 @@ def test_step_5_resolve_turn_wraps_around(
     votes = [
         Vote(player_name="Alice", vote="YES"),
         Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
     ]
 
     # Set current player to Charlie (last in turn order)
@@ -596,11 +609,13 @@ def test_run_turn_full_integration_success(
     # Alice proposes
     alice.propose.assert_called_once()
 
-    # Bob and Charlie discuss
+    # All players (Alice, Bob, and Charlie) discuss
+    alice.discuss.assert_called_once()
     bob.discuss.assert_called_once()
     charlie.discuss.assert_called_once()
 
-    # Bob and Charlie vote
+    # All players (Alice, Bob, and Charlie) vote
+    alice.vote.assert_called_once()
     bob.vote.assert_called_once()
     charlie.vote.assert_called_once()
 
@@ -637,9 +652,13 @@ def test_run_turn_stops_on_illegal_proposal(
     # Alice proposed
     mock_players[0].propose.assert_called_once()
 
-    # But no discussion, voting, or resolution should happen
+    # But no discussion, voting, or resolution should happen for any player
+    mock_players[0].discuss.assert_not_called()
     mock_players[1].discuss.assert_not_called()
+    mock_players[2].discuss.assert_not_called()
+    mock_players[0].vote.assert_not_called()
     mock_players[1].vote.assert_not_called()
+    mock_players[2].vote.assert_not_called()
 
     mock_input.assert_not_called()
     mock_game_manager.save_game_state.assert_not_called()
