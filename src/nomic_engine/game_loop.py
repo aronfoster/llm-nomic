@@ -335,9 +335,9 @@ class GameLoop:
 
         This method:
         - Tallies votes to determine pass/fail
-        - Consults the human judge for final approval
-        - Calculates and applies score changes
-        - Applies proposal to rules if passed and legal
+        - Consults the human judge for veto decision
+        - Prompts judge to manually assign scores
+        - Applies proposal to rules if passed and not vetoed
         - Advances to next turn
         - Saves state and logs transcript
 
@@ -388,73 +388,40 @@ class GameLoop:
         print(f"\nResult: {'PASSED' if proposal_passed else 'FAILED'}")
         print("=" * 60)
 
-        # Rule 213: Human Judge Hook
+        # Prompt 1 (Arbiter): Unambiguous Veto prompt
         judge_response = (
-            input("\nJudge, is this proposal legal? (y/n): ").strip().lower()
+            input("\nJudge (Arbiter), do you VETO this outcome? (y/n): ")
+            .strip()
+            .lower()
         )
-        judge_approved = judge_response == "y"
+        judge_vetoed = judge_response == "y"
 
-        if not judge_approved:
-            logger.warning("Judge vetoed the proposal")
-            print("\n⚖️  JUDGE VETO: Proposal rejected by the Judge.\n")
-            # End turn without applying changes (except score penalties)
-            # TODO: Apply any judge-related score penalties if rules
-            # require
-            return
+        # Check final status and apply changes accordingly
+        if proposal_passed and not judge_vetoed:
+            # --- PROPOSAL PASSES ---
+            logger.info("Proposal PASSED and was not vetoed.")
+            print("\n⚖️  JUDGE: Outcome stands. Applying PASSED proposal.")
 
-        logger.info("Judge approved the proposal")
-
-        # Calculate score changes based on Rules 202, 204, 206
-        # Rule 202: Proposer gets 12 * (fraction of favorable votes),
-        # rounded
-        # Note: favorable votes means YES votes
-        if total_voters > 0:
-            favorable_fraction = yes_votes / total_voters
-        else:
-            favorable_fraction = 0
-
-        proposer_points = round(12 * favorable_fraction)
-
-        logger.debug(
-            f"Score calculation: proposer gets {proposer_points} points "
-            f"(12 * {favorable_fraction})"
-        )
-
-        # Apply proposer points (Rule 202)
-        self.game_manager.game_state.scores[
-            proposal.proposer_name
-        ] += proposer_points
-
-        # Rule 206: If proposal defeated, proposer loses 10 points
-        if not proposal_passed:
-            self.game_manager.game_state.scores[proposal.proposer_name] -= 10
-            logger.debug(
-                f"{proposal.proposer_name} loses 10 points (defeated "
-                f"proposal)"
-            )
-
-        # Rule 204: Players who vote against winning proposals get 10
-        # points
-        # Note: This only applies when unanimity is not required (future
-        # state)
-        # For now, with unanimous voting, no one votes against a winning
-        # proposal
-        # We'll implement this for future-proofing
-        if proposal_passed:
-            for vote in votes:
-                if vote.vote == "NO":
-                    self.game_manager.game_state.scores[vote.player_name] += 10
-                    logger.debug(
-                        f"{vote.player_name} gets 10 points (voted "
-                        f"against winner)"
-                    )
-
-        # Apply the proposal to rules if it passed and was legal
-        if proposal_passed and judge_approved:
-            logger.info("Applying proposal to rules")
+            # Apply rules & increment ID
             self.game_manager.rules_manager.apply_proposal(proposal)
             self.game_manager.save_rules()
-            logger.debug("Rules saved")
+
+            # Call the new scorer
+            self._get_scores_from_judge()
+
+        else:
+            # --- PROPOSAL FAILS ---
+            if not proposal_passed:
+                logger.info("Proposal FAILED by vote.")
+                print("\n⚖️  JUDGE: Outcome stands. Proposal FAILED.")
+            elif judge_vetoed:
+                logger.warning(
+                    f"Judge VETOED passed proposal {proposal.proposal_id}"
+                )
+                print("\n⚖️  JUDGE VETO: Proposal has been VETOED and FAILED.")
+
+            # Call the new scorer
+            self._get_scores_from_judge()
 
         # Advance turn
         # Find next player in turn order
@@ -477,11 +444,69 @@ class GameLoop:
         logger.debug("Game state saved")
 
         # Log to transcript
+        # Note: judge_approved = inverse of judge_vetoed for passed proposals
+        judge_approved = proposal_passed and not judge_vetoed
         transcript_entry = self._format_transcript(
             proposal, votes, proposal_passed, judge_approved
         )
         self.game_manager.logger.log_transcript(transcript_entry)
         logger.debug("Transcript logged")
+
+    def _get_scores_from_judge(self) -> None:
+        """
+        Prompt the Judge to manually assign point changes for each player.
+
+        This method displays all point-related rules and prompts the Judge
+        to enter score changes for each player based on the current turn.
+        Input is validated to ensure it's an integer.
+
+        Raises:
+            AssertionError: If game_state or rules_manager is None
+        """
+        assert self.game_manager.game_state is not None
+        assert self.game_manager.rules_manager is not None
+
+        # Find all point-related rules
+        point_rules = [
+            r
+            for r in self.game_manager.rules_manager.rules
+            if "point" in r.text.lower()
+        ]
+
+        # Print header
+        print(
+            f"\n--- Judge (Scorer), please assess points for Move "
+            f"#{self.game_manager.game_state.move_number} ---"
+        )
+
+        # Print point-scoring rules
+        print("\nRelevant Point-Scoring Rules:")
+        for rule in point_rules:
+            status_char = rule.status.value[0].upper()
+            print(f"Rule {rule.rule_id} ({status_char}): {rule.text}")
+
+        print()  # Blank line for readability
+
+        # Loop through each player and get score changes
+        for player in self.players:
+            while True:
+                try:
+                    points_input = input(
+                        f"Enter point change for {player.player_name}: "
+                    )
+                    points_change = int(points_input)
+                    break  # Valid integer received
+                except ValueError:
+                    print("Invalid input. Please enter an integer.")
+                    continue
+
+            # Apply the score change
+            self.game_manager.game_state.scores[
+                player.player_name
+            ] += points_change
+            logger.debug(
+                f"Applied {points_change} points to {player.player_name}"
+            )
 
     def _format_transcript(
         self,

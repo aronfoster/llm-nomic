@@ -21,6 +21,14 @@ Our architecture is built on these principles:
   * The engine now validates that the `proposer_name` in the Proposal object matches the player whose turn it is
   * Proposals with mismatched proposer names are rejected as illegal proposals
   * Added unit test to verify this security validation
+* ✅ **Judge logic refactored for manual veto and dynamic scoring**
+  * Replaced ambiguous "is this proposal legal?" prompt with clear "do you VETO this outcome?" prompt
+  * Removed all hardcoded score calculations (Rules 202, 204, 206)
+  * Implemented `_get_scores_from_judge()` method for fully manual scoring
+  * Judge now sees all point-related rules and manually assigns scores for each player
+  * Judge scoring applies for both passed and failed proposals
+  * All tests updated to support new manual scoring workflow
+  * Added comprehensive veto test to verify judge can block passed proposals
 
 ### HIGH PRIORITY
 
@@ -29,10 +37,6 @@ Our architecture is built on these principles:
 * Discussion phase should print which existing rule is being affected (original text)
 * Game_transcript should include all discussion
   * ILLEGAL PROPOSALS should get logged to game history
-* "Judge, is this proposal legal?" is ambiguous, or at least confusing to me. So is "y" for agreeing with the Result? So if the assessment is that a proposal failed, and I judge "n", does that proposal get approved? We need to revise the judge structure.
-  * Changes to points per proposal are static. They have to be dynamic. This is probably going to be a big task. We might have to create an entire class for point calculating, since LLMs suck at math. Do we have a list of point affecting events, and we'll check each of those each turn (by the judge)? e.g. rule: if justification is written in haiku form, get an extra 5 points.
-  * Maybe V1 will just be the judge calculates the points for each vote?
-  * Need to break the judge interaction into its own function
 * Doesn't look like Proposal Id is getting incremented/saved. The game state is stuck at 301.
 
 ### Low Priority
