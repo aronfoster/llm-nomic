@@ -28,6 +28,7 @@ Our architecture is built on these principles:
 * Game_transcript should include all discussion
 * "Judge, is this proposal legal?" is ambiguous, or at least confusing to me. So is "y" for agreeing with the Result? So if the assessment is that a proposal failed, and I judge "n", does that proposal get approved?
 * Doesn't look like Proposal Id is getting incremented/saved. The game state is stuck at 301.
+* Changes to points per proposal are static. They have to be dynamic. This is probably going to be a big task. We might have to create an entire class for point calculating, since LLMs suck at math. Do we have a list of point affecting events, and we'll check each of those each turn (by the judge)? e.g. rule: if justification is written in haiku form, get an extra 5 points.
 
 ### Low Priority
 
