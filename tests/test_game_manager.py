@@ -176,7 +176,8 @@ def test_game_logger_log_transcript():
         with transcript_path.open("r", encoding="utf-8") as f:
             content = f.read()
 
-        assert "####" in content  # Timestamp header
+        # Timestamp headers should NOT be present (removed in new design)
+        assert "####" not in content
         assert "Player Alice made a proposal." in content
 
 
@@ -197,8 +198,8 @@ def test_game_logger_log_multiple_transcripts():
 
         assert "First entry." in content
         assert "Second entry." in content
-        # Should have two timestamp headers
-        assert content.count("####") == 2
+        # Timestamp headers should NOT be present (removed in new design)
+        assert content.count("####") == 0
 
 
 # --- Tests for GameManager Initialization ---

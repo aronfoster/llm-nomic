@@ -7,7 +7,7 @@ calculating state changes, and interfacing with the Human Judge.
 
 import logging
 
-from .data_models import Proposal, Vote
+from .data_models import Proposal, ProposalType, Rule, Vote
 from .game_manager import GameManager
 from .players.base_player import BasePlayer
 from .rules_manager import RulesManager
@@ -88,7 +88,9 @@ class GameLoop:
                 return
 
             # Step 2: Discuss
-            discussions = self._run_step_2_discuss(proposal, self.players)
+            discussions: list[tuple[str, str]] = self._run_step_2_discuss(
+                proposal, self.players
+            )
 
             # Step 3: Revise (V1 stub)
             proposal = self._run_step_3_revise(proposal, discussions)
@@ -100,7 +102,7 @@ class GameLoop:
             self.game_manager.game_state.next_proposal_id += 1
 
             # Step 5: Resolve
-            self._run_step_5_resolve(proposal, votes)
+            self._run_step_5_resolve(proposal, votes, discussions)
 
             logger.debug(
                 f"Next proposal ID incremented to "
@@ -227,13 +229,43 @@ class GameLoop:
             print(f"\n❌ ILLEGAL PROPOSAL: {e}")
             print(f"Proposer: {current_player.player_name}")
             print("The proposal cannot proceed.\n")
+
+            # Log illegal proposal to transcript
+            transcript_lines = [
+                f"## MOVE #{self.game_manager.game_state.move_number}",
+                f"**Proposer:** {current_player.player_name}",
+                f"**Type:** {proposal.type.value}",
+            ]
+
+            if proposal.target_rule_id:
+                transcript_lines.append(
+                    f"**Target Rule ID:** {proposal.target_rule_id}"
+                )
+
+            if proposal.new_text:
+                transcript_lines.append(f"**New Text:** {proposal.new_text}")
+
+            if proposal.rationale:
+                transcript_lines.append(f"**Rationale:** {proposal.rationale}")
+
+            transcript_lines.extend(
+                [
+                    "",
+                    "**Result:** ILLEGAL PROPOSAL",
+                    f"**Reason:** {e}",
+                ]
+            )
+
+            transcript_entry = "\n".join(transcript_lines)
+            self.game_manager.logger.log_transcript(transcript_entry)
+
             # Clear the proposal_id since validation failed
             proposal.proposal_id = None
             return None
 
     def _run_step_2_discuss(
         self, proposal: Proposal, players: list[BasePlayer]
-    ) -> list[str]:
+    ) -> list[tuple[str, str]]:
         """
         Step 2: Collect discussion from all players.
 
@@ -244,14 +276,14 @@ class GameLoop:
             players: List of all players
 
         Returns:
-            List of discussion strings (excludes None responses)
+            List of tuples (player_name, discussion) (excludes None responses)
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
 
         logger.info("Step 2: Discussion phase")
 
-        discussions: list[str] = []
+        discussions: list[tuple[str, str]] = []
 
         for player in players:
             discussion = player.discuss(
@@ -261,7 +293,7 @@ class GameLoop:
             )
 
             if discussion is not None:
-                discussions.append(discussion)
+                discussions.append((player.player_name, discussion))
                 logger.debug(f"{player.player_name} provided discussion")
             else:
                 logger.debug(f"{player.player_name} abstained from discussion")
@@ -270,7 +302,7 @@ class GameLoop:
         return discussions
 
     def _run_step_3_revise(
-        self, proposal: Proposal, discussions: list[str]
+        self, proposal: Proposal, discussions: list[tuple[str, str]]
     ) -> Proposal:
         """
         Step 3: Allow proposer to revise based on discussion (V1 stub).
@@ -280,7 +312,7 @@ class GameLoop:
 
         Args:
             proposal: The original proposal
-            discussions: List of discussion strings from other players
+            discussions: List of tuples (player_name, discussion) from players
 
         Returns:
             The proposal (unchanged in V1)
@@ -328,7 +360,10 @@ class GameLoop:
         return votes
 
     def _run_step_5_resolve(
-        self, proposal: Proposal, votes: list[Vote]
+        self,
+        proposal: Proposal,
+        votes: list[Vote],
+        discussions: list[tuple[str, str]],
     ) -> None:
         """
         Step 5: Resolve the turn - tally votes, consult judge, apply
@@ -345,6 +380,8 @@ class GameLoop:
         Args:
             proposal: The proposal that was voted on
             votes: List of Vote objects from all players
+            discussions: List of tuples (player_name, discussion) from
+                discussion phase
 
         Raises:
             ValueError: If game state is invalid
@@ -448,7 +485,12 @@ class GameLoop:
         # Note: judge_approved = inverse of judge_vetoed for passed proposals
         judge_approved = proposal_passed and not judge_vetoed
         transcript_entry = self._format_transcript(
-            proposal, votes, proposal_passed, judge_approved
+            proposal,
+            votes,
+            proposal_passed,
+            judge_approved,
+            discussions,
+            self.game_manager.rules_manager.rules,
         )
         self.game_manager.logger.log_transcript(transcript_entry)
         logger.debug("Transcript logged")
@@ -515,6 +557,8 @@ class GameLoop:
         votes: list[Vote],
         proposal_passed: bool,
         judge_approved: bool,
+        discussions: list[tuple[str, str]],
+        rules: list[Rule],
     ) -> str:
         """
         Format a complete turn summary for the transcript.
@@ -524,6 +568,8 @@ class GameLoop:
             votes: List of votes
             proposal_passed: Whether the vote passed
             judge_approved: Whether the judge approved
+            discussions: List of tuples (player_name, discussion)
+            rules: List of all current rules
 
         Returns:
             Formatted markdown string for the transcript
@@ -545,6 +591,28 @@ class GameLoop:
 
         if proposal.rationale:
             lines.append(f"**Rationale:** {proposal.rationale}")
+
+        # Add original text for AMEND, REPEAL, or TRANSMUTE proposals
+        if proposal.type in [
+            ProposalType.AMEND,
+            ProposalType.REPEAL,
+            ProposalType.TRANSMUTE,
+        ]:
+            if proposal.target_rule_id:
+                # Find the original rule
+                for rule in rules:
+                    if rule.rule_id == proposal.target_rule_id:
+                        lines.append(
+                            f"**Original Text (Rule {rule.rule_id}):** "
+                            f"{rule.text}"
+                        )
+                        break
+
+        # Add discussions section
+        if discussions:
+            lines.append("\n### Discussions")
+            for player_name, discussion in discussions:
+                lines.append(f"- **{player_name}:** {discussion}")
 
         lines.append("\n### Votes")
         for vote in votes:
