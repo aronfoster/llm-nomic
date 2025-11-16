@@ -175,7 +175,8 @@ def test_step_1_propose_valid(
     assert proposal.proposer_name == "Alice"
     assert proposal.type == ProposalType.ADD
     assert proposal.proposal_id == "301"
-    assert mock_game_state.next_proposal_id == 302
+    # Counter is not incremented by _run_step_1_propose (happens in run_turn)
+    assert mock_game_state.next_proposal_id == 301
     alice.propose.assert_called_once()
 
 

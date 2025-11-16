@@ -88,6 +88,9 @@ class GameLoop:
                 logger.warning("Turn ended due to illegal proposal")
                 return
 
+            # Increment the proposal ID counter after valid proposal
+            self.game_manager.game_state.next_proposal_id += 1
+
             # Step 2: Discuss
             discussions = self._run_step_2_discuss(proposal, other_players)
 
@@ -201,9 +204,6 @@ class GameLoop:
             temp_rules_manager.apply_proposal(proposal)
 
             # If we get here, the proposal is valid
-            # Increment the counter (proposal_id is already assigned)
-            self.game_manager.game_state.next_proposal_id += 1
-
             # We discard temp_rules_manager and return success
             logger.info(
                 f"Proposal validation passed, assigned ID {current_id_str}"
