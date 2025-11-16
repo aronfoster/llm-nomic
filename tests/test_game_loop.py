@@ -281,9 +281,9 @@ def test_step_2_discuss_collects_all_responses(
     discussions = game_loop._run_step_2_discuss(proposal, all_players)
 
     assert len(discussions) == 3
-    assert "Alice's discussion" in discussions
-    assert "Bob's discussion" in discussions
-    assert "Charlie's discussion" in discussions
+    assert ("Alice", "Alice's discussion") in discussions
+    assert ("Bob", "Bob's discussion") in discussions
+    assert ("Charlie", "Charlie's discussion") in discussions
 
     for player in all_players:
         player.discuss.assert_called_once()
@@ -309,9 +309,10 @@ def test_step_2_discuss_filters_none_responses(
     discussions = game_loop._run_step_2_discuss(proposal, all_players)
 
     assert len(discussions) == 2
-    assert "Alice's discussion" in discussions
-    assert "Charlie's discussion" in discussions
-    assert "Bob's discussion" not in discussions
+    assert ("Alice", "Alice's discussion") in discussions
+    assert ("Charlie", "Charlie's discussion") in discussions
+    # Verify Bob is not in the discussions
+    assert not any(name == "Bob" for name, _ in discussions)
 
 
 # --- Tests for Step 3: Revise ---
@@ -327,7 +328,7 @@ def test_step_3_revise_returns_original_proposal(game_loop: GameLoop) -> None:
         new_text="Test rule.",
     )
 
-    discussions = ["Discussion 1", "Discussion 2"]
+    discussions = [("Alice", "Discussion 1"), ("Bob", "Discussion 2")]
 
     result = game_loop._run_step_3_revise(proposal, discussions)
 
@@ -421,7 +422,9 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    game_loop._run_step_5_resolve(proposal, votes)
+    discussions: list[tuple[str, str]] = []
+
+    game_loop._run_step_5_resolve(proposal, votes, discussions)
 
     # Verify judge was consulted (veto prompt + 3 score prompts)
     assert mock_input.call_count == 4
@@ -472,7 +475,9 @@ def test_step_5_resolve_judge_veto(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    game_loop._run_step_5_resolve(proposal, votes)
+    discussions: list[tuple[str, str]] = []
+
+    game_loop._run_step_5_resolve(proposal, votes, discussions)
 
     # Verify judge was consulted (veto prompt + 3 score prompts)
     assert mock_input.call_count == 4
@@ -518,7 +523,9 @@ def test_step_5_resolve_failed_proposal_score_penalty(
         Vote(player_name="Charlie", vote="NO"),
     ]
 
-    game_loop._run_step_5_resolve(proposal, votes)
+    discussions: list[tuple[str, str]] = []
+
+    game_loop._run_step_5_resolve(proposal, votes, discussions)
 
     # Verify proposal was NOT applied (failed vote)
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()
@@ -556,7 +563,9 @@ def test_step_5_resolve_manual_score_entry(
         Vote(player_name="Charlie", vote="NO"),
     ]
 
-    game_loop._run_step_5_resolve(proposal, votes)
+    discussions: list[tuple[str, str]] = []
+
+    game_loop._run_step_5_resolve(proposal, votes, discussions)
 
     # Verify manually entered scores
     # Judge manually entered: Alice=8, Bob=0, Charlie=10
@@ -586,8 +595,10 @@ def test_step_5_resolve_turn_advances_correctly(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
+    discussions: list[tuple[str, str]] = []
+
     # Current player is Alice, should advance to Bob
-    game_loop._run_step_5_resolve(proposal, votes)
+    game_loop._run_step_5_resolve(proposal, votes, discussions)
 
     assert mock_game_state.current_player_name == "Bob"
     assert mock_game_state.move_number == 2
@@ -614,10 +625,12 @@ def test_step_5_resolve_turn_wraps_around(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
+    discussions: list[tuple[str, str]] = []
+
     # Set current player to Charlie (last in turn order)
     mock_game_state.current_player_name = "Charlie"
 
-    game_loop._run_step_5_resolve(proposal, votes)
+    game_loop._run_step_5_resolve(proposal, votes, discussions)
 
     # Should wrap around to Alice
     assert mock_game_state.current_player_name == "Alice"
@@ -650,7 +663,9 @@ def test_step_5_resolve_veto_blocks_proposal_application(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    game_loop._run_step_5_resolve(proposal, votes)
+    discussions: list[tuple[str, str]] = []
+
+    game_loop._run_step_5_resolve(proposal, votes, discussions)
 
     # CRITICAL: Verify proposal was NOT applied due to veto
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()
@@ -749,6 +764,16 @@ def test_run_turn_stops_on_illegal_proposal(
     mock_game_manager.save_game_state.assert_not_called()
     mock_game_manager.save_rules.assert_not_called()
 
+    # CRITICAL: Verify that the illegal proposal was logged to the transcript
+    mock_game_manager.logger.log_transcript.assert_called_once()
+
+    # Verify the logged transcript contains the expected details
+    logged_transcript = mock_game_manager.logger.log_transcript.call_args[0][0]
+    assert "MOVE #1" in logged_transcript
+    assert "Alice" in logged_transcript
+    assert "ILLEGAL PROPOSAL" in logged_transcript
+    assert "Amend" in logged_transcript
+
 
 def test_run_turn_handles_exceptions(
     game_loop: GameLoop, mock_players: list[Mock]
@@ -764,14 +789,18 @@ def test_run_turn_handles_exceptions(
 # --- Tests for Transcript Formatting ---
 
 
-def test_format_transcript_includes_all_details(game_loop: GameLoop) -> None:
+def test_format_transcript_includes_all_details(
+    game_loop: GameLoop, mock_rules: list[Rule]
+) -> None:
     """Test _format_transcript includes all required details."""
+    # Create an AMEND proposal to test original text inclusion
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
-        type=ProposalType.ADD,
+        type=ProposalType.AMEND,
         proposal_id="301",
-        new_text="Test rule text.",
+        target_rule_id="201",  # Mutable rule from fixture
+        new_text="Updated rule text.",
         rationale="This is a good idea.",
     )
 
@@ -780,23 +809,46 @@ def test_format_transcript_includes_all_details(game_loop: GameLoop) -> None:
         Vote(player_name="Charlie", vote="NO", reason="I disagree"),
     ]
 
+    discussions = [
+        ("Bob", "This is unclear"),
+        ("Charlie", "I have concerns"),
+    ]
+
     transcript = game_loop._format_transcript(
         proposal=proposal,
         votes=votes,
         proposal_passed=False,
         judge_approved=True,
+        discussions=discussions,
+        rules=mock_rules,
     )
 
-    # Verify key elements are present
+    # Verify key proposal elements are present
     assert "MOVE #1" in transcript
     assert "Alice" in transcript
-    assert "Add" in transcript
+    assert "Amend" in transcript
     assert "301" in transcript
-    assert "Test rule text." in transcript
+    assert "Updated rule text." in transcript
     assert "This is a good idea." in transcript
+
+    # Verify original text is present (for AMEND proposal)
+    assert "Original Text (Rule 201):" in transcript
+    assert "Players take turns." in transcript  # Text from mock_rules fixture
+
+    # Verify discussions section is present
+    assert "### Discussions" in transcript
     assert "Bob" in transcript
+    assert "This is unclear" in transcript
     assert "Charlie" in transcript
+    assert "I have concerns" in transcript
+
+    # Verify votes section with reasons
+    assert "### Votes" in transcript
     assert "YES" in transcript
+    assert "I agree" in transcript
     assert "NO" in transcript
+    assert "I disagree" in transcript
+
+    # Verify vote result and judge approval
     assert "FAILED" in transcript
     assert "Judge Approval:**" in transcript or "Judge Approval:" in transcript

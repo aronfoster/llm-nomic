@@ -47,7 +47,7 @@ class GameLogger:
 
     def log_transcript(self, text: str) -> None:
         """
-        Append formatted markdown text to the game transcript.
+        Append raw markdown text to the game transcript.
 
         Args:
             text: The text to append to the transcript
@@ -55,8 +55,5 @@ class GameLogger:
         Raises:
             IOError: If the transcript file cannot be written
         """
-        timestamp = datetime.now().isoformat()
-        formatted_text = f"#### {timestamp}\n\n{text}\n\n"
-
         with self.transcript_path.open("a", encoding="utf-8") as f:
-            f.write(formatted_text)
+            f.write(text + "\n\n")

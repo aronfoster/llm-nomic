@@ -33,13 +33,18 @@ Our architecture is built on these principles:
   * When a proposal to AMEND, REPEAL, or TRANSMUTE is under discussion or voting, the original rule text is now displayed
   * Helps players make informed decisions by seeing both the original and proposed new text
   * Handles cases where the rule is not found (though this should be prevented by validation)
+* ✅ **Game transcript overhauled for completeness and parsability**
+  * Removed timestamp headers (#### {timestamp}) - now only raw text is logged
+  * Each transcript entry now uses `## MOVE #X` as the top-level header
+  * Illegal proposals are now logged to the transcript with full details and reason
+  * Discussions are now included in the transcript with player names
+  * For AMEND, REPEAL, and TRANSMUTE proposals, the original rule text is now included
+  * Vote reasons are properly formatted and included
+  * Comprehensive unit tests added for all logging functionality
 
 ### HIGH PRIORITY
 
 * _run_step_5_resolve should treat zero voters as an automatic approval
-* Voting Phase should list all submitted discussions along with who said what.
-* Game_transcript should include all discussion
-  * ILLEGAL PROPOSALS should get logged to game history
 * Doesn't look like Proposal Id is getting incremented/saved. The game state is stuck at 301.
 
 ### Low Priority
