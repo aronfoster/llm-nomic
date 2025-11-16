@@ -96,11 +96,12 @@ class GameLoop:
             # Step 4: Vote
             votes = self._run_step_4_vote(proposal, self.players)
 
+            # Increment the proposal ID counter after the turn
+            self.game_manager.game_state.next_proposal_id += 1
+
             # Step 5: Resolve
             self._run_step_5_resolve(proposal, votes)
 
-            # Increment the proposal ID counter after the turn
-            self.game_manager.game_state.next_proposal_id += 1
             logger.debug(
                 f"Next proposal ID incremented to "
                 f"{self.game_manager.game_state.next_proposal_id}"
