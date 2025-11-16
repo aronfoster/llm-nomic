@@ -29,12 +29,15 @@ Our architecture is built on these principles:
   * Judge scoring applies for both passed and failed proposals
   * All tests updated to support new manual scoring workflow
   * Added comprehensive veto test to verify judge can block passed proposals
+* ✅ **Discussion and voting phases now show original rule text**
+  * When a proposal to AMEND, REPEAL, or TRANSMUTE is under discussion or voting, the original rule text is now displayed
+  * Helps players make informed decisions by seeing both the original and proposed new text
+  * Handles cases where the rule is not found (though this should be prevented by validation)
 
 ### HIGH PRIORITY
 
 * _run_step_5_resolve should treat zero voters as an automatic approval
 * Voting Phase should list all submitted discussions along with who said what.
-* Discussion phase should print which existing rule is being affected (original text)
 * Game_transcript should include all discussion
   * ILLEGAL PROPOSALS should get logged to game history
 * Doesn't look like Proposal Id is getting incremented/saved. The game state is stuck at 301.
