@@ -223,3 +223,108 @@ class HumanPlayer(BasePlayer):
         return Vote(
             player_name=self.player_name, vote=vote_value, reason=reason
         )
+
+    def revise(
+        self,
+        proposal: Proposal,
+        discussions: list[tuple[str, str]],
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> Proposal | None:
+        """
+        Allow the human player to revise their proposal based on discussion.
+
+        Displays the original proposal, all discussions, and prompts the user
+        to revise, submit as-is, or withdraw. Implements Rule 112 enforcement
+        (must revise or withdraw if discussions contain "UNCLEAR" or
+        "AMBIGUOUS").
+
+        Args:
+            proposal: The original proposal made by this player.
+            discussions: A list of tuples (player_name, discussion_text).
+            game_state: The current state of the game.
+            rules: The current list of all rules.
+
+        Returns:
+            The (potentially) revised Proposal object,
+            or None if the player chooses to withdraw the proposal.
+        """
+        print(f"\n--- {self.player_name}'s Turn: Revision Phase ---")
+
+        # Print original proposal details
+        print("\nOriginal Proposal:")
+        print(f"  Type: {proposal.type.value}")
+        if proposal.target_rule_id:
+            print(f"  Target Rule ID: {proposal.target_rule_id}")
+        if proposal.new_text:
+            print(f"  New Text: {proposal.new_text}")
+        if proposal.rationale:
+            print(f"  Rationale: {proposal.rationale}")
+
+        # Print all discussions
+        print("\n--- Discussions ---")
+        for name, text in discussions:
+            print(f"{name}: {text}")
+
+        # Check for Rule 112: must revise if any discussion contains
+        # "UNCLEAR" or "AMBIGUOUS"
+        must_revise = any(
+            "UNCLEAR" in d[1].upper() or "AMBIGUOUS" in d[1].upper()
+            for d in discussions
+        )
+
+        # Build prompt based on Rule 112
+        if must_revise:
+            print(
+                "\n⚠️  Rule 112: A discussion contains 'UNCLEAR' or "
+                "'AMBIGUOUS'."
+            )
+            print("You MUST revise or withdraw this proposal.")
+            prompt = "You MUST (R)evise or (W)ithdraw: "
+        else:
+            prompt = "(R)evise, (S)ubmit as-is, or (W)ithdraw: "
+
+        # Handle input
+        while True:
+            choice = input(prompt).strip().upper()
+
+            if choice in ["W", "WITHDRAW"]:
+                print("Proposal withdrawn.")
+                return None
+
+            elif choice in ["S", "SUBMIT"] and not must_revise:
+                print("Submitting proposal as-is.")
+                return proposal
+
+            elif choice in ["R", "REVISE"]:
+                # Create a copy of the original proposal
+                new_proposal = proposal.model_copy()
+
+                # Prompt for new text (if applicable for this proposal type)
+                if proposal.type in [ProposalType.ADD, ProposalType.AMEND]:
+                    new_text_input = input(
+                        f"New text for the rule (current: "
+                        f"'{proposal.new_text}'): "
+                    ).strip()
+                    if new_text_input:
+                        new_proposal.new_text = new_text_input
+                    else:
+                        print("Keeping original new_text.")
+
+                # Prompt for new rationale
+                rationale_input = input(
+                    f"New rationale (current: '{proposal.rationale}'): "
+                ).strip()
+                if rationale_input:
+                    new_proposal.rationale = rationale_input
+                else:
+                    print("Keeping original rationale.")
+
+                print("Proposal revised.")
+                return new_proposal
+
+            else:
+                if must_revise:
+                    print("Invalid choice. You must enter R or W.")
+                else:
+                    print("Invalid choice. Please enter R, S, or W.")
