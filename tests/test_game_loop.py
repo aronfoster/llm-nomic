@@ -399,14 +399,14 @@ def test_step_4_vote_respects_individual_votes(
 # --- Tests for Step 5: Resolve ---
 
 
-@patch("builtins.input", return_value="y")
+@patch("builtins.input", side_effect=["n", "10", "5", "-2"])
 def test_step_5_resolve_unanimous_pass_with_judge_approval(
     mock_input: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,
 ) -> None:
-    """Test _run_step_5_resolve with unanimous YES votes and judge approval."""
+    """Test _run_step_5_resolve with unanimous YES votes and no veto."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -423,8 +423,8 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
 
     game_loop._run_step_5_resolve(proposal, votes)
 
-    # Verify judge was consulted
-    mock_input.assert_called_once()
+    # Verify judge was consulted (veto prompt + 3 score prompts)
+    assert mock_input.call_count == 4
 
     # Verify proposal was applied to rules
     mock_game_manager.rules_manager.apply_proposal.assert_called_once_with(
@@ -440,22 +440,24 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
     # Verify transcript was logged
     mock_game_manager.logger.log_transcript.assert_called_once()
 
-    # Verify score changes (Rule 202: 12 * 3/3 = 12 points for proposer)
-    assert mock_game_state.scores["Alice"] == 12
+    # Verify manually entered scores were applied
+    assert mock_game_state.scores["Alice"] == 10
+    assert mock_game_state.scores["Bob"] == 5
+    assert mock_game_state.scores["Charlie"] == -2
 
     # Verify turn advanced
     assert mock_game_state.current_player_name == "Bob"
     assert mock_game_state.move_number == 2
 
 
-@patch("builtins.input", return_value="n")
+@patch("builtins.input", side_effect=["y", "0", "0", "0"])
 def test_step_5_resolve_judge_veto(
     mock_input: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,
 ) -> None:
-    """Test _run_step_5_resolve when judge vetoes the proposal."""
+    """Test _run_step_5_resolve when judge vetoes a passed proposal."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -472,30 +474,35 @@ def test_step_5_resolve_judge_veto(
 
     game_loop._run_step_5_resolve(proposal, votes)
 
-    # Verify judge was consulted
-    mock_input.assert_called_once()
+    # Verify judge was consulted (veto prompt + 3 score prompts)
+    assert mock_input.call_count == 4
 
-    # Verify proposal was NOT applied
+    # Verify proposal was NOT applied (vetoed)
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()
 
-    # Verify rules were NOT saved
+    # Verify rules were NOT saved (vetoed)
     mock_game_manager.save_rules.assert_not_called()
 
-    # Verify game state was NOT saved
-    mock_game_manager.save_game_state.assert_not_called()
+    # Verify game state WAS saved (turn advances even on veto)
+    mock_game_manager.save_game_state.assert_called_once()
 
-    # Verify transcript was NOT logged
-    mock_game_manager.logger.log_transcript.assert_not_called()
+    # Verify transcript WAS logged
+    mock_game_manager.logger.log_transcript.assert_called_once()
+
+    # Verify scores were still entered (all zeros in this test)
+    assert mock_game_state.scores["Alice"] == 0
+    assert mock_game_state.scores["Bob"] == 0
+    assert mock_game_state.scores["Charlie"] == 0
 
 
-@patch("builtins.input", return_value="y")
+@patch("builtins.input", side_effect=["n", "-10", "3", "3"])
 def test_step_5_resolve_failed_proposal_score_penalty(
     mock_input: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,
 ) -> None:
-    """Test _run_step_5_resolve applies penalty for failed proposal."""
+    """Test _run_step_5_resolve with failed proposal and manual scoring."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -516,24 +523,24 @@ def test_step_5_resolve_failed_proposal_score_penalty(
     # Verify proposal was NOT applied (failed vote)
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()
 
-    # Verify score changes:
-    # Rule 202: 12 * 2/3 = 8 points for proposer
-    # Rule 206: -10 points for failed proposal
-    # Net: 8 - 10 = -2
-    assert mock_game_state.scores["Alice"] == -2
+    # Verify manually entered scores were applied
+    # Judge entered: Alice=-10, Bob=3, Charlie=3
+    assert mock_game_state.scores["Alice"] == -10
+    assert mock_game_state.scores["Bob"] == 3
+    assert mock_game_state.scores["Charlie"] == 3
 
     # Verify turn advanced anyway
     assert mock_game_state.current_player_name == "Bob"
     assert mock_game_state.move_number == 2
 
 
-@patch("builtins.input", return_value="y")
-def test_step_5_resolve_score_calculation_rule_202(
+@patch("builtins.input", side_effect=["n", "8", "0", "10"])
+def test_step_5_resolve_manual_score_entry(
     mock_input: Mock,
     game_loop: GameLoop,
     mock_game_state: GameState,
 ) -> None:
-    """Test score calculation follows Rule 202 (12 * favorable_fraction)."""
+    """Test manual score entry by judge with mixed votes."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -542,7 +549,7 @@ def test_step_5_resolve_score_calculation_rule_202(
         new_text="Test rule.",
     )
 
-    # 2 YES out of 3 voters = 2/3 favorable fraction
+    # 2 YES out of 3 voters (proposal fails, not unanimous)
     votes = [
         Vote(player_name="Alice", vote="YES"),
         Vote(player_name="Bob", vote="YES"),
@@ -551,13 +558,14 @@ def test_step_5_resolve_score_calculation_rule_202(
 
     game_loop._run_step_5_resolve(proposal, votes)
 
-    # Rule 202: round(12 * 2/3) = round(8) = 8
-    # Rule 206: -10 for failed proposal
-    # Net: 8 - 10 = -2
-    assert mock_game_state.scores["Alice"] == -2
+    # Verify manually entered scores
+    # Judge manually entered: Alice=8, Bob=0, Charlie=10
+    assert mock_game_state.scores["Alice"] == 8
+    assert mock_game_state.scores["Bob"] == 0
+    assert mock_game_state.scores["Charlie"] == 10
 
 
-@patch("builtins.input", return_value="y")
+@patch("builtins.input", side_effect=["n", "0", "0", "0"])
 def test_step_5_resolve_turn_advances_correctly(
     mock_input: Mock,
     game_loop: GameLoop,
@@ -585,7 +593,7 @@ def test_step_5_resolve_turn_advances_correctly(
     assert mock_game_state.move_number == 2
 
 
-@patch("builtins.input", return_value="y")
+@patch("builtins.input", side_effect=["n", "0", "0", "0"])
 def test_step_5_resolve_turn_wraps_around(
     mock_input: Mock,
     game_loop: GameLoop,
@@ -615,10 +623,60 @@ def test_step_5_resolve_turn_wraps_around(
     assert mock_game_state.current_player_name == "Alice"
 
 
+@patch("builtins.input", side_effect=["y", "-5", "0", "0"])
+def test_step_5_resolve_veto_blocks_proposal_application(
+    mock_input: Mock,
+    game_loop: GameLoop,
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
+) -> None:
+    """Test that judge veto prevents proposal from being applied to rules.
+
+    This test verifies that when proposal_passed is True but the judge
+    vetoes (responds 'y' to veto prompt), the proposal is NOT applied.
+    """
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="This proposal will be vetoed.",
+    )
+
+    # Unanimous YES votes - proposal would pass without veto
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
+    ]
+
+    game_loop._run_step_5_resolve(proposal, votes)
+
+    # CRITICAL: Verify proposal was NOT applied due to veto
+    mock_game_manager.rules_manager.apply_proposal.assert_not_called()
+
+    # CRITICAL: Verify rules were NOT saved
+    mock_game_manager.save_rules.assert_not_called()
+
+    # Verify game state was still saved (turn advances)
+    mock_game_manager.save_game_state.assert_called_once()
+
+    # Verify transcript was logged
+    mock_game_manager.logger.log_transcript.assert_called_once()
+
+    # Verify judge was consulted (veto + 3 score prompts)
+    assert mock_input.call_count == 4
+
+    # Verify scores were applied (Alice gets -5 penalty)
+    assert mock_game_state.scores["Alice"] == -5
+    assert mock_game_state.scores["Bob"] == 0
+    assert mock_game_state.scores["Charlie"] == 0
+
+
 # --- Tests for run_turn Integration ---
 
 
-@patch("builtins.input", return_value="y")
+@patch("builtins.input", side_effect=["n", "10", "5", "0"])
 def test_run_turn_full_integration_success(
     mock_input: Mock,
     game_loop: GameLoop,
@@ -646,8 +704,8 @@ def test_run_turn_full_integration_success(
     bob.vote.assert_called_once()
     charlie.vote.assert_called_once()
 
-    # Judge was consulted
-    mock_input.assert_called_once()
+    # Judge was consulted (veto + 3 score prompts)
+    assert mock_input.call_count == 4
 
     # Game state and rules were saved
     mock_game_manager.save_game_state.assert_called_once()
