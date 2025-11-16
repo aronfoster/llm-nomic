@@ -61,9 +61,9 @@ class GameLoop:
 
         This method orchestrates the entire turn process:
         1. Get proposal from current player (with validation)
-        2. Collect discussion from other players
+        2. Collect discussion from all players (per Rule 111)
         3. Allow revision (V1 stub - not implemented)
-        4. Collect votes from other players
+        4. Collect votes from all players (per Rule 105)
         5. Resolve the turn (tally, judge, apply changes, advance)
 
         Raises:
@@ -78,9 +78,8 @@ class GameLoop:
                 f"Starting turn {self.game_manager.game_state.move_number}"
             )
 
-            # Get current player and other players
+            # Get current player
             current_player = self._get_current_player()
-            other_players = self._get_other_players()
 
             # Step 1: Propose (with validation)
             proposal = self._run_step_1_propose(current_player)
@@ -89,13 +88,13 @@ class GameLoop:
                 return
 
             # Step 2: Discuss
-            discussions = self._run_step_2_discuss(proposal, other_players)
+            discussions = self._run_step_2_discuss(proposal, self.players)
 
             # Step 3: Revise (V1 stub)
             proposal = self._run_step_3_revise(proposal, discussions)
 
             # Step 4: Vote
-            votes = self._run_step_4_vote(proposal, other_players)
+            votes = self._run_step_4_vote(proposal, self.players)
 
             # Step 5: Resolve
             self._run_step_5_resolve(proposal, votes)
@@ -226,14 +225,16 @@ class GameLoop:
             return None
 
     def _run_step_2_discuss(
-        self, proposal: Proposal, other_players: list[BasePlayer]
+        self, proposal: Proposal, players: list[BasePlayer]
     ) -> list[str]:
         """
-        Step 2: Collect discussion from other players.
+        Step 2: Collect discussion from all players.
+
+        Per Rule 111, all players (including the proposer) may discuss.
 
         Args:
             proposal: The proposal to discuss
-            other_players: List of players excluding the proposer
+            players: List of all players
 
         Returns:
             List of discussion strings (excludes None responses)
@@ -245,7 +246,7 @@ class GameLoop:
 
         discussions: list[str] = []
 
-        for player in other_players:
+        for player in players:
             discussion = player.discuss(
                 proposal=proposal,
                 game_state=self.game_manager.game_state,
@@ -285,17 +286,19 @@ class GameLoop:
         return proposal
 
     def _run_step_4_vote(
-        self, proposal: Proposal, other_players: list[BasePlayer]
+        self, proposal: Proposal, players: list[BasePlayer]
     ) -> list[Vote]:
         """
-        Step 4: Collect votes from other players.
+        Step 4: Collect votes from all players.
+
+        Per Rule 105, every player must participate in every vote.
 
         Args:
             proposal: The proposal to vote on
-            other_players: List of players excluding the proposer
+            players: List of all players
 
         Returns:
-            List of Vote objects from all other players
+            List of Vote objects from all players
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
@@ -304,7 +307,7 @@ class GameLoop:
 
         votes: list[Vote] = []
 
-        for player in other_players:
+        for player in players:
             vote = player.vote(
                 proposal=proposal,
                 game_state=self.game_manager.game_state,
