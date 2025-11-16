@@ -20,15 +20,16 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-* ILLEGAL PROPOSALS should get logged to game history
 * _run_step_5_resolve should treat zero voters as an automatic approval
 * The engine trusts whatever Proposal object a player returns. There is no enforcement that the proposal's proposer_name matches the player whose turn it is; that value is used later for scoring, transcripts, and penalties. A malicious (or buggy) player implementation could submit a proposal that attributes itself to another player, causing the wrong person to gain/lose points or to appear responsible for a rule change.
 * Voting Phase should list all submitted discussions along with who said what.
 * Discussion phase should print which existing rule is being affected (original text)
 * Game_transcript should include all discussion
-* "Judge, is this proposal legal?" is ambiguous, or at least confusing to me. So is "y" for agreeing with the Result? So if the assessment is that a proposal failed, and I judge "n", does that proposal get approved?
+  * ILLEGAL PROPOSALS should get logged to game history
+* "Judge, is this proposal legal?" is ambiguous, or at least confusing to me. So is "y" for agreeing with the Result? So if the assessment is that a proposal failed, and I judge "n", does that proposal get approved? We need to revise the judge structure.
+  * Changes to points per proposal are static. They have to be dynamic. This is probably going to be a big task. We might have to create an entire class for point calculating, since LLMs suck at math. Do we have a list of point affecting events, and we'll check each of those each turn (by the judge)? e.g. rule: if justification is written in haiku form, get an extra 5 points.
+  * Maybe V1 will just be the judge calculates the points for each vote?
 * Doesn't look like Proposal Id is getting incremented/saved. The game state is stuck at 301.
-* Changes to points per proposal are static. They have to be dynamic. This is probably going to be a big task. We might have to create an entire class for point calculating, since LLMs suck at math. Do we have a list of point affecting events, and we'll check each of those each turn (by the judge)? e.g. rule: if justification is written in haiku form, get an extra 5 points.
 
 ### Low Priority
 
