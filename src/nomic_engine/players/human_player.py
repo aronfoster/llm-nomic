@@ -92,7 +92,8 @@ class HumanPlayer(BasePlayer):
             proposer_name=self.player_name,
             move_number=game_state.move_number,
             type=proposal_type,
-            rule_id=rule_id,
+            proposal_id=None,
+            target_rule_id=rule_id,
             new_text=new_text,
             rationale=rationale,
         )
@@ -117,8 +118,8 @@ class HumanPlayer(BasePlayer):
         print(f"\n--- {self.player_name}'s Turn: Discussion Phase ---")
         print(f"Proposal by {proposal.proposer_name}:")
         print(f"  Type: {proposal.type.value}")
-        if proposal.rule_id:
-            print(f"  Rule ID: {proposal.rule_id}")
+        if proposal.target_rule_id:
+            print(f"  Target Rule ID: {proposal.target_rule_id}")
         if proposal.new_text:
             print(f"  New Text: {proposal.new_text}")
         if proposal.rationale:
@@ -149,8 +150,8 @@ class HumanPlayer(BasePlayer):
         print(f"\n--- {self.player_name}'s Turn: Voting Phase ---")
         print(f"Proposal by {proposal.proposer_name}:")
         print(f"  Type: {proposal.type.value}")
-        if proposal.rule_id:
-            print(f"  Rule ID: {proposal.rule_id}")
+        if proposal.target_rule_id:
+            print(f"  Target Rule ID: {proposal.target_rule_id}")
         if proposal.new_text:
             print(f"  New Text: {proposal.new_text}")
         if proposal.rationale:

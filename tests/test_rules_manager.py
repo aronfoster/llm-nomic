@@ -67,7 +67,7 @@ def test_apply_proposal_add_success(rules_manager: RulesManager) -> None:
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="New players start with 10 points.",
     )
 
@@ -83,12 +83,12 @@ def test_apply_proposal_add_success(rules_manager: RulesManager) -> None:
 def test_apply_proposal_add_duplicate_rule_id(
     rules_manager: RulesManager,
 ) -> None:
-    """Test that adding a rule with duplicate rule_id raises ValueError."""
+    """Test that adding a rule with duplicate proposal_id raises ValueError."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="101",  # Already exists
+        proposal_id="101",  # Already exists
         new_text="Duplicate rule.",
     )
 
@@ -104,30 +104,29 @@ def test_apply_proposal_add_missing_new_text(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text=None,
     )
 
-    with pytest.raises(
-        ValueError, match="Add proposals must have a rule_id and new_text"
-    ):
+    with pytest.raises(ValueError, match="Add proposals must have new_text"):
         rules_manager.apply_proposal(proposal)
 
 
-def test_apply_proposal_add_missing_rule_id(
+def test_apply_proposal_add_with_target_rule_id(
     rules_manager: RulesManager,
 ) -> None:
-    """Test that Add proposal without rule_id raises ValueError."""
+    """Test that Add proposal with target_rule_id raises ValueError."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id=None,
+        proposal_id="301",
+        target_rule_id="201",  # Should not have target_rule_id
         new_text="Some rule text.",
     )
 
     with pytest.raises(
-        ValueError, match="Add proposals must have a rule_id and new_text"
+        ValueError, match="Add proposals must not have a target_rule_id"
     ):
         rules_manager.apply_proposal(proposal)
 
@@ -136,35 +135,41 @@ def test_apply_proposal_add_missing_rule_id(
 
 
 def test_apply_proposal_amend_success(rules_manager: RulesManager) -> None:
-    """Test successful amendment of an existing mutable rule."""
+    """Test successful amendment (repeal and replace) of a mutable rule."""
     proposal = Proposal(
         proposer_name="Bob",
         move_number=2,
         type=ProposalType.AMEND,
-        rule_id="201",
+        proposal_id="301",
+        target_rule_id="201",
         new_text="Players can propose rule changes with proper justification.",
     )
 
     rules_manager.apply_proposal(proposal)
 
-    amended_rule = rules_manager._find_rule_by_id("201")
-    assert amended_rule is not None
+    # Original rule 201 should be gone
+    assert rules_manager._find_rule_by_id("201") is None
+
+    # New rule 301 should exist with the new text
+    new_rule = rules_manager._find_rule_by_id("301")
+    assert new_rule is not None
     assert (
-        amended_rule.text
+        new_rule.text
         == "Players can propose rule changes with proper justification."
     )
-    assert amended_rule.status == RuleStatus.MUTABLE
+    assert new_rule.status == RuleStatus.MUTABLE
 
 
 def test_apply_proposal_amend_nonexistent_rule(
     rules_manager: RulesManager,
 ) -> None:
-    """Test that amending a non-existent rule_id raises ValueError."""
+    """Test that amending a non-existent target_rule_id raises ValueError."""
     proposal = Proposal(
         proposer_name="Bob",
         move_number=2,
         type=ProposalType.AMEND,
-        rule_id="999",
+        proposal_id="301",
+        target_rule_id="999",
         new_text="Updated text.",
     )
 
@@ -180,13 +185,12 @@ def test_apply_proposal_amend_missing_new_text(
         proposer_name="Bob",
         move_number=2,
         type=ProposalType.AMEND,
-        rule_id="201",
+        proposal_id="301",
+        target_rule_id="201",
         new_text=None,
     )
 
-    with pytest.raises(
-        ValueError, match="Amend proposals must have a rule_id and new_text"
-    ):
+    with pytest.raises(ValueError, match="Amend proposals must have new_text"):
         rules_manager.apply_proposal(proposal)
 
 
@@ -198,7 +202,8 @@ def test_apply_proposal_amend_immutable_rule(
         proposer_name="Bob",
         move_number=2,
         type=ProposalType.AMEND,
-        rule_id="101",  # Immutable rule
+        proposal_id="301",
+        target_rule_id="101",  # Immutable rule
         new_text="Cannot change this.",
     )
 
@@ -217,7 +222,8 @@ def test_apply_proposal_repeal_success(rules_manager: RulesManager) -> None:
         proposer_name="Charlie",
         move_number=3,
         type=ProposalType.REPEAL,
-        rule_id="201",
+        proposal_id="301",
+        target_rule_id="201",
     )
 
     rules_manager.apply_proposal(proposal)
@@ -229,12 +235,13 @@ def test_apply_proposal_repeal_success(rules_manager: RulesManager) -> None:
 def test_apply_proposal_repeal_nonexistent_rule(
     rules_manager: RulesManager,
 ) -> None:
-    """Test that repealing a non-existent rule_id raises ValueError."""
+    """Test that repealing a non-existent target_rule_id raises ValueError."""
     proposal = Proposal(
         proposer_name="Charlie",
         move_number=3,
         type=ProposalType.REPEAL,
-        rule_id="999",
+        proposal_id="301",
+        target_rule_id="999",
     )
 
     with pytest.raises(ValueError, match="Rule 999 not found"):
@@ -249,7 +256,8 @@ def test_apply_proposal_repeal_immutable_rule(
         proposer_name="Charlie",
         move_number=3,
         type=ProposalType.REPEAL,
-        rule_id="102",  # Immutable rule
+        proposal_id="301",
+        target_rule_id="102",  # Immutable rule
     )
 
     with pytest.raises(ValueError, match="Cannot repeal immutable rule 102"):
@@ -262,52 +270,73 @@ def test_apply_proposal_repeal_immutable_rule(
 def test_apply_proposal_transmute_mutable_to_immutable(
     rules_manager: RulesManager,
 ) -> None:
-    """Test successful transmutation from mutable to immutable."""
+    """Test transmutation (repeal and replace) mutable->immutable."""
     proposal = Proposal(
         proposer_name="Dana",
         move_number=4,
         type=ProposalType.TRANSMUTE,
-        rule_id="201",
+        proposal_id="301",
+        target_rule_id="201",
     )
 
-    rule = rules_manager._find_rule_by_id("201")
-    assert rule is not None
-    assert rule.status == RuleStatus.MUTABLE
+    # Get original rule text before transmutation
+    original_rule = rules_manager._find_rule_by_id("201")
+    assert original_rule is not None
+    assert original_rule.status == RuleStatus.MUTABLE
+    original_text = original_rule.text
 
     rules_manager.apply_proposal(proposal)
 
-    assert rule.status == RuleStatus.IMMUTABLE
+    # Original rule 201 should be gone
+    assert rules_manager._find_rule_by_id("201") is None
+
+    # New rule 301 should exist with the same text but IMMUTABLE status
+    new_rule = rules_manager._find_rule_by_id("301")
+    assert new_rule is not None
+    assert new_rule.text == original_text
+    assert new_rule.status == RuleStatus.IMMUTABLE
 
 
 def test_apply_proposal_transmute_immutable_to_mutable(
     rules_manager: RulesManager,
 ) -> None:
-    """Test successful transmutation from immutable to mutable."""
+    """Test transmutation (repeal and replace) immutable->mutable."""
     proposal = Proposal(
         proposer_name="Dana",
         move_number=4,
         type=ProposalType.TRANSMUTE,
-        rule_id="101",
+        proposal_id="301",
+        target_rule_id="101",
     )
 
-    rule = rules_manager._find_rule_by_id("101")
-    assert rule is not None
-    assert rule.status == RuleStatus.IMMUTABLE
+    # Get original rule text before transmutation
+    original_rule = rules_manager._find_rule_by_id("101")
+    assert original_rule is not None
+    assert original_rule.status == RuleStatus.IMMUTABLE
+    original_text = original_rule.text
 
     rules_manager.apply_proposal(proposal)
 
-    assert rule.status == RuleStatus.MUTABLE
+    # Original rule 101 should be gone
+    assert rules_manager._find_rule_by_id("101") is None
+
+    # New rule 301 should exist with the same text but MUTABLE status
+    new_rule = rules_manager._find_rule_by_id("301")
+    assert new_rule is not None
+    assert new_rule.text == original_text
+    assert new_rule.status == RuleStatus.MUTABLE
 
 
 def test_apply_proposal_transmute_nonexistent_rule(
     rules_manager: RulesManager,
 ) -> None:
-    """Test that transmuting a non-existent rule_id raises ValueError."""
+    """Test transmuting a non-existent target_rule_id raises ValueError."""
     proposal = Proposal(
         proposer_name="Dana",
         move_number=4,
         type=ProposalType.TRANSMUTE,
-        rule_id="999",
+        proposal_id="301",
+        target_rule_id="999",
     )
 
     with pytest.raises(ValueError, match="Rule 999 not found"):

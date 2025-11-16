@@ -269,6 +269,7 @@ def create_game_files(
         turn_order=[player.name for player in players],
         current_player_name=players[0].name,
         move_number=1,
+        next_proposal_id=301,
     )
     with state_path.open("w", encoding="utf-8") as f:
         f.write(game_state.model_dump_json(indent=2))

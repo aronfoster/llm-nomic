@@ -51,10 +51,12 @@ def test_game_state_creation():
         current_player_name="Alice",
         move_number=1,
         turn_order=["Alice", "Bob"],
+        next_proposal_id=301,
     )
     assert state.current_player_name == "Alice"
     assert state.move_number == 1
     assert len(state.scores) == 2
+    assert state.next_proposal_id == 301
 
 
 def test_proposal_creation():
@@ -68,7 +70,8 @@ def test_proposal_creation():
     )
     assert proposal.proposer_name == "Alice"
     assert proposal.type == "Add"
-    assert proposal.rule_id is None
+    assert proposal.proposal_id is None
+    assert proposal.target_rule_id is None
 
 
 def test_vote_creation():
