@@ -16,6 +16,10 @@ Our architecture is built on these principles:
 
 * New rules need to automatically get a rule ID
 * ILLEGAL PROPOSALS should get logged to game history
+* Proposers are allowed to vote on their own proposals
+  * Should be a flag, default to yes. Based on one of the starting rules
+  * _run_step_5_resolve should treat zero voters as an automatic approval 
+* The engine trusts whatever Proposal object a player returns. There is no enforcement that the proposal’s proposer_name matches the player whose turn it is; that value is used later for scoring, transcripts, and penalties. A malicious (or buggy) player implementation could submit a proposal that attributes itself to another player, causing the wrong person to gain/lose points or to appear responsible for a rule change.
 
 ### Low Priority
 
@@ -35,6 +39,7 @@ Our architecture is built on these principles:
 
 This is the long-term backlog and TODO scratchpad.
 
+  * Game loop unit and integration tests.
   * **Implement `llm_player.py`:**
       * Create `src/nomic_engine/utils/api_clients.py`: A module to abstract the `openai`, `anthropic`, etc. API calls.
       * **Key Requirement:** The API client must *only* require the key for the *specific model* being called, not all keys in `.env`.
