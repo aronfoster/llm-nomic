@@ -29,6 +29,7 @@ Our architecture is built on these principles:
 * "Judge, is this proposal legal?" is ambiguous, or at least confusing to me. So is "y" for agreeing with the Result? So if the assessment is that a proposal failed, and I judge "n", does that proposal get approved? We need to revise the judge structure.
   * Changes to points per proposal are static. They have to be dynamic. This is probably going to be a big task. We might have to create an entire class for point calculating, since LLMs suck at math. Do we have a list of point affecting events, and we'll check each of those each turn (by the judge)? e.g. rule: if justification is written in haiku form, get an extra 5 points.
   * Maybe V1 will just be the judge calculates the points for each vote?
+  * Need to break the judge interaction into its own function
 * Doesn't look like Proposal Id is getting incremented/saved. The game state is stuck at 301.
 
 ### Low Priority
@@ -50,6 +51,7 @@ Our architecture is built on these principles:
 
 This is the long-term backlog and TODO scratchpad.
 
+  * game_loop.py is too big. Refactoring time. Assess all files in case others need to be split.
   * Game loop unit and integration tests.
   * **Implement `llm_player.py`:**
       * Create `src/nomic_engine/utils/api_clients.py`: A module to abstract the `openai`, `anthropic`, etc. API calls.
