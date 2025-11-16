@@ -170,8 +170,15 @@ class GameLoop:
 
         logger.debug(
             f"Proposal received: type={proposal.type}, "
-            f"rule_id={proposal.rule_id}"
+            f"target_rule_id={proposal.target_rule_id}"
         )
+
+        # Validate that the player did not try to assign a proposal_id
+        if proposal.proposal_id is not None:
+            raise ValueError(
+                "Players cannot assign proposal_id. "
+                "It is assigned by the engine."
+            )
 
         # Validate the proposal with a side-effect-free dry run
         try:
@@ -184,13 +191,23 @@ class GameLoop:
             # Create a temporary RulesManager for validation
             temp_rules_manager = RulesManager(rules=rules_copy)
 
+            # Temporarily assign a proposal_id for validation purposes
+            # Use the next available ID
+            current_id_str = str(self.game_manager.game_state.next_proposal_id)
+            proposal.proposal_id = current_id_str
+
             # Try to apply the proposal on the TEMP manager
             # The real rules_manager is never touched
             temp_rules_manager.apply_proposal(proposal)
 
             # If we get here, the proposal is valid
+            # Increment the counter (proposal_id is already assigned)
+            self.game_manager.game_state.next_proposal_id += 1
+
             # We discard temp_rules_manager and return success
-            logger.info("Proposal validation passed")
+            logger.info(
+                f"Proposal validation passed, assigned ID {current_id_str}"
+            )
             return proposal
 
         except ValueError as e:
@@ -200,6 +217,8 @@ class GameLoop:
             print(f"\n❌ ILLEGAL PROPOSAL: {e}")
             print(f"Proposer: {current_player.player_name}")
             print("The proposal cannot proceed.\n")
+            # Clear the proposal_id since validation failed
+            proposal.proposal_id = None
             return None
 
     def _run_step_2_discuss(
@@ -340,9 +359,11 @@ class GameLoop:
         # Print proposal and voting results to console
         print("\n" + "=" * 60)
         print(f"PROPOSAL #{self.game_manager.game_state.move_number}")
+        print(f"Proposal ID: {proposal.proposal_id}")
         print(f"Proposer: {proposal.proposer_name}")
         print(f"Type: {proposal.type}")
-        print(f"Rule ID: {proposal.rule_id}")
+        if proposal.target_rule_id:
+            print(f"Target Rule ID: {proposal.target_rule_id}")
         if proposal.new_text:
             print(f"New Text: {proposal.new_text}")
         if proposal.rationale:
@@ -472,10 +493,13 @@ class GameLoop:
 
         lines = [
             f"## MOVE #{proposal.move_number}",
+            f"**Proposal ID:** {proposal.proposal_id}",
             f"**Proposer:** {proposal.proposer_name}",
             f"**Type:** {proposal.type.value}",
-            f"**Rule ID:** {proposal.rule_id}",
         ]
+
+        if proposal.target_rule_id:
+            lines.append(f"**Target Rule ID:** {proposal.target_rule_id}")
 
         if proposal.new_text:
             lines.append(f"**New Text:** {proposal.new_text}")

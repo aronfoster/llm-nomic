@@ -56,6 +56,7 @@ def temp_game_dir():
             "current_player_name": "Alice",
             "move_number": 3,
             "turn_order": ["Alice", "Bob"],
+            "next_proposal_id": 301,
         }
         state_path = game_dir / GAME_STATE_FILE
         with state_path.open("w", encoding="utf-8") as f:
@@ -94,6 +95,7 @@ def sample_game_state():
         current_player_name="Alice",
         move_number=3,
         turn_order=["Alice", "Bob"],
+        next_proposal_id=301,
     )
 
 
@@ -309,6 +311,7 @@ def test_game_manager_load_game_missing_rules():
             "current_player_name": "Alice",
             "move_number": 1,
             "turn_order": ["Alice"],
+            "next_proposal_id": 301,
         }
         (game_dir / GAME_STATE_FILE).write_text(json.dumps(state_data))
 

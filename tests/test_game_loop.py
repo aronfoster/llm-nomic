@@ -36,6 +36,7 @@ def mock_game_state() -> GameState:
         current_player_name="Alice",
         move_number=1,
         turn_order=["Alice", "Bob", "Charlie"],
+        next_proposal_id=301,
     )
 
 
@@ -99,7 +100,6 @@ def mock_players(
                 proposer_name=name,
                 move_number=1,
                 type=ProposalType.ADD,
-                rule_id="301",
                 new_text="New rule text.",
                 rationale="This is a good idea.",
             )
@@ -164,7 +164,7 @@ def test_get_other_players(game_loop: GameLoop) -> None:
 
 
 def test_step_1_propose_valid(
-    game_loop: GameLoop, mock_players: list[Mock]
+    game_loop: GameLoop, mock_players: list[Mock], mock_game_state: GameState
 ) -> None:
     """Test _run_step_1_propose with a valid proposal."""
     alice = mock_players[0]
@@ -174,11 +174,16 @@ def test_step_1_propose_valid(
     assert proposal is not None
     assert proposal.proposer_name == "Alice"
     assert proposal.type == ProposalType.ADD
+    assert proposal.proposal_id == "301"
+    assert mock_game_state.next_proposal_id == 302
     alice.propose.assert_called_once()
 
 
 def test_step_1_propose_invalid_amend_immutable(
-    game_loop: GameLoop, mock_players: list[Mock], mock_game_manager: Mock
+    game_loop: GameLoop,
+    mock_players: list[Mock],
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
 ) -> None:
     """Test _run_step_1_propose rejects proposal to amend immutable rule."""
     alice = mock_players[0]
@@ -188,7 +193,7 @@ def test_step_1_propose_invalid_amend_immutable(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.AMEND,
-        rule_id="101",  # Immutable rule (from fixture)
+        target_rule_id="101",  # Immutable rule (from fixture)
         new_text="Trying to change immutable rule.",
     )
 
@@ -198,6 +203,9 @@ def test_step_1_propose_invalid_amend_immutable(
 
     assert proposal is None
     alice.propose.assert_called_once()
+
+    # Verify next_proposal_id was NOT incremented (illegal proposal)
+    assert mock_game_state.next_proposal_id == 301
 
     # Verify the real rules_manager was never touched
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()
@@ -236,7 +244,7 @@ def test_step_2_discuss_collects_all_responses(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -260,7 +268,7 @@ def test_step_2_discuss_filters_none_responses(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -285,7 +293,7 @@ def test_step_3_revise_returns_original_proposal(game_loop: GameLoop) -> None:
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -308,7 +316,7 @@ def test_step_4_vote_collects_all_votes(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -331,7 +339,7 @@ def test_step_4_vote_respects_individual_votes(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -368,7 +376,7 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -416,7 +424,7 @@ def test_step_5_resolve_judge_veto(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -455,7 +463,7 @@ def test_step_5_resolve_failed_proposal_score_penalty(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -492,7 +500,7 @@ def test_step_5_resolve_score_calculation_rule_202(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -521,7 +529,7 @@ def test_step_5_resolve_turn_advances_correctly(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -548,7 +556,7 @@ def test_step_5_resolve_turn_wraps_around(
         proposer_name="Charlie",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule.",
     )
 
@@ -619,7 +627,7 @@ def test_run_turn_stops_on_illegal_proposal(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.AMEND,
-        rule_id="101",  # Immutable rule from fixture
+        target_rule_id="101",  # Immutable rule from fixture
         new_text="Trying to amend immutable rule.",
     )
 
@@ -657,7 +665,7 @@ def test_format_transcript_includes_all_details(game_loop: GameLoop) -> None:
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
-        rule_id="301",
+        proposal_id="301",
         new_text="Test rule text.",
         rationale="This is a good idea.",
     )

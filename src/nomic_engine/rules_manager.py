@@ -167,89 +167,135 @@ class RulesManager:
         """
         Apply a proposal to modify the rules in memory.
 
+        Per Rule 108, ADD, AMEND, and TRANSMUTE proposals use the
+        proposal's ID as the new rule ID. AMEND and TRANSMUTE are
+        "repeal and replace" operations.
+
         Args:
-            proposal: The Proposal object to apply
+            proposal: The Proposal object to apply (must have
+                proposal_id assigned)
 
         Raises:
             ValueError: If the proposal is invalid or cannot be applied
         """
+        # Validate that proposal_id has been assigned
+        if proposal.proposal_id is None:
+            raise ValueError(
+                "Proposal must have proposal_id assigned before applying."
+            )
+
         if proposal.type == ProposalType.ADD:
-            # Validation
-            if proposal.rule_id is None or proposal.new_text is None:
+            # Validation: ADD proposals should not have a target_rule_id
+            if proposal.target_rule_id is not None:
                 raise ValueError(
-                    "Add proposals must have a rule_id and new_text."
+                    "Add proposals must not have a target_rule_id."
                 )
 
-            # Check if rule already exists
-            if self._find_rule_by_id(proposal.rule_id) is not None:
-                raise ValueError(f"Rule {proposal.rule_id} already exists.")
+            if proposal.new_text is None:
+                raise ValueError("Add proposals must have new_text.")
 
-            # Create and add new rule (defaults to mutable)
+            # Check if rule with this ID already exists
+            if self._find_rule_by_id(proposal.proposal_id) is not None:
+                raise ValueError(
+                    f"Rule {proposal.proposal_id} already exists."
+                )
+
+            # Create and add new rule with proposal_id (defaults to mutable)
             new_rule = Rule(
-                rule_id=proposal.rule_id,
+                rule_id=proposal.proposal_id,
                 text=proposal.new_text,
                 status=RuleStatus.MUTABLE,
             )
             self.rules.append(new_rule)
-            logger.info(f"Added new rule {proposal.rule_id}")
+            logger.info(f"Added new rule {proposal.proposal_id}")
 
         elif proposal.type == ProposalType.AMEND:
-            # Validation
-            if proposal.rule_id is None or proposal.new_text is None:
+            # Validation: AMEND requires target_rule_id and new_text
+            if proposal.target_rule_id is None:
+                raise ValueError("Amend proposals must have a target_rule_id.")
+
+            if proposal.new_text is None:
+                raise ValueError("Amend proposals must have new_text.")
+
+            # Find the target rule
+            target_rule = self._find_rule_by_id(proposal.target_rule_id)
+            if target_rule is None:
+                raise ValueError(f"Rule {proposal.target_rule_id} not found.")
+
+            # Check if target rule is mutable
+            if target_rule.status != RuleStatus.MUTABLE:
                 raise ValueError(
-                    "Amend proposals must have a rule_id and new_text."
+                    f"Cannot amend immutable rule {proposal.target_rule_id}."
                 )
 
-            # Find the rule
-            rule = self._find_rule_by_id(proposal.rule_id)
-            if rule is None:
-                raise ValueError(f"Rule {proposal.rule_id} not found.")
+            # Repeal and replace: Remove the original rule
+            self.rules.remove(target_rule)
 
-            # Check if rule is mutable
-            if rule.status != RuleStatus.MUTABLE:
-                raise ValueError(
-                    f"Cannot amend immutable rule {proposal.rule_id}."
-                )
-
-            # Update the rule text
-            rule.text = proposal.new_text
-            logger.info(f"Amended rule {proposal.rule_id}")
+            # Add a new rule with the proposal_id
+            new_rule = Rule(
+                rule_id=proposal.proposal_id,
+                text=proposal.new_text,
+                status=RuleStatus.MUTABLE,
+            )
+            self.rules.append(new_rule)
+            logger.info(
+                f"Amended rule {proposal.target_rule_id} -> "
+                f"new rule {proposal.proposal_id}"
+            )
 
         elif proposal.type == ProposalType.REPEAL:
-            # Validation
-            if proposal.rule_id is None:
-                raise ValueError("Repeal proposals must have a rule_id.")
-
-            # Find the rule
-            rule = self._find_rule_by_id(proposal.rule_id)
-            if rule is None:
-                raise ValueError(f"Rule {proposal.rule_id} not found.")
-
-            # Check if rule is mutable
-            if rule.status != RuleStatus.MUTABLE:
+            # Validation: REPEAL requires target_rule_id
+            if proposal.target_rule_id is None:
                 raise ValueError(
-                    f"Cannot repeal immutable rule {proposal.rule_id}."
+                    "Repeal proposals must have a target_rule_id."
                 )
 
-            # Remove the rule
-            self.rules.remove(rule)
-            logger.info(f"Repealed rule {proposal.rule_id}")
+            # Find the target rule
+            target_rule = self._find_rule_by_id(proposal.target_rule_id)
+            if target_rule is None:
+                raise ValueError(f"Rule {proposal.target_rule_id} not found.")
+
+            # Check if rule is mutable
+            if target_rule.status != RuleStatus.MUTABLE:
+                raise ValueError(
+                    f"Cannot repeal immutable rule {proposal.target_rule_id}."
+                )
+
+            # Remove the rule (no replacement for REPEAL)
+            self.rules.remove(target_rule)
+            logger.info(f"Repealed rule {proposal.target_rule_id}")
 
         elif proposal.type == ProposalType.TRANSMUTE:
-            # Validation
-            if proposal.rule_id is None:
-                raise ValueError("Transmute proposals must have a rule_id.")
+            # Validation: TRANSMUTE requires target_rule_id
+            if proposal.target_rule_id is None:
+                raise ValueError(
+                    "Transmute proposals must have a target_rule_id."
+                )
 
-            # Find the rule
-            rule = self._find_rule_by_id(proposal.rule_id)
-            if rule is None:
-                raise ValueError(f"Rule {proposal.rule_id} not found.")
+            # Find the target rule
+            target_rule = self._find_rule_by_id(proposal.target_rule_id)
+            if target_rule is None:
+                raise ValueError(f"Rule {proposal.target_rule_id} not found.")
 
-            # Flip the rule's status
-            if rule.status == RuleStatus.MUTABLE:
-                rule.status = RuleStatus.IMMUTABLE
+            # Determine the new status (flip)
+            if target_rule.status == RuleStatus.MUTABLE:
+                new_status = RuleStatus.IMMUTABLE
             else:
-                rule.status = RuleStatus.MUTABLE
+                new_status = RuleStatus.MUTABLE
+
+            # Repeal and replace: Remove the original rule
+            self.rules.remove(target_rule)
+
+            # Add a new rule with the proposal_id, original text,
+            # and flipped status
+            new_rule = Rule(
+                rule_id=proposal.proposal_id,
+                text=target_rule.text,
+                status=new_status,
+            )
+            self.rules.append(new_rule)
             logger.info(
-                f"Transmuted rule {proposal.rule_id} to {rule.status.value}"
+                f"Transmuted rule {proposal.target_rule_id} -> "
+                f"new rule {proposal.proposal_id} "
+                f"with status {new_status.value}"
             )

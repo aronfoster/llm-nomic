@@ -87,6 +87,12 @@ class GameState(BaseModel):
     turn_order: List[str] = Field(
         ..., description="List of player names in order of play."
     )
+    next_proposal_id: int = Field(
+        ...,
+        description=(
+            "The next sequential proposal ID to assign (starts at 301)."
+        ),
+    )
 
 
 # --- Internal Data Models (for game logic) ---
@@ -98,8 +104,16 @@ class Proposal(BaseModel):
     proposer_name: str
     move_number: int
     type: ProposalType
-    rule_id: Optional[str] = Field(
-        None, description="The rule_id to be affected. None for 'Add'."
+    proposal_id: Optional[str] = Field(
+        None,
+        description="The sequential ID (e.g., '301') assigned by the engine.",
+    )
+    target_rule_id: Optional[str] = Field(
+        None,
+        description=(
+            "The rule_id to be affected (for Amend/Repeal/Transmute). "
+            "None for 'Add'."
+        ),
     )
     new_text: Optional[str] = Field(
         None, description="The new text for 'Add' or 'Amend'."
