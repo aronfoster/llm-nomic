@@ -318,9 +318,13 @@ def test_step_2_discuss_filters_none_responses(
 # --- Tests for Step 3: Revise ---
 
 
-def test_step_3_revise_returns_original_proposal(game_loop: GameLoop) -> None:
-    """Test _run_step_3_revise returns original proposal (V1 stub)."""
-    proposal = Proposal(
+def test_step_3_revise_can_return_revised_proposal(
+    game_loop: GameLoop, mock_players: list[Mock]
+) -> None:
+    """Test _run_step_3_revise can return a revised proposal."""
+    alice = mock_players[0]
+
+    original_proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
@@ -328,12 +332,28 @@ def test_step_3_revise_returns_original_proposal(game_loop: GameLoop) -> None:
         new_text="Test rule.",
     )
 
+    # Create a revised proposal (different object)
+    revised_proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Revised test rule.",
+        rationale="Updated based on feedback.",
+    )
+
     discussions = [("Alice", "Discussion 1"), ("Bob", "Discussion 2")]
 
-    result = game_loop._run_step_3_revise(proposal, discussions)
+    # Mock the player's revise method to return the revised proposal
+    alice.revise = Mock(return_value=revised_proposal)
 
-    # Should return the same proposal object
-    assert result is proposal
+    result = game_loop._run_step_3_revise(
+        alice, original_proposal, discussions
+    )
+
+    # Should return the revised proposal object
+    assert result is revised_proposal
+    alice.revise.assert_called_once()
 
 
 # --- Tests for Step 4: Vote ---
@@ -784,6 +804,42 @@ def test_run_turn_handles_exceptions(
 
     with pytest.raises(RuntimeError, match="Test error"):
         game_loop.run_turn()
+
+
+def test_run_turn_stops_if_proposal_withdrawn(
+    game_loop: GameLoop, mock_players: list[Mock], mock_game_manager: Mock
+) -> None:
+    """Test run_turn stops early if proposal is withdrawn during revision."""
+    alice = mock_players[0]
+
+    # Mock the player's revise method to return None (withdrawal)
+    alice.revise = Mock(return_value=None)
+
+    game_loop.run_turn()
+
+    # Alice proposed
+    alice.propose.assert_called_once()
+
+    # All players discussed (discussion happens before revision)
+    alice.discuss.assert_called_once()
+    mock_players[1].discuss.assert_called_once()
+    mock_players[2].discuss.assert_called_once()
+
+    # Alice was given chance to revise
+    alice.revise.assert_called_once()
+
+    # But no voting should happen for any player (proposal was withdrawn)
+    alice.vote.assert_not_called()
+    mock_players[1].vote.assert_not_called()
+    mock_players[2].vote.assert_not_called()
+
+    # No judge interaction should happen
+    mock_game_manager.rules_manager.apply_proposal.assert_not_called()
+    mock_game_manager.save_game_state.assert_not_called()
+    mock_game_manager.save_rules.assert_not_called()
+
+    # Transcript should not be logged for withdrawn proposals
+    mock_game_manager.logger.log_transcript.assert_not_called()
 
 
 # --- Tests for Transcript Formatting ---

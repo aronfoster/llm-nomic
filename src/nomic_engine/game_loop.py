@@ -92,8 +92,22 @@ class GameLoop:
                 proposal, self.players
             )
 
-            # Step 3: Revise (V1 stub)
-            proposal = self._run_step_3_revise(proposal, discussions)
+            # Step 3: Revise
+            revised_proposal = self._run_step_3_revise(
+                current_player, proposal, discussions
+            )
+
+            # Check if proposal was withdrawn
+            if revised_proposal is None:
+                logger.warning(
+                    f"Proposal {proposal.proposal_id} withdrawn by "
+                    f"{current_player.player_name}"
+                )
+                # TODO: Log this withdrawal to the transcript
+                return  # End the turn
+
+            # If not withdrawn, use the revised proposal for voting
+            proposal = revised_proposal
 
             # Step 4: Vote
             votes = self._run_step_4_vote(proposal, self.players)
@@ -302,27 +316,47 @@ class GameLoop:
         return discussions
 
     def _run_step_3_revise(
-        self, proposal: Proposal, discussions: list[tuple[str, str]]
-    ) -> Proposal:
+        self,
+        current_player: BasePlayer,
+        proposal: Proposal,
+        discussions: list[tuple[str, str]],
+    ) -> Proposal | None:
         """
-        Step 3: Allow proposer to revise based on discussion (V1 stub).
+        Step 3: Allow proposer to revise based on discussion.
 
-        In V1, this is not implemented - we simply return the original
-        proposal.
+        Per Rules 111 and 112, the proposer may revise their proposal after
+        reviewing discussions. If any discussion contains "UNCLEAR" or
+        "AMBIGUOUS", the proposer must revise or withdraw (Rule 112).
 
         Args:
+            current_player: The player who made the proposal
             proposal: The original proposal
             discussions: List of tuples (player_name, discussion) from players
 
         Returns:
-            The proposal (unchanged in V1)
+            The (potentially) revised Proposal object, or None if withdrawn
         """
-        logger.info("Step 3: Revision phase (V1 stub - skipping)")
-        logger.debug(
-            f"Received {len(discussions)} discussions but revision not "
-            f"implemented"
+        assert self.game_manager.game_state is not None
+        assert self.game_manager.rules_manager is not None
+
+        logger.info("Step 3: Revision phase")
+
+        # Call the player's revise method
+        revised_proposal = current_player.revise(
+            proposal=proposal,
+            discussions=discussions,
+            game_state=self.game_manager.game_state,
+            rules=self.game_manager.rules_manager.rules,
         )
-        return proposal
+
+        if revised_proposal is None:
+            logger.info(f"Proposal withdrawn by {current_player.player_name}")
+        elif revised_proposal is proposal:
+            logger.info("Proposal submitted as-is (no revision)")
+        else:
+            logger.info("Proposal revised")
+
+        return revised_proposal
 
     def _run_step_4_vote(
         self, proposal: Proposal, players: list[BasePlayer]

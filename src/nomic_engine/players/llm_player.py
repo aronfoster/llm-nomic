@@ -72,3 +72,28 @@ class LLMPlayer(BasePlayer):
             NotImplementedError: LLM integration not yet implemented.
         """
         raise NotImplementedError("LLMPlayer is not yet implemented.")
+
+    def revise(
+        self,
+        proposal: Proposal,
+        discussions: list[tuple[str, str]],
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> Proposal | None:
+        """
+        Revise a proposal based on discussion using an LLM.
+
+        Args:
+            proposal: The original proposal made by this player.
+            discussions: A list of tuples (player_name, discussion_text).
+            game_state: The current state of the game.
+            rules: The current list of all rules.
+
+        Returns:
+            The (potentially) revised Proposal object,
+            or None if the player chooses to withdraw the proposal.
+
+        Raises:
+            NotImplementedError: LLM integration not yet implemented.
+        """
+        raise NotImplementedError("LLMPlayer is not yet implemented.")
