@@ -15,37 +15,16 @@ Our architecture is built on these principles:
 ### COMPLETED
 
 * ✅ **Proposers can now participate in discussion and voting** (per Rules 111 and 105)
-  * The game loop now includes all players (including the proposer) in both discussion and voting steps
-  * New rules need to automatically get a rule ID
 * ✅ **Proposer name validation enforced**
-  * The engine now validates that the `proposer_name` in the Proposal object matches the player whose turn it is
-  * Proposals with mismatched proposer names are rejected as illegal proposals
-  * Added unit test to verify this security validation
 * ✅ **Judge logic refactored for manual veto and dynamic scoring**
-  * Replaced ambiguous "is this proposal legal?" prompt with clear "do you VETO this outcome?" prompt
-  * Removed all hardcoded score calculations (Rules 202, 204, 206)
-  * Implemented `_get_scores_from_judge()` method for fully manual scoring
-  * Judge now sees all point-related rules and manually assigns scores for each player
-  * Judge scoring applies for both passed and failed proposals
-  * All tests updated to support new manual scoring workflow
-  * Added comprehensive veto test to verify judge can block passed proposals
 * ✅ **Discussion and voting phases now show original rule text**
-  * When a proposal to AMEND, REPEAL, or TRANSMUTE is under discussion or voting, the original rule text is now displayed
-  * Helps players make informed decisions by seeing both the original and proposed new text
-  * Handles cases where the rule is not found (though this should be prevented by validation)
 * ✅ **Game transcript overhauled for completeness and parsability**
-  * Removed timestamp headers (#### {timestamp}) - now only raw text is logged
-  * Each transcript entry now uses `## MOVE #X` as the top-level header
-  * Illegal proposals are now logged to the transcript with full details and reason
-  * Discussions are now included in the transcript with player names
-  * For AMEND, REPEAL, and TRANSMUTE proposals, the original rule text is now included
-  * Vote reasons are properly formatted and included
-  * Comprehensive unit tests added for all logging functionality
 
 ### HIGH PRIORITY
 
-* _run_step_5_resolve should treat zero voters as an automatic approval
-* Revised proposals are not re-validated for legality
+* `next_proposal_id` is incremented unconditionally in `run_turn` instead of conditionally in `_run_step_5_resolve`.
+* `_run_step_5_resolve` should treat zero voters as an automatic approval.
+* Revised proposals are not re-validated for legality.
 
 ### Low Priority
 
@@ -61,6 +40,18 @@ Our architecture is built on these principles:
   2025-11-16 08:48:43,458 - __main__ - INFO - Starting turn execution
   ```
 * `2025-11-16 10:48:30,725 - src.nomic_engine.game_loop - INFO - Completed turn 2` after completing turn 1.
+
+## Sprint 4: Code Health & Refactor (Proposed)
+* Refactor monolithic `game_loop.py` into smaller, more focused classes or modules.
+* Isolate side-effect functions (e.g., `save_game_state`, `save_rules`, `log_transcript`) from core game logic.
+* Rename `_run_step_X` functions to be more descriptive (e.g., `_collect_proposal`, `_resolve_turn`).
+
+## Sprint 5: LLM Player Implementation (Proposed)
+* **Implement `llm_player.py`:**
+    * Create `src/nomic_engine/utils/api_clients.py`: A module to abstract `openai`, `anthropic`, etc. API calls.
+    * Create `src/nomic_engine/utils/prompt_builder.py`: A class to assemble the system prompt.
+    * Implement the `LLMPlayer` methods (`propose`, `discuss`, `vote`, `revise`).
+* **LLM as Judge:** Explore replacing the "Human Judge Hook" with an LLM call.
 
 ## Future Work
 
