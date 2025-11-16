@@ -188,6 +188,12 @@ class GameLoop:
 
         # Validate the proposal with a side-effect-free dry run
         try:
+            # Validate that proposer_name matches the current player
+            if proposal.proposer_name != current_player.player_name:
+                raise ValueError(
+                    f"Player {current_player.player_name} submitted an "
+                    f"illegal proposal attributed to {proposal.proposer_name}."
+                )
             # Create deep copies of all rules (Pydantic model_copy)
             rules_copy = [
                 rule.model_copy(deep=True)

@@ -17,11 +17,14 @@ Our architecture is built on these principles:
 * ✅ **Proposers can now participate in discussion and voting** (per Rules 111 and 105)
   * The game loop now includes all players (including the proposer) in both discussion and voting steps
   * New rules need to automatically get a rule ID
+* ✅ **Proposer name validation enforced**
+  * The engine now validates that the `proposer_name` in the Proposal object matches the player whose turn it is
+  * Proposals with mismatched proposer names are rejected as illegal proposals
+  * Added unit test to verify this security validation
 
 ### HIGH PRIORITY
 
 * _run_step_5_resolve should treat zero voters as an automatic approval
-* The engine trusts whatever Proposal object a player returns. There is no enforcement that the proposal's proposer_name matches the player whose turn it is; that value is used later for scoring, transcripts, and penalties. A malicious (or buggy) player implementation could submit a proposal that attributes itself to another player, causing the wrong person to gain/lose points or to appear responsible for a rule change.
 * Voting Phase should list all submitted discussions along with who said what.
 * Discussion phase should print which existing rule is being affected (original text)
 * Game_transcript should include all discussion
