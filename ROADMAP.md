@@ -45,7 +45,6 @@ Our architecture is built on these principles:
 ### HIGH PRIORITY
 
 * _run_step_5_resolve should treat zero voters as an automatic approval
-* Doesn't look like Proposal Id is getting incremented/saved. The game state is stuck at 301.
 * Revised proposals are not re-validated for legality
 
 ### Low Priority
