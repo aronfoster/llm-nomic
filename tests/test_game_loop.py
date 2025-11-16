@@ -234,6 +234,33 @@ def test_step_1_propose_never_touches_real_rules(
     assert proposal is not None
 
 
+def test_step_1_propose_rejects_mismatched_proposer_name(
+    game_loop: GameLoop,
+    mock_players: list[Mock],
+    mock_game_state: GameState,
+) -> None:
+    """Test _run_step_1_propose rejects mismatched proposer_name."""
+    alice = mock_players[0]
+
+    # Make Alice propose a proposal attributed to Bob (security violation)
+    alice.propose.return_value = Proposal(
+        proposer_name="Bob",  # Alice trying to impersonate Bob
+        move_number=1,
+        type=ProposalType.ADD,
+        new_text="Malicious proposal.",
+        rationale="Trying to frame another player.",
+    )
+
+    # The validation should fail because proposer_name doesn't match
+    proposal = game_loop._run_step_1_propose(alice)
+
+    assert proposal is None
+    alice.propose.assert_called_once()
+
+    # Verify next_proposal_id was NOT incremented (illegal proposal)
+    assert mock_game_state.next_proposal_id == 301
+
+
 # --- Tests for Step 2: Discuss ---
 
 
