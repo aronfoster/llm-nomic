@@ -88,9 +88,6 @@ class GameLoop:
                 logger.warning("Turn ended due to illegal proposal")
                 return
 
-            # Increment the proposal ID counter after valid proposal
-            self.game_manager.game_state.next_proposal_id += 1
-
             # Step 2: Discuss
             discussions = self._run_step_2_discuss(proposal, other_players)
 
@@ -102,6 +99,13 @@ class GameLoop:
 
             # Step 5: Resolve
             self._run_step_5_resolve(proposal, votes)
+
+            # Increment the proposal ID counter after the turn
+            self.game_manager.game_state.next_proposal_id += 1
+            logger.debug(
+                f"Next proposal ID incremented to "
+                f"{self.game_manager.game_state.next_proposal_id}"
+            )
 
             logger.info(
                 f"Completed turn {self.game_manager.game_state.move_number}"
