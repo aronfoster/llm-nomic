@@ -13,6 +13,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from src.nomic_engine.core.game_loop import GameLoop
+from src.nomic_engine.core.game_manager import GameManager
 from src.nomic_engine.data_models import (
     GameState,
     Proposal,
@@ -21,8 +23,6 @@ from src.nomic_engine.data_models import (
     RuleStatus,
     Vote,
 )
-from src.nomic_engine.game_loop import GameLoop
-from src.nomic_engine.game_manager import GameManager
 from src.nomic_engine.players.base_player import BasePlayer
 
 # --- Fixtures ---

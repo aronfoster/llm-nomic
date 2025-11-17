@@ -42,7 +42,17 @@ Our architecture is built on these principles:
   ```
 * `2025-11-16 10:48:30,725 - src.nomic_engine.game_loop - INFO - Completed turn 2` after completing turn 1.
 
-## Sprint 4: Code Health & Refactor (Proposed)
+## Sprint 4: Code Health & Refactor
+
+### COMPLETED
+* ✅ **Hybrid Domain Structure Refactor** - Project restructured into domain-based packages:
+  * Created `src/nomic_engine/core/` package containing `game_loop.py`, `game_manager.py`, and `rules_manager.py`
+  * Created `src/nomic_engine/llm/` package with stub files for future LLM-specific code
+  * Restructured `tests/` directory to mirror the new `src/nomic_engine/` package structure
+  * Updated all imports across the project to reflect the new structure
+  * All 111 tests passing
+
+### PROPOSED
 * Refactor monolithic `game_loop.py` into smaller, more focused classes or modules.
 * Isolate side-effect functions (e.g., `save_game_state`, `save_rules`, `log_transcript`) from core game logic.
 * Rename `_run_step_X` functions to be more descriptive (e.g., `_collect_proposal`, `_resolve_turn`).

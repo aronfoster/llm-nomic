@@ -33,7 +33,7 @@ from src.nomic_engine.data_models import (
     ModelLibrary,
     PlayerConfig,
 )
-from src.nomic_engine.rules_manager import RulesManager
+from src.nomic_engine.core.rules_manager import RulesManager
 from src.nomic_engine.utils.parsers import parse_rules_md
 
 # Configure logging

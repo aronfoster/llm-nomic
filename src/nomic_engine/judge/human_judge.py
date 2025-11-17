@@ -9,7 +9,7 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..game_manager import GameManager
+    from ..core.game_manager import GameManager
     from ..players.base_player import BasePlayer
 
 logger = logging.getLogger(__name__)

@@ -8,8 +8,8 @@ using side-effect-free dry runs.
 import logging
 
 from ..data_models import Proposal
-from ..game_manager import GameManager
-from ..rules_manager import RulesManager
+from ..core.game_manager import GameManager
+from ..core.rules_manager import RulesManager
 
 logger = logging.getLogger(__name__)
 

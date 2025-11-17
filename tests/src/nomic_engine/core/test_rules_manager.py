@@ -12,13 +12,13 @@ from typing import List
 
 import pytest
 
+from src.nomic_engine.core.rules_manager import RulesManager
 from src.nomic_engine.data_models import (
     Proposal,
     ProposalType,
     Rule,
     RuleStatus,
 )
-from src.nomic_engine.rules_manager import RulesManager
 
 # --- Fixtures ---
 

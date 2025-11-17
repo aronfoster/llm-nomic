@@ -7,11 +7,11 @@ calculating state changes, and interfacing with the Human Judge.
 
 import logging
 
-from .data_models import Proposal, ProposalType, Rule, Vote
+from ..data_models import Proposal, ProposalType, Rule, Vote
+from ..judge.human_judge import get_scores_from_judge, get_veto
+from ..players.base_player import BasePlayer
+from ..validation.validator import validate_proposal
 from .game_manager import GameManager
-from .judge.human_judge import get_scores_from_judge, get_veto
-from .players.base_player import BasePlayer
-from .validation.validator import validate_proposal
 
 logger = logging.getLogger(__name__)
 
