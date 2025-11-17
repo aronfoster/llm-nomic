@@ -52,10 +52,24 @@ Our architecture is built on these principles:
   * Updated all imports across the project to reflect the new structure
   * All 111 tests passing
 
+* ✅ **GameLoop Refactor for Single Responsibility Principle** - Refactored `game_loop.py`:
+  * Broke down monolithic `_run_step_5_resolve` into focused single-purpose methods:
+    * `_tally_votes()` - Calculate vote results
+    * `_apply_passed_proposal()` - Apply proposal to rules and save
+    * `_advance_turn_state()` - Update turn order and move number
+    * `_log_and_save_turn()` - Format transcript, log, and save state
+  * Extracted illegal proposal logging into `_log_illegal_proposal()` method
+  * Renamed all `_run_step_X` methods to descriptive names:
+    * `_run_step_1_propose` → `_get_and_validate_proposal`
+    * `_run_step_2_discuss` → `_collect_discussions`
+    * `_run_step_3_revise` → `_handle_revision`
+    * `_run_step_4_vote` → `_collect_votes`
+    * `_run_step_5_resolve` → `_resolve_turn`
+  * Updated all 26 GameLoop unit tests to work with refactored structure
+  * All 111 tests passing with full CI checks (lint, format, type check)
+
 ### PROPOSED
-* Refactor monolithic `game_loop.py` into smaller, more focused classes or modules.
-* Isolate side-effect functions (e.g., `save_game_state`, `save_rules`, `log_transcript`) from core game logic.
-* Rename `_run_step_X` functions to be more descriptive (e.g., `_collect_proposal`, `_resolve_turn`).
+(none)
 
 ## Sprint 5: LLM Player Implementation (Proposed)
 * **Implement `llm_player.py`:**
@@ -67,9 +81,6 @@ Our architecture is built on these principles:
 ## Future Work
 
 This is the long-term backlog and TODO scratchpad.
-
-  * game_loop.py is too big. Refactoring time. Assess all files in case others need to be split.
-  * Game loop unit and integration tests.
   * **Implement `llm_player.py`:**
       * Create `src/nomic_engine/utils/api_clients.py`: A module to abstract the `openai`, `anthropic`, etc. API calls.
       * **Key Requirement:** The API client must *only* require the key for the *specific model* being called, not all keys in `.env`.
