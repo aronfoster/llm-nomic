@@ -176,16 +176,16 @@ def test_get_other_players(game_loop: GameLoop) -> None:
 def test_step_1_propose_valid(
     game_loop: GameLoop, mock_players: list[Mock], mock_game_state: GameState
 ) -> None:
-    """Test _run_step_1_propose with a valid proposal."""
+    """Test _get_and_validate_proposal with a valid proposal."""
     alice = mock_players[0]
 
-    proposal = game_loop._run_step_1_propose(alice)
+    proposal = game_loop._get_and_validate_proposal(alice)
 
     assert proposal is not None
     assert proposal.proposer_name == "Alice"
     assert proposal.type == ProposalType.ADD
     assert proposal.proposal_id == "301"
-    # Counter is not incremented by _run_step_1_propose (happens in run_turn)
+    # Counter not incremented by _get_and_validate_proposal (in run_turn)
     assert mock_game_state.next_proposal_id == 301
     alice.propose.assert_called_once()
 
@@ -196,7 +196,7 @@ def test_step_1_propose_invalid_amend_immutable(
     mock_game_manager: Mock,
     mock_game_state: GameState,
 ) -> None:
-    """Test _run_step_1_propose rejects proposal to amend immutable rule."""
+    """Test _get_and_validate_proposal rejects amending immutable rule."""
     alice = mock_players[0]
 
     # Make Alice propose an invalid amendment
@@ -210,7 +210,7 @@ def test_step_1_propose_invalid_amend_immutable(
 
     # The validation will fail because rule 101 is immutable
     # This is tested on a temporary RulesManager, not the mock
-    proposal = game_loop._run_step_1_propose(alice)
+    proposal = game_loop._get_and_validate_proposal(alice)
 
     assert proposal is None
     alice.propose.assert_called_once()
@@ -225,13 +225,13 @@ def test_step_1_propose_invalid_amend_immutable(
 def test_step_1_propose_never_touches_real_rules(
     game_loop: GameLoop, mock_players: list[Mock], mock_game_manager: Mock
 ) -> None:
-    """Test _run_step_1_propose never modifies real rules_manager."""
+    """Test _get_and_validate_proposal never modifies real rules_manager."""
     alice = mock_players[0]
 
     # Get the original rules reference
     original_rules = mock_game_manager.rules_manager.rules
 
-    proposal = game_loop._run_step_1_propose(alice)
+    proposal = game_loop._get_and_validate_proposal(alice)
 
     # CRITICAL: The real rules_manager.apply_proposal should NEVER be called
     # Validation happens on a temporary RulesManager instead
@@ -249,7 +249,7 @@ def test_step_1_propose_rejects_mismatched_proposer_name(
     mock_players: list[Mock],
     mock_game_state: GameState,
 ) -> None:
-    """Test _run_step_1_propose rejects mismatched proposer_name."""
+    """Test _get_and_validate_proposal rejects mismatched proposer_name."""
     alice = mock_players[0]
 
     # Make Alice propose a proposal attributed to Bob (security violation)
@@ -262,7 +262,7 @@ def test_step_1_propose_rejects_mismatched_proposer_name(
     )
 
     # The validation should fail because proposer_name doesn't match
-    proposal = game_loop._run_step_1_propose(alice)
+    proposal = game_loop._get_and_validate_proposal(alice)
 
     assert proposal is None
     alice.propose.assert_called_once()
@@ -277,7 +277,7 @@ def test_step_1_propose_rejects_mismatched_proposer_name(
 def test_step_2_discuss_collects_all_responses(
     game_loop: GameLoop, mock_players: list[Mock]
 ) -> None:
-    """Test _run_step_2_discuss collects discussions from all players."""
+    """Test _collect_discussions collects discussions from all players."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -288,7 +288,7 @@ def test_step_2_discuss_collects_all_responses(
 
     all_players = mock_players  # Alice, Bob, and Charlie
 
-    discussions = game_loop._run_step_2_discuss(proposal, all_players)
+    discussions = game_loop._collect_discussions(proposal, all_players)
 
     assert len(discussions) == 3
     assert ("Alice", "Alice's discussion") in discussions
@@ -302,7 +302,7 @@ def test_step_2_discuss_collects_all_responses(
 def test_step_2_discuss_filters_none_responses(
     game_loop: GameLoop, mock_players: list[Mock]
 ) -> None:
-    """Test _run_step_2_discuss filters out None responses (abstentions)."""
+    """Test _collect_discussions filters out None responses (abstentions)."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -316,7 +316,7 @@ def test_step_2_discuss_filters_none_responses(
 
     all_players = mock_players
 
-    discussions = game_loop._run_step_2_discuss(proposal, all_players)
+    discussions = game_loop._collect_discussions(proposal, all_players)
 
     assert len(discussions) == 2
     assert ("Alice", "Alice's discussion") in discussions
@@ -331,7 +331,7 @@ def test_step_2_discuss_filters_none_responses(
 def test_step_3_revise_can_return_revised_proposal(
     game_loop: GameLoop, mock_players: list[Mock]
 ) -> None:
-    """Test _run_step_3_revise can return a revised proposal."""
+    """Test _handle_revision can return a revised proposal."""
     alice = mock_players[0]
 
     original_proposal = Proposal(
@@ -357,9 +357,7 @@ def test_step_3_revise_can_return_revised_proposal(
     # Mock the player's revise method to return the revised proposal
     alice.revise = Mock(return_value=revised_proposal)
 
-    result = game_loop._run_step_3_revise(
-        alice, original_proposal, discussions
-    )
+    result = game_loop._handle_revision(alice, original_proposal, discussions)
 
     # Should return the revised proposal object
     assert result is revised_proposal
@@ -371,7 +369,7 @@ def test_step_3_revise_rejects_illegal_revised_proposal(
     mock_players: list[Mock],
     mock_game_manager: Mock,
 ) -> None:
-    """Test _run_step_3_revise rejects illegal revised proposals.
+    """Test _handle_revision rejects illegal revised proposals.
 
     This test verifies that when a player returns a NEW proposal object
     (not the original), it is re-validated for legality. If the revised
@@ -403,9 +401,7 @@ def test_step_3_revise_rejects_illegal_revised_proposal(
     # Mock the player's revise method to return the illegal revised proposal
     alice.revise = Mock(return_value=illegal_revised_proposal)
 
-    result = game_loop._run_step_3_revise(
-        alice, original_proposal, discussions
-    )
+    result = game_loop._handle_revision(alice, original_proposal, discussions)
 
     # CRITICAL: Should return None (illegal revised proposal)
     assert result is None
@@ -427,7 +423,7 @@ def test_step_3_revise_rejects_illegal_revised_proposal(
 def test_step_4_vote_collects_all_votes(
     game_loop: GameLoop, mock_players: list[Mock]
 ) -> None:
-    """Test _run_step_4_vote collects votes from all players."""
+    """Test _collect_votes collects votes from all players."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -438,7 +434,7 @@ def test_step_4_vote_collects_all_votes(
 
     all_players = mock_players
 
-    votes = game_loop._run_step_4_vote(proposal, all_players)
+    votes = game_loop._collect_votes(proposal, all_players)
 
     assert len(votes) == 3
     assert all(isinstance(v, Vote) for v in votes)
@@ -450,7 +446,7 @@ def test_step_4_vote_collects_all_votes(
 def test_step_4_vote_respects_individual_votes(
     game_loop: GameLoop, mock_players: list[Mock]
 ) -> None:
-    """Test _run_step_4_vote correctly records each player's vote."""
+    """Test _collect_votes correctly records each player's vote."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -472,7 +468,7 @@ def test_step_4_vote_respects_individual_votes(
 
     all_players = mock_players
 
-    votes = game_loop._run_step_4_vote(proposal, all_players)
+    votes = game_loop._collect_votes(proposal, all_players)
 
     assert votes[0].player_name == "Alice"
     assert votes[0].vote == "YES"
@@ -492,7 +488,7 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
     mock_game_manager: Mock,
     mock_game_state: GameState,
 ) -> None:
-    """Test _run_step_5_resolve with unanimous YES votes and no veto."""
+    """Test _resolve_turn with unanimous YES votes and no veto."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -512,7 +508,7 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
     # Store initial next_proposal_id
     initial_proposal_id = mock_game_state.next_proposal_id
 
-    game_loop._run_step_5_resolve(proposal, votes, discussions)
+    game_loop._resolve_turn(proposal, votes, discussions)
 
     # Verify judge was consulted (veto prompt + 3 score prompts)
     assert mock_input.call_count == 4
@@ -551,7 +547,7 @@ def test_step_5_resolve_judge_veto(
     mock_game_manager: Mock,
     mock_game_state: GameState,
 ) -> None:
-    """Test _run_step_5_resolve when judge vetoes a passed proposal."""
+    """Test _resolve_turn when judge vetoes a passed proposal."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -571,7 +567,7 @@ def test_step_5_resolve_judge_veto(
     # Store initial next_proposal_id
     initial_proposal_id = mock_game_state.next_proposal_id
 
-    game_loop._run_step_5_resolve(proposal, votes, discussions)
+    game_loop._resolve_turn(proposal, votes, discussions)
 
     # Verify judge was consulted (veto prompt + 3 score prompts)
     assert mock_input.call_count == 4
@@ -604,7 +600,7 @@ def test_step_5_resolve_failed_proposal_score_penalty(
     mock_game_manager: Mock,
     mock_game_state: GameState,
 ) -> None:
-    """Test _run_step_5_resolve with failed proposal and manual scoring."""
+    """Test _resolve_turn with failed proposal and manual scoring."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -625,7 +621,7 @@ def test_step_5_resolve_failed_proposal_score_penalty(
     # Store initial next_proposal_id
     initial_proposal_id = mock_game_state.next_proposal_id
 
-    game_loop._run_step_5_resolve(proposal, votes, discussions)
+    game_loop._resolve_turn(proposal, votes, discussions)
 
     # Verify proposal was NOT applied (failed vote)
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()
@@ -668,7 +664,7 @@ def test_step_5_resolve_manual_score_entry(
 
     discussions: list[tuple[str, str]] = []
 
-    game_loop._run_step_5_resolve(proposal, votes, discussions)
+    game_loop._resolve_turn(proposal, votes, discussions)
 
     # Verify manually entered scores
     # Judge manually entered: Alice=8, Bob=0, Charlie=10
@@ -701,7 +697,7 @@ def test_step_5_resolve_turn_advances_correctly(
     discussions: list[tuple[str, str]] = []
 
     # Current player is Alice, should advance to Bob
-    game_loop._run_step_5_resolve(proposal, votes, discussions)
+    game_loop._resolve_turn(proposal, votes, discussions)
 
     assert mock_game_state.current_player_name == "Bob"
     assert mock_game_state.move_number == 2
@@ -733,7 +729,7 @@ def test_step_5_resolve_turn_wraps_around(
     # Set current player to Charlie (last in turn order)
     mock_game_state.current_player_name = "Charlie"
 
-    game_loop._run_step_5_resolve(proposal, votes, discussions)
+    game_loop._resolve_turn(proposal, votes, discussions)
 
     # Should wrap around to Alice
     assert mock_game_state.current_player_name == "Alice"
@@ -746,7 +742,7 @@ def test_step_5_resolve_zero_voters_automatic_pass(
     mock_game_manager: Mock,
     mock_game_state: GameState,
 ) -> None:
-    """Test _run_step_5_resolve with zero voters results in automatic pass.
+    """Test _resolve_turn with zero voters results in automatic pass.
 
     Per game rules, a proposal with zero total voters (empty votes list)
     is treated as an automatic PASS.
@@ -767,7 +763,7 @@ def test_step_5_resolve_zero_voters_automatic_pass(
     # Store initial next_proposal_id
     initial_proposal_id = mock_game_state.next_proposal_id
 
-    game_loop._run_step_5_resolve(proposal, votes, discussions)
+    game_loop._resolve_turn(proposal, votes, discussions)
 
     # Verify judge was consulted (veto prompt + 3 score prompts)
     assert mock_input.call_count == 4
@@ -824,7 +820,7 @@ def test_step_5_resolve_veto_blocks_proposal_application(
 
     discussions: list[tuple[str, str]] = []
 
-    game_loop._run_step_5_resolve(proposal, votes, discussions)
+    game_loop._resolve_turn(proposal, votes, discussions)
 
     # CRITICAL: Verify proposal was NOT applied due to veto
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()

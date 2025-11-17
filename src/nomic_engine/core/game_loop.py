@@ -83,18 +83,18 @@ class GameLoop:
             current_player = self._get_current_player()
 
             # Step 1: Propose (with validation)
-            proposal = self._run_step_1_propose(current_player)
+            proposal = self._get_and_validate_proposal(current_player)
             if proposal is None:
                 logger.warning("Turn ended due to illegal proposal")
                 return
 
             # Step 2: Discuss
-            discussions: list[tuple[str, str]] = self._run_step_2_discuss(
+            discussions: list[tuple[str, str]] = self._collect_discussions(
                 proposal, self.players
             )
 
             # Step 3: Revise
-            revised_proposal = self._run_step_3_revise(
+            revised_proposal = self._handle_revision(
                 current_player, proposal, discussions
             )
 
@@ -111,10 +111,10 @@ class GameLoop:
             proposal = revised_proposal
 
             # Step 4: Vote
-            votes = self._run_step_4_vote(proposal, self.players)
+            votes = self._collect_votes(proposal, self.players)
 
             # Step 5: Resolve
-            self._run_step_5_resolve(proposal, votes, discussions)
+            self._resolve_turn(proposal, votes, discussions)
 
             logger.info(
                 f"Completed turn {self.game_manager.game_state.move_number}"
@@ -155,14 +155,69 @@ class GameLoop:
         current_name = self.game_manager.game_state.current_player_name
         return [p for p in self.players if p.player_name != current_name]
 
-    def _run_step_1_propose(
+    def _log_illegal_proposal(
+        self,
+        proposal: Proposal,
+        player_name: str,
+        error_message: str,
+        is_revised: bool = False,
+    ) -> None:
+        """
+        Log an illegal proposal to the transcript.
+
+        Args:
+            proposal: The illegal proposal
+            player_name: Name of the player who proposed it
+            error_message: Reason why the proposal is illegal
+            is_revised: Whether this is a revised proposal (default False)
+        """
+        assert self.game_manager.game_state is not None
+
+        # Print to console
+        label = (
+            "ILLEGAL REVISED PROPOSAL" if is_revised else "ILLEGAL PROPOSAL"
+        )
+        print(f"\n❌ {label}: {error_message}")
+        print(f"Proposer: {player_name}")
+        print("The proposal cannot proceed.\n")
+
+        # Build transcript lines
+        transcript_lines = [
+            f"## MOVE #{self.game_manager.game_state.move_number}",
+            f"**Proposer:** {player_name}",
+            f"**Type:** {proposal.type.value}",
+        ]
+
+        if proposal.target_rule_id:
+            transcript_lines.append(
+                f"**Target Rule ID:** {proposal.target_rule_id}"
+            )
+
+        if proposal.new_text:
+            transcript_lines.append(f"**New Text:** {proposal.new_text}")
+
+        if proposal.rationale:
+            transcript_lines.append(f"**Rationale:** {proposal.rationale}")
+
+        transcript_lines.extend(
+            [
+                "",
+                f"**Result:** {label}",
+                f"**Reason:** {error_message}",
+            ]
+        )
+
+        transcript_entry = "\n".join(transcript_lines)
+        self.game_manager.logger.log_transcript(transcript_entry)
+
+    def _get_and_validate_proposal(
         self, current_player: BasePlayer
     ) -> Proposal | None:
         """
-        Step 1: Get proposal from current player and validate it.
+        Get proposal from current player and validate it.
 
-        This method performs immediate validation by doing a dry run
-        of apply_proposal to check for ValueError (illegal proposals).
+        This method gets the proposal from the player and validates it
+        for legality.
 
         Args:
             current_player: The player whose turn it is
@@ -211,49 +266,20 @@ class GameLoop:
             )
             return proposal
         else:
-            # Handle illegal proposal
-            print(f"\n❌ ILLEGAL PROPOSAL: {error_message}")
-            print(f"Proposer: {current_player.player_name}")
-            print("The proposal cannot proceed.\n")
-
-            # Log illegal proposal to transcript
-            transcript_lines = [
-                f"## MOVE #{self.game_manager.game_state.move_number}",
-                f"**Proposer:** {current_player.player_name}",
-                f"**Type:** {proposal.type.value}",
-            ]
-
-            if proposal.target_rule_id:
-                transcript_lines.append(
-                    f"**Target Rule ID:** {proposal.target_rule_id}"
-                )
-
-            if proposal.new_text:
-                transcript_lines.append(f"**New Text:** {proposal.new_text}")
-
-            if proposal.rationale:
-                transcript_lines.append(f"**Rationale:** {proposal.rationale}")
-
-            transcript_lines.extend(
-                [
-                    "",
-                    "**Result:** ILLEGAL PROPOSAL",
-                    f"**Reason:** {error_message}",
-                ]
+            # Log illegal proposal
+            self._log_illegal_proposal(
+                proposal, current_player.player_name, error_message
             )
-
-            transcript_entry = "\n".join(transcript_lines)
-            self.game_manager.logger.log_transcript(transcript_entry)
 
             # Clear the proposal_id since validation failed
             proposal.proposal_id = None
             return None
 
-    def _run_step_2_discuss(
+    def _collect_discussions(
         self, proposal: Proposal, players: list[BasePlayer]
     ) -> list[tuple[str, str]]:
         """
-        Step 2: Collect discussion from all players.
+        Collect discussion from all players.
 
         Per Rule 111, all players (including the proposer) may discuss.
 
@@ -287,14 +313,14 @@ class GameLoop:
         logger.info(f"Collected {len(discussions)} discussion responses")
         return discussions
 
-    def _run_step_3_revise(
+    def _handle_revision(
         self,
         current_player: BasePlayer,
         proposal: Proposal,
         discussions: list[tuple[str, str]],
     ) -> Proposal | None:
         """
-        Step 3: Allow proposer to revise based on discussion.
+        Allow proposer to revise based on discussion.
 
         Per Rules 111 and 112, the proposer may revise their proposal after
         reviewing discussions. If any discussion contains "UNCLEAR" or
@@ -348,56 +374,24 @@ class GameLoop:
                 logger.info("Revised proposal passed validation")
                 return revised_proposal
             else:
-                # Revised proposal is illegal
+                # Log illegal revised proposal
                 logger.warning(
                     f"Revised proposal from {current_player.player_name} "
                     f"is ILLEGAL: {error_message}"
                 )
-                print(f"\n❌ ILLEGAL REVISED PROPOSAL: {error_message}")
-                print(f"Proposer: {current_player.player_name}")
-                print("The revised proposal cannot proceed.\n")
-
-                # Log illegal revised proposal to transcript
-                transcript_lines = [
-                    f"## MOVE #{self.game_manager.game_state.move_number}",
-                    f"**Proposer:** {current_player.player_name}",
-                    f"**Type:** {revised_proposal.type.value}",
-                ]
-
-                if revised_proposal.target_rule_id:
-                    transcript_lines.append(
-                        f"**Target Rule ID:** "
-                        f"{revised_proposal.target_rule_id}"
-                    )
-
-                if revised_proposal.new_text:
-                    transcript_lines.append(
-                        f"**New Text:** {revised_proposal.new_text}"
-                    )
-
-                if revised_proposal.rationale:
-                    transcript_lines.append(
-                        f"**Rationale:** {revised_proposal.rationale}"
-                    )
-
-                transcript_lines.extend(
-                    [
-                        "",
-                        "**Result:** ILLEGAL REVISED PROPOSAL",
-                        f"**Reason:** {error_message}",
-                    ]
+                self._log_illegal_proposal(
+                    revised_proposal,
+                    current_player.player_name,
+                    error_message,
+                    is_revised=True,
                 )
-
-                transcript_entry = "\n".join(transcript_lines)
-                self.game_manager.logger.log_transcript(transcript_entry)
-
                 return None
 
-    def _run_step_4_vote(
+    def _collect_votes(
         self, proposal: Proposal, players: list[BasePlayer]
     ) -> list[Vote]:
         """
-        Step 4: Collect votes from all players.
+        Collect votes from all players.
 
         Per Rule 105, every player must participate in every vote.
 
@@ -428,48 +422,26 @@ class GameLoop:
         logger.info(f"Collected {len(votes)} votes")
         return votes
 
-    def _run_step_5_resolve(
-        self,
-        proposal: Proposal,
-        votes: list[Vote],
-        discussions: list[tuple[str, str]],
-    ) -> None:
+    def _tally_votes(self, votes: list[Vote]) -> bool:
         """
-        Step 5: Resolve the turn - tally votes, consult judge, apply
-        changes.
+        Tally votes to determine if proposal passed.
 
-        This method:
-        - Tallies votes to determine pass/fail
-        - Consults the human judge for veto decision
-        - Prompts judge to manually assign scores
-        - Applies proposal to rules if passed and not vetoed
-        - Advances to next turn
-        - Saves state and logs transcript
+        Per Rule 203, proposals require unanimous YES votes to pass.
+        Special case: zero voters (empty votes list) results in automatic pass.
 
         Args:
-            proposal: The proposal that was voted on
             votes: List of Vote objects from all players
-            discussions: List of tuples (player_name, discussion) from
-                discussion phase
 
-        Raises:
-            ValueError: If game state is invalid
+        Returns:
+            True if proposal passed, False otherwise
         """
-        assert self.game_manager.game_state is not None
-        assert self.game_manager.rules_manager is not None
-
-        logger.info("Step 5: Resolution phase")
-
-        # Tally votes
         yes_votes = sum(1 for v in votes if v.vote == "YES")
         no_votes = sum(1 for v in votes if v.vote == "NO")
         abstain_votes = sum(1 for v in votes if v.vote == "ABSTAIN")
-
         total_voters = len(votes)
 
         # Rule 203: Unanimous pass requirement
-        # Special case: If there are zero voters (empty votes list),
-        # the proposal automatically passes
+        # Special case: If there are zero voters, proposal automatically passes
         if total_voters == 0:
             proposal_passed = True
         else:
@@ -481,7 +453,136 @@ class GameLoop:
             f"ABSTAIN={abstain_votes}, Passed={proposal_passed}"
         )
 
+        return proposal_passed
+
+    def _apply_passed_proposal(self, proposal: Proposal) -> None:
+        """
+        Apply a passed proposal to the rules.
+
+        This method:
+        - Applies the proposal to the rules manager
+        - Saves the updated rules
+        - Increments the next_proposal_id counter
+
+        Args:
+            proposal: The proposal to apply
+        """
+        assert self.game_manager.game_state is not None
+        assert self.game_manager.rules_manager is not None
+
+        logger.info("Proposal PASSED and was not vetoed.")
+        print("\n⚖️  JUDGE: Outcome stands. Applying PASSED proposal.")
+
+        # Apply rules
+        self.game_manager.rules_manager.apply_proposal(proposal)
+        self.game_manager.save_rules()
+
+        # Increment proposal ID counter (only when proposal passes)
+        self.game_manager.game_state.next_proposal_id += 1
+        logger.debug(
+            f"Proposal ID incremented to "
+            f"{self.game_manager.game_state.next_proposal_id}"
+        )
+
+    def _advance_turn_state(self) -> None:
+        """
+        Advance to the next turn.
+
+        This method:
+        - Finds the next player in turn order
+        - Updates current_player_name
+        - Increments move_number
+        """
+        assert self.game_manager.game_state is not None
+
+        # Find next player in turn order
+        turn_order = self.game_manager.game_state.turn_order
+        current_name = self.game_manager.game_state.current_player_name
+        current_index = turn_order.index(current_name)
+        next_index = (current_index + 1) % len(turn_order)
+        next_player_name = turn_order[next_index]
+
+        self.game_manager.game_state.current_player_name = next_player_name
+        self.game_manager.game_state.move_number += 1
+
+        logger.debug(
+            f"Advanced to move {self.game_manager.game_state.move_number}, "
+            f"next player: {next_player_name}"
+        )
+
+    def _log_and_save_turn(
+        self,
+        proposal: Proposal,
+        votes: list[Vote],
+        discussions: list[tuple[str, str]],
+        proposal_passed: bool,
+        judge_approved: bool,
+    ) -> None:
+        """
+        Log the turn transcript and save game state.
+
+        Args:
+            proposal: The proposal that was voted on
+            votes: List of Vote objects from all players
+            discussions: List of tuples (player_name, discussion)
+            proposal_passed: Whether the vote passed
+            judge_approved: Whether the judge approved (not vetoed)
+        """
+        assert self.game_manager.game_state is not None
+        assert self.game_manager.rules_manager is not None
+
+        # Format and log transcript
+        transcript_entry = self._format_transcript(
+            proposal,
+            votes,
+            proposal_passed,
+            judge_approved,
+            discussions,
+            self.game_manager.rules_manager.rules,
+        )
+        self.game_manager.logger.log_transcript(transcript_entry)
+        logger.debug("Transcript logged")
+
+        # Save game state
+        self.game_manager.save_game_state()
+        logger.debug("Game state saved")
+
+    def _resolve_turn(
+        self,
+        proposal: Proposal,
+        votes: list[Vote],
+        discussions: list[tuple[str, str]],
+    ) -> None:
+        """
+        Resolve the turn by tallying votes, consulting judge, applying changes.
+
+        This method orchestrates the resolution phase by:
+        - Tallying votes to determine pass/fail
+        - Consulting the human judge for veto decision
+        - Prompting judge to manually assign scores
+        - Applying proposal to rules if passed and not vetoed
+        - Advancing to next turn
+        - Saving state and logging transcript
+
+        Args:
+            proposal: The proposal that was voted on
+            votes: List of Vote objects from all players
+            discussions: List of tuples (player_name, discussion) from
+                discussion phase
+        """
+        assert self.game_manager.game_state is not None
+        assert self.game_manager.rules_manager is not None
+
+        logger.info("Step 5: Resolution phase")
+
+        # Tally votes
+        proposal_passed = self._tally_votes(votes)
+
         # Print proposal and voting results to console
+        yes_votes = sum(1 for v in votes if v.vote == "YES")
+        no_votes = sum(1 for v in votes if v.vote == "NO")
+        abstain_votes = sum(1 for v in votes if v.vote == "ABSTAIN")
+
         print("\n" + "=" * 60)
         print(f"PROPOSAL #{self.game_manager.game_state.move_number}")
         print(f"Proposal ID: {proposal.proposal_id}")
@@ -500,31 +601,15 @@ class GameLoop:
         print(f"\nResult: {'PASSED' if proposal_passed else 'FAILED'}")
         print("=" * 60)
 
-        # Prompt 1 (Arbiter): Unambiguous Veto prompt
+        # Consult judge for veto
         judge_vetoed = get_veto()
 
-        # Check final status and apply changes accordingly
+        # Apply proposal if passed and not vetoed
         if proposal_passed and not judge_vetoed:
-            # --- PROPOSAL PASSES ---
-            logger.info("Proposal PASSED and was not vetoed.")
-            print("\n⚖️  JUDGE: Outcome stands. Applying PASSED proposal.")
-
-            # Apply rules
-            self.game_manager.rules_manager.apply_proposal(proposal)
-            self.game_manager.save_rules()
-
-            # Increment proposal ID counter (only when proposal passes)
-            self.game_manager.game_state.next_proposal_id += 1
-            logger.debug(
-                f"Proposal ID incremented to "
-                f"{self.game_manager.game_state.next_proposal_id}"
-            )
-
-            # Call the new scorer
+            self._apply_passed_proposal(proposal)
             get_scores_from_judge(self.game_manager, self.players)
-
         else:
-            # --- PROPOSAL FAILS ---
+            # Proposal failed or was vetoed
             if not proposal_passed:
                 logger.info("Proposal FAILED by vote.")
                 print("\n⚖️  JUDGE: Outcome stands. Proposal FAILED.")
@@ -534,42 +619,16 @@ class GameLoop:
                 )
                 print("\n⚖️  JUDGE VETO: Proposal has been VETOED and FAILED.")
 
-            # Call the new scorer
             get_scores_from_judge(self.game_manager, self.players)
 
-        # Advance turn
-        # Find next player in turn order
-        turn_order = self.game_manager.game_state.turn_order
-        current_name = self.game_manager.game_state.current_player_name
-        current_index = turn_order.index(current_name)
-        next_index = (current_index + 1) % len(turn_order)
-        next_player_name = turn_order[next_index]
+        # Advance turn state
+        self._advance_turn_state()
 
-        self.game_manager.game_state.current_player_name = next_player_name
-        self.game_manager.game_state.move_number += 1
-
-        logger.debug(
-            f"Advanced to move {self.game_manager.game_state.move_number}, "
-            f"next player: {next_player_name}"
-        )
-
-        # Save game state
-        self.game_manager.save_game_state()
-        logger.debug("Game state saved")
-
-        # Log to transcript
-        # Note: judge_approved = inverse of judge_vetoed for passed proposals
+        # Log transcript and save state
         judge_approved = proposal_passed and not judge_vetoed
-        transcript_entry = self._format_transcript(
-            proposal,
-            votes,
-            proposal_passed,
-            judge_approved,
-            discussions,
-            self.game_manager.rules_manager.rules,
+        self._log_and_save_turn(
+            proposal, votes, discussions, proposal_passed, judge_approved
         )
-        self.game_manager.logger.log_transcript(transcript_entry)
-        logger.debug("Transcript logged")
 
     def _format_transcript(
         self,
