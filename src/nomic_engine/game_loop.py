@@ -9,8 +9,9 @@ import logging
 
 from .data_models import Proposal, ProposalType, Rule, Vote
 from .game_manager import GameManager
+from .judge.human_judge import get_scores_from_judge, get_veto
 from .players.base_player import BasePlayer
-from .rules_manager import RulesManager
+from .validation.validator import validate_proposal
 
 logger = logging.getLogger(__name__)
 
@@ -154,61 +155,6 @@ class GameLoop:
         current_name = self.game_manager.game_state.current_player_name
         return [p for p in self.players if p.player_name != current_name]
 
-    def _validate_proposal_legality(
-        self, proposal: Proposal, player_name: str
-    ) -> tuple[bool, str]:
-        """
-        Validate proposal legality using a side-effect-free dry run.
-
-        This method performs validation by applying the proposal to a
-        temporary copy of the rules, ensuring the real rules are never
-        modified during validation.
-
-        Args:
-            proposal: The proposal to validate (must have proposal_id set)
-            player_name: The name of the player making the proposal
-
-        Returns:
-            Tuple of (is_valid, error_message)
-            - is_valid: True if proposal is legal, False otherwise
-            - error_message: Empty string if valid, error description if
-              invalid
-        """
-        assert self.game_manager.game_state is not None
-        assert self.game_manager.rules_manager is not None
-
-        try:
-            # Validate that proposer_name matches the player
-            if proposal.proposer_name != player_name:
-                return (
-                    False,
-                    f"Player {player_name} submitted an illegal proposal "
-                    f"attributed to {proposal.proposer_name}.",
-                )
-
-            # Create deep copies of all rules (Pydantic model_copy)
-            rules_copy = [
-                rule.model_copy(deep=True)
-                for rule in self.game_manager.rules_manager.rules
-            ]
-
-            # Create a temporary RulesManager for validation
-            temp_rules_manager = RulesManager(rules=rules_copy)
-
-            # Try to apply the proposal on the TEMP manager
-            # The real rules_manager is never touched
-            temp_rules_manager.apply_proposal(proposal)
-
-            # If we get here, the proposal is valid
-            logger.info(
-                f"Proposal validation passed for ID {proposal.proposal_id}"
-            )
-            return (True, "")
-
-        except ValueError as e:
-            logger.warning(f"Illegal proposal from {player_name}: {e}")
-            return (False, str(e))
-
     def _run_step_1_propose(
         self, current_player: BasePlayer
     ) -> Proposal | None:
@@ -255,8 +201,8 @@ class GameLoop:
         proposal.proposal_id = current_id_str
 
         # Validate the proposal using the extracted validation logic
-        is_valid, error_message = self._validate_proposal_legality(
-            proposal, current_player.player_name
+        is_valid, error_message = validate_proposal(
+            proposal, current_player.player_name, self.game_manager
         )
 
         if is_valid:
@@ -394,8 +340,8 @@ class GameLoop:
                 revised_proposal.proposal_id = proposal.proposal_id
 
             # Validate the revised proposal
-            is_valid, error_message = self._validate_proposal_legality(
-                revised_proposal, current_player.player_name
+            is_valid, error_message = validate_proposal(
+                revised_proposal, current_player.player_name, self.game_manager
             )
 
             if is_valid:
@@ -555,12 +501,7 @@ class GameLoop:
         print("=" * 60)
 
         # Prompt 1 (Arbiter): Unambiguous Veto prompt
-        judge_response = (
-            input("\nJudge (Arbiter), do you VETO this outcome? (y/n): ")
-            .strip()
-            .lower()
-        )
-        judge_vetoed = judge_response == "y"
+        judge_vetoed = get_veto()
 
         # Check final status and apply changes accordingly
         if proposal_passed and not judge_vetoed:
@@ -580,7 +521,7 @@ class GameLoop:
             )
 
             # Call the new scorer
-            self._get_scores_from_judge()
+            get_scores_from_judge(self.game_manager, self.players)
 
         else:
             # --- PROPOSAL FAILS ---
@@ -594,7 +535,7 @@ class GameLoop:
                 print("\n⚖️  JUDGE VETO: Proposal has been VETOED and FAILED.")
 
             # Call the new scorer
-            self._get_scores_from_judge()
+            get_scores_from_judge(self.game_manager, self.players)
 
         # Advance turn
         # Find next player in turn order
@@ -629,62 +570,6 @@ class GameLoop:
         )
         self.game_manager.logger.log_transcript(transcript_entry)
         logger.debug("Transcript logged")
-
-    def _get_scores_from_judge(self) -> None:
-        """
-        Prompt the Judge to manually assign point changes for each player.
-
-        This method displays all point-related rules and prompts the Judge
-        to enter score changes for each player based on the current turn.
-        Input is validated to ensure it's an integer.
-
-        Raises:
-            AssertionError: If game_state or rules_manager is None
-        """
-        assert self.game_manager.game_state is not None
-        assert self.game_manager.rules_manager is not None
-
-        # Find all point-related rules
-        point_rules = [
-            r
-            for r in self.game_manager.rules_manager.rules
-            if "point" in r.text.lower()
-        ]
-
-        # Print header
-        print(
-            f"\n--- Judge (Scorer), please assess points for Move "
-            f"#{self.game_manager.game_state.move_number} ---"
-        )
-
-        # Print point-scoring rules
-        print("\nRelevant Point-Scoring Rules:")
-        for rule in point_rules:
-            status_char = rule.status.value[0].upper()
-            print(f"Rule {rule.rule_id} ({status_char}): {rule.text}")
-
-        print()  # Blank line for readability
-
-        # Loop through each player and get score changes
-        for player in self.players:
-            while True:
-                try:
-                    points_input = input(
-                        f"Enter point change for {player.player_name}: "
-                    )
-                    points_change = int(points_input)
-                    break  # Valid integer received
-                except ValueError:
-                    print("Invalid input. Please enter an integer.")
-                    continue
-
-            # Apply the score change
-            self.game_manager.game_state.scores[
-                player.player_name
-            ] += points_change
-            logger.debug(
-                f"Applied {points_change} points to {player.player_name}"
-            )
 
     def _format_transcript(
         self,
