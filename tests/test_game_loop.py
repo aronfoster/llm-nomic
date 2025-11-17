@@ -108,6 +108,16 @@ def mock_players(
         # Default discussion (return some text)
         player.discuss = Mock(return_value=f"{name}'s discussion")
 
+        # Default revise (return the original proposal unchanged)
+        # This is a callable that takes a proposal argument and returns it
+        def make_revise_func():
+            def revise_func(proposal, **kwargs):
+                return proposal
+
+            return revise_func
+
+        player.revise = Mock(side_effect=make_revise_func())
+
         # Default vote (YES)
         player.vote = Mock(
             return_value=Vote(
@@ -356,6 +366,61 @@ def test_step_3_revise_can_return_revised_proposal(
     alice.revise.assert_called_once()
 
 
+def test_step_3_revise_rejects_illegal_revised_proposal(
+    game_loop: GameLoop,
+    mock_players: list[Mock],
+    mock_game_manager: Mock,
+) -> None:
+    """Test _run_step_3_revise rejects illegal revised proposals.
+
+    This test verifies that when a player returns a NEW proposal object
+    (not the original), it is re-validated for legality. If the revised
+    proposal is illegal, the turn should end.
+    """
+    alice = mock_players[0]
+
+    original_proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Original legal proposal.",
+    )
+
+    # Create an ILLEGAL revised proposal (trying to amend immutable rule)
+    illegal_revised_proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.AMEND,
+        target_rule_id="101",  # Immutable rule from fixture
+        proposal_id="301",
+        new_text="Trying to amend immutable rule.",
+        rationale="This should be rejected.",
+    )
+
+    discussions = [("Bob", "Discussion")]
+
+    # Mock the player's revise method to return the illegal revised proposal
+    alice.revise = Mock(return_value=illegal_revised_proposal)
+
+    result = game_loop._run_step_3_revise(
+        alice, original_proposal, discussions
+    )
+
+    # CRITICAL: Should return None (illegal revised proposal)
+    assert result is None
+    alice.revise.assert_called_once()
+
+    # Verify the illegal revised proposal was logged to transcript
+    mock_game_manager.logger.log_transcript.assert_called_once()
+
+    # Verify the logged transcript contains expected details
+    logged_transcript = mock_game_manager.logger.log_transcript.call_args[0][0]
+    assert "ILLEGAL REVISED PROPOSAL" in logged_transcript
+    assert "Alice" in logged_transcript
+    assert "Amend" in logged_transcript
+
+
 # --- Tests for Step 4: Vote ---
 
 
@@ -444,6 +509,9 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
 
     discussions: list[tuple[str, str]] = []
 
+    # Store initial next_proposal_id
+    initial_proposal_id = mock_game_state.next_proposal_id
+
     game_loop._run_step_5_resolve(proposal, votes, discussions)
 
     # Verify judge was consulted (veto prompt + 3 score prompts)
@@ -472,6 +540,9 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
     assert mock_game_state.current_player_name == "Bob"
     assert mock_game_state.move_number == 2
 
+    # CRITICAL: Verify next_proposal_id was incremented (proposal passed)
+    assert mock_game_state.next_proposal_id == initial_proposal_id + 1
+
 
 @patch("builtins.input", side_effect=["y", "0", "0", "0"])
 def test_step_5_resolve_judge_veto(
@@ -497,6 +568,9 @@ def test_step_5_resolve_judge_veto(
 
     discussions: list[tuple[str, str]] = []
 
+    # Store initial next_proposal_id
+    initial_proposal_id = mock_game_state.next_proposal_id
+
     game_loop._run_step_5_resolve(proposal, votes, discussions)
 
     # Verify judge was consulted (veto prompt + 3 score prompts)
@@ -518,6 +592,9 @@ def test_step_5_resolve_judge_veto(
     assert mock_game_state.scores["Alice"] == 0
     assert mock_game_state.scores["Bob"] == 0
     assert mock_game_state.scores["Charlie"] == 0
+
+    # CRITICAL: Verify next_proposal_id was NOT incremented (vetoed)
+    assert mock_game_state.next_proposal_id == initial_proposal_id
 
 
 @patch("builtins.input", side_effect=["n", "-10", "3", "3"])
@@ -545,6 +622,9 @@ def test_step_5_resolve_failed_proposal_score_penalty(
 
     discussions: list[tuple[str, str]] = []
 
+    # Store initial next_proposal_id
+    initial_proposal_id = mock_game_state.next_proposal_id
+
     game_loop._run_step_5_resolve(proposal, votes, discussions)
 
     # Verify proposal was NOT applied (failed vote)
@@ -559,6 +639,9 @@ def test_step_5_resolve_failed_proposal_score_penalty(
     # Verify turn advanced anyway
     assert mock_game_state.current_player_name == "Bob"
     assert mock_game_state.move_number == 2
+
+    # CRITICAL: Verify next_proposal_id was NOT incremented (failed)
+    assert mock_game_state.next_proposal_id == initial_proposal_id
 
 
 @patch("builtins.input", side_effect=["n", "8", "0", "10"])
@@ -654,6 +737,62 @@ def test_step_5_resolve_turn_wraps_around(
 
     # Should wrap around to Alice
     assert mock_game_state.current_player_name == "Alice"
+
+
+@patch("builtins.input", side_effect=["n", "5", "5", "5"])
+def test_step_5_resolve_zero_voters_automatic_pass(
+    mock_input: Mock,
+    game_loop: GameLoop,
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
+) -> None:
+    """Test _run_step_5_resolve with zero voters results in automatic pass.
+
+    Per game rules, a proposal with zero total voters (empty votes list)
+    is treated as an automatic PASS.
+    """
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule with zero voters.",
+    )
+
+    # Empty votes list (zero voters)
+    votes: list[Vote] = []
+
+    discussions: list[tuple[str, str]] = []
+
+    # Store initial next_proposal_id
+    initial_proposal_id = mock_game_state.next_proposal_id
+
+    game_loop._run_step_5_resolve(proposal, votes, discussions)
+
+    # Verify judge was consulted (veto prompt + 3 score prompts)
+    assert mock_input.call_count == 4
+
+    # CRITICAL: Verify proposal was applied (automatic pass with 0 voters)
+    mock_game_manager.rules_manager.apply_proposal.assert_called_once_with(
+        proposal
+    )
+
+    # Verify rules were saved
+    mock_game_manager.save_rules.assert_called_once()
+
+    # Verify game state was saved
+    mock_game_manager.save_game_state.assert_called_once()
+
+    # Verify transcript was logged
+    mock_game_manager.logger.log_transcript.assert_called_once()
+
+    # Verify scores were applied
+    assert mock_game_state.scores["Alice"] == 5
+    assert mock_game_state.scores["Bob"] == 5
+    assert mock_game_state.scores["Charlie"] == 5
+
+    # CRITICAL: Verify next_proposal_id was incremented (proposal passed)
+    assert mock_game_state.next_proposal_id == initial_proposal_id + 1
 
 
 @patch("builtins.input", side_effect=["y", "-5", "0", "0"])

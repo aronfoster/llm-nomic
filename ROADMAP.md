@@ -19,12 +19,13 @@ Our architecture is built on these principles:
 * ✅ **Judge logic refactored for manual veto and dynamic scoring**
 * ✅ **Discussion and voting phases now show original rule text**
 * ✅ **Game transcript overhauled for completeness and parsability**
+* ✅ **`next_proposal_id` increment logic fixed** - Now only increments when proposal passes and is not vetoed
+* ✅ **Zero-voter bug fixed** - Proposals with zero voters are now treated as automatic PASS
+* ✅ **Revised proposal validation implemented** - Revised proposals are now re-validated for legality
 
 ### HIGH PRIORITY
 
-* `next_proposal_id` is incremented unconditionally in `run_turn` instead of conditionally in `_run_step_5_resolve`.
-* `_run_step_5_resolve` should treat zero voters as an automatic approval.
-* Revised proposals are not re-validated for legality.
+(none)
 
 ### Low Priority
 

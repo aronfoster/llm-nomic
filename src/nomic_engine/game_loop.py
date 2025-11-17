@@ -112,16 +112,8 @@ class GameLoop:
             # Step 4: Vote
             votes = self._run_step_4_vote(proposal, self.players)
 
-            # Increment the proposal ID counter after the turn
-            self.game_manager.game_state.next_proposal_id += 1
-
             # Step 5: Resolve
             self._run_step_5_resolve(proposal, votes, discussions)
-
-            logger.debug(
-                f"Next proposal ID incremented to "
-                f"{self.game_manager.game_state.next_proposal_id}"
-            )
 
             logger.info(
                 f"Completed turn {self.game_manager.game_state.move_number}"
@@ -161,6 +153,61 @@ class GameLoop:
         assert self.game_manager.game_state is not None
         current_name = self.game_manager.game_state.current_player_name
         return [p for p in self.players if p.player_name != current_name]
+
+    def _validate_proposal_legality(
+        self, proposal: Proposal, player_name: str
+    ) -> tuple[bool, str]:
+        """
+        Validate proposal legality using a side-effect-free dry run.
+
+        This method performs validation by applying the proposal to a
+        temporary copy of the rules, ensuring the real rules are never
+        modified during validation.
+
+        Args:
+            proposal: The proposal to validate (must have proposal_id set)
+            player_name: The name of the player making the proposal
+
+        Returns:
+            Tuple of (is_valid, error_message)
+            - is_valid: True if proposal is legal, False otherwise
+            - error_message: Empty string if valid, error description if
+              invalid
+        """
+        assert self.game_manager.game_state is not None
+        assert self.game_manager.rules_manager is not None
+
+        try:
+            # Validate that proposer_name matches the player
+            if proposal.proposer_name != player_name:
+                return (
+                    False,
+                    f"Player {player_name} submitted an illegal proposal "
+                    f"attributed to {proposal.proposer_name}.",
+                )
+
+            # Create deep copies of all rules (Pydantic model_copy)
+            rules_copy = [
+                rule.model_copy(deep=True)
+                for rule in self.game_manager.rules_manager.rules
+            ]
+
+            # Create a temporary RulesManager for validation
+            temp_rules_manager = RulesManager(rules=rules_copy)
+
+            # Try to apply the proposal on the TEMP manager
+            # The real rules_manager is never touched
+            temp_rules_manager.apply_proposal(proposal)
+
+            # If we get here, the proposal is valid
+            logger.info(
+                f"Proposal validation passed for ID {proposal.proposal_id}"
+            )
+            return (True, "")
+
+        except ValueError as e:
+            logger.warning(f"Illegal proposal from {player_name}: {e}")
+            return (False, str(e))
 
     def _run_step_1_propose(
         self, current_player: BasePlayer
@@ -203,44 +250,23 @@ class GameLoop:
                 "It is assigned by the engine."
             )
 
-        # Validate the proposal with a side-effect-free dry run
-        try:
-            # Validate that proposer_name matches the current player
-            if proposal.proposer_name != current_player.player_name:
-                raise ValueError(
-                    f"Player {current_player.player_name} submitted an "
-                    f"illegal proposal attributed to {proposal.proposer_name}."
-                )
-            # Create deep copies of all rules (Pydantic model_copy)
-            rules_copy = [
-                rule.model_copy(deep=True)
-                for rule in self.game_manager.rules_manager.rules
-            ]
+        # Assign the proposal ID before validation
+        current_id_str = str(self.game_manager.game_state.next_proposal_id)
+        proposal.proposal_id = current_id_str
 
-            # Create a temporary RulesManager for validation
-            temp_rules_manager = RulesManager(rules=rules_copy)
+        # Validate the proposal using the extracted validation logic
+        is_valid, error_message = self._validate_proposal_legality(
+            proposal, current_player.player_name
+        )
 
-            # Temporarily assign a proposal_id for validation purposes
-            # Use the next available ID
-            current_id_str = str(self.game_manager.game_state.next_proposal_id)
-            proposal.proposal_id = current_id_str
-
-            # Try to apply the proposal on the TEMP manager
-            # The real rules_manager is never touched
-            temp_rules_manager.apply_proposal(proposal)
-
-            # If we get here, the proposal is valid
-            # We discard temp_rules_manager and return success
+        if is_valid:
             logger.info(
                 f"Proposal validation passed, assigned ID {current_id_str}"
             )
             return proposal
-
-        except ValueError as e:
-            logger.warning(
-                f"Illegal proposal from {current_player.player_name}: {e}"
-            )
-            print(f"\n❌ ILLEGAL PROPOSAL: {e}")
+        else:
+            # Handle illegal proposal
+            print(f"\n❌ ILLEGAL PROPOSAL: {error_message}")
             print(f"Proposer: {current_player.player_name}")
             print("The proposal cannot proceed.\n")
 
@@ -266,7 +292,7 @@ class GameLoop:
                 [
                     "",
                     "**Result:** ILLEGAL PROPOSAL",
-                    f"**Reason:** {e}",
+                    f"**Reason:** {error_message}",
                 ]
             )
 
@@ -328,6 +354,9 @@ class GameLoop:
         reviewing discussions. If any discussion contains "UNCLEAR" or
         "AMBIGUOUS", the proposer must revise or withdraw (Rule 112).
 
+        CRITICAL: If the player returns a NEW proposal object (not the
+        original), it MUST be re-validated for legality.
+
         Args:
             current_player: The player who made the proposal
             proposal: The original proposal
@@ -335,6 +364,7 @@ class GameLoop:
 
         Returns:
             The (potentially) revised Proposal object, or None if withdrawn
+            or if revised proposal is illegal
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
@@ -351,12 +381,71 @@ class GameLoop:
 
         if revised_proposal is None:
             logger.info(f"Proposal withdrawn by {current_player.player_name}")
+            return None
         elif revised_proposal is proposal:
             logger.info("Proposal submitted as-is (no revision)")
+            return revised_proposal
         else:
-            logger.info("Proposal revised")
+            # Player returned a NEW proposal object - must re-validate
+            logger.info("Proposal revised - re-validating for legality")
 
-        return revised_proposal
+            # Ensure the revised proposal has the same proposal_id
+            if revised_proposal.proposal_id != proposal.proposal_id:
+                revised_proposal.proposal_id = proposal.proposal_id
+
+            # Validate the revised proposal
+            is_valid, error_message = self._validate_proposal_legality(
+                revised_proposal, current_player.player_name
+            )
+
+            if is_valid:
+                logger.info("Revised proposal passed validation")
+                return revised_proposal
+            else:
+                # Revised proposal is illegal
+                logger.warning(
+                    f"Revised proposal from {current_player.player_name} "
+                    f"is ILLEGAL: {error_message}"
+                )
+                print(f"\n❌ ILLEGAL REVISED PROPOSAL: {error_message}")
+                print(f"Proposer: {current_player.player_name}")
+                print("The revised proposal cannot proceed.\n")
+
+                # Log illegal revised proposal to transcript
+                transcript_lines = [
+                    f"## MOVE #{self.game_manager.game_state.move_number}",
+                    f"**Proposer:** {current_player.player_name}",
+                    f"**Type:** {revised_proposal.type.value}",
+                ]
+
+                if revised_proposal.target_rule_id:
+                    transcript_lines.append(
+                        f"**Target Rule ID:** "
+                        f"{revised_proposal.target_rule_id}"
+                    )
+
+                if revised_proposal.new_text:
+                    transcript_lines.append(
+                        f"**New Text:** {revised_proposal.new_text}"
+                    )
+
+                if revised_proposal.rationale:
+                    transcript_lines.append(
+                        f"**Rationale:** {revised_proposal.rationale}"
+                    )
+
+                transcript_lines.extend(
+                    [
+                        "",
+                        "**Result:** ILLEGAL REVISED PROPOSAL",
+                        f"**Reason:** {error_message}",
+                    ]
+                )
+
+                transcript_entry = "\n".join(transcript_lines)
+                self.game_manager.logger.log_transcript(transcript_entry)
+
+                return None
 
     def _run_step_4_vote(
         self, proposal: Proposal, players: list[BasePlayer]
@@ -432,9 +521,14 @@ class GameLoop:
 
         total_voters = len(votes)
 
-        # Rule 203: Unanimous pass requirement (for now)
-        # Note: Proposal must receive unanimous YES votes to pass
-        proposal_passed = yes_votes == total_voters and total_voters > 0
+        # Rule 203: Unanimous pass requirement
+        # Special case: If there are zero voters (empty votes list),
+        # the proposal automatically passes
+        if total_voters == 0:
+            proposal_passed = True
+        else:
+            # Proposal must receive unanimous YES votes to pass
+            proposal_passed = yes_votes == total_voters
 
         logger.info(
             f"Vote tally: YES={yes_votes}, NO={no_votes}, "
@@ -474,9 +568,16 @@ class GameLoop:
             logger.info("Proposal PASSED and was not vetoed.")
             print("\n⚖️  JUDGE: Outcome stands. Applying PASSED proposal.")
 
-            # Apply rules & increment ID
+            # Apply rules
             self.game_manager.rules_manager.apply_proposal(proposal)
             self.game_manager.save_rules()
+
+            # Increment proposal ID counter (only when proposal passes)
+            self.game_manager.game_state.next_proposal_id += 1
+            logger.debug(
+                f"Proposal ID incremented to "
+                f"{self.game_manager.game_state.next_proposal_id}"
+            )
 
             # Call the new scorer
             self._get_scores_from_judge()
