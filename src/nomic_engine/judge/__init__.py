@@ -1,3 +1,3 @@
 """
-Judge package for human judge interactions.
+Judge package for human or LLM judge interactions.
 """
