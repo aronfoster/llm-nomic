@@ -10,14 +10,14 @@ from pathlib import Path
 import pydantic
 import yaml
 
-from .constants import (
+from ..constants import (
     CONFIG_FILE,
     GAME_STATE_FILE,
     RULES_JSONL_FILE,
     RULES_MD_FILE,
 )
-from .data_models import GameConfig, GameState
-from .game_logger import GameLogger
+from ..data_models import GameConfig, GameState
+from ..game_logger import GameLogger
 from .rules_manager import RulesManager
 
 logger = logging.getLogger(__name__)

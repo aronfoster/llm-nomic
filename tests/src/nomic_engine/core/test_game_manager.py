@@ -20,13 +20,13 @@ from src.nomic_engine.constants import (
     RULES_JSONL_FILE,
     RULES_MD_FILE,
 )
+from src.nomic_engine.core.game_manager import GameManager
 from src.nomic_engine.data_models import (
     GameState,
     Rule,
     RuleStatus,
 )
 from src.nomic_engine.game_logger import GameLogger
-from src.nomic_engine.game_manager import GameManager
 
 # --- Fixtures ---
 

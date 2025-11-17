@@ -11,8 +11,8 @@ import sys
 
 import pydantic
 
-from .game_loop import GameLoop
-from .game_manager import GameManager
+from .core.game_loop import GameLoop
+from .core.game_manager import GameManager
 from .players.base_player import BasePlayer
 from .players.human_player import HumanPlayer
 from .players.llm_player import LLMPlayer

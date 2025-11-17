@@ -8,13 +8,13 @@ from unittest.mock import Mock
 
 import pytest
 
+from src.nomic_engine.core.game_manager import GameManager
 from src.nomic_engine.data_models import (
     Proposal,
     ProposalType,
     Rule,
     RuleStatus,
 )
-from src.nomic_engine.game_manager import GameManager
 from src.nomic_engine.validation.validator import validate_proposal
 
 

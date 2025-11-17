@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from src.nomic_engine.core.game_manager import GameManager
 from src.nomic_engine.data_models import GameState, Rule, RuleStatus
-from src.nomic_engine.game_manager import GameManager
 from src.nomic_engine.judge.human_judge import get_scores_from_judge, get_veto
 from src.nomic_engine.players.base_player import BasePlayer
 
