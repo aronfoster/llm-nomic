@@ -160,3 +160,13 @@ class ModelLibrary(BaseModel):
     """The root object for models.yml."""
 
     models: List[ModelDefinition]
+
+
+# --- LLM API Data Models ---
+
+
+class ChatMessage(BaseModel):
+    """A single message in a chat completion request."""
+
+    role: Literal["system", "user", "assistant"]
+    content: str
