@@ -25,6 +25,7 @@ class ApiClient:
         """
         self.model_config = model_config
 
+        # TODO: change local to ollama
         if model_config.provider == "local":
             # For local (Ollama) provider
             self.client = OpenAI(
