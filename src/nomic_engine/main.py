@@ -13,9 +13,11 @@ import pydantic
 
 from .core.game_loop import GameLoop
 from .core.game_manager import GameManager
+from .data_models import ModelLibrary
 from .players.base_player import BasePlayer
 from .players.human_player import HumanPlayer
 from .players.llm_player import LLMPlayer
+from .utils.loaders import load_model_library
 
 
 def setup_logging() -> None:
@@ -30,19 +32,23 @@ def setup_logging() -> None:
     )
 
 
-def instantiate_players(game_manager: GameManager) -> list[BasePlayer]:
+def instantiate_players(
+    game_manager: GameManager, model_library: ModelLibrary
+) -> list[BasePlayer]:
     """
     Instantiate player objects based on game configuration.
 
     Args:
         game_manager: The loaded GameManager instance containing game
                       configuration.
+        model_library: The ModelLibrary containing available model definitions.
 
     Returns:
         List of instantiated BasePlayer objects (HumanPlayer or LLMPlayer).
 
     Raises:
-        ValueError: If game_manager.game_config is None.
+        ValueError: If game_manager.game_config is None or if a model_id
+                    is not found in the model library.
     """
     if game_manager.game_config is None:
         raise ValueError("GameManager must have game_config loaded")
@@ -52,11 +58,22 @@ def instantiate_players(game_manager: GameManager) -> list[BasePlayer]:
     for player_config in game_manager.game_config.players:
         if player_config.model_id == "human":
             players.append(HumanPlayer(player_config.name))
-        elif player_config.model_id == "llm":
-            players.append(LLMPlayer(player_config.name))
         else:
-            # For any other model_id, treat as LLM player
-            players.append(LLMPlayer(player_config.name))
+            # For any other model_id, look up the ModelDefinition
+            model_def = None
+            for model in model_library.models:
+                if model.id == player_config.model_id:
+                    model_def = model
+                    break
+
+            if model_def is None:
+                available = ", ".join(m.id for m in model_library.models)
+                raise ValueError(
+                    f"Model ID '{player_config.model_id}' not found in "
+                    f"model library. Available models: {available}"
+                )
+
+            players.append(LLMPlayer(player_config.name, model_def))
 
     return players
 
@@ -88,6 +105,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Load model library
+    try:
+        model_library = load_model_library()
+    except SystemExit:
+        # load_model_library already logged the error and called sys.exit
+        raise
+
     # Load game
     try:
         logger.info(f"Loading game from {args.game_dir}")
@@ -106,7 +130,7 @@ def main() -> None:
 
     # Instantiate players
     try:
-        players = instantiate_players(manager)
+        players = instantiate_players(manager, model_library)
     except ValueError as e:
         logger.error(f"Error instantiating players: {e}")
         sys.exit(1)

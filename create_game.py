@@ -23,7 +23,6 @@ from src.nomic_engine.constants import (
     GAME_STATE_FILE,
     GAME_TRANSCRIPT_FILE,
     INITIAL_RULES_FILE,
-    MODEL_LIBRARY_FILE,
     RULES_JSONL_FILE,
     RULES_MD_FILE,
 )
@@ -34,6 +33,7 @@ from src.nomic_engine.data_models import (
     PlayerConfig,
 )
 from src.nomic_engine.core.rules_manager import RulesManager
+from src.nomic_engine.utils.loaders import load_model_library
 from src.nomic_engine.utils.parsers import parse_rules_md
 
 # Configure logging
@@ -42,32 +42,6 @@ logging.basicConfig(
     format="%(levelname)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def load_model_library() -> ModelLibrary:
-    """
-    Load the model library from models.yml.
-
-    Returns:
-        ModelLibrary object
-
-    Raises:
-        SystemExit: If the file is not found or validation fails
-    """
-    models_file = Path(MODEL_LIBRARY_FILE)
-    try:
-        logger.info(f"Loading model library from {models_file}")
-        with models_file.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        model_library = ModelLibrary(**data)
-        logger.info(f"Successfully loaded {len(model_library.models)} models")
-        return model_library
-    except FileNotFoundError:
-        logger.error(f"Model library file not found: {models_file}")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Failed to load or validate model library: {e}")
-        sys.exit(1)
 
 
 def load_initial_rules() -> list:
