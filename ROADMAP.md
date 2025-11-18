@@ -12,17 +12,6 @@ Our architecture is built on these principles:
 
 ## Bug List**
 
-### COMPLETED
-
-* ✅ **Proposers can now participate in discussion and voting** (per Rules 111 and 105)
-* ✅ **Proposer name validation enforced**
-* ✅ **Judge logic refactored for manual veto and dynamic scoring**
-* ✅ **Discussion and voting phases now show original rule text**
-* ✅ **Game transcript overhauled for completeness and parsability**
-* ✅ **`next_proposal_id` increment logic fixed** - Now only increments when proposal passes and is not vetoed
-* ✅ **Zero-voter bug fixed** - Proposals with zero voters are now treated as automatic PASS
-* ✅ **Revised proposal validation implemented** - Revised proposals are now re-validated for legality
-
 ### HIGH PRIORITY
 
 (none)
@@ -42,35 +31,6 @@ Our architecture is built on these principles:
   ```
 * `2025-11-16 10:48:30,725 - src.nomic_engine.game_loop - INFO - Completed turn 2` after completing turn 1.
 
-## Sprint 4: Code Health & Refactor
-
-### COMPLETED
-* ✅ **Hybrid Domain Structure Refactor** - Project restructured into domain-based packages:
-  * Created `src/nomic_engine/core/` package containing `game_loop.py`, `game_manager.py`, and `rules_manager.py`
-  * Created `src/nomic_engine/llm/` package with stub files for future LLM-specific code
-  * Restructured `tests/` directory to mirror the new `src/nomic_engine/` package structure
-  * Updated all imports across the project to reflect the new structure
-  * All 111 tests passing
-
-* ✅ **GameLoop Refactor for Single Responsibility Principle** - Refactored `game_loop.py`:
-  * Broke down monolithic `_run_step_5_resolve` into focused single-purpose methods:
-    * `_tally_votes()` - Calculate vote results
-    * `_apply_passed_proposal()` - Apply proposal to rules and save
-    * `_advance_turn_state()` - Update turn order and move number
-    * `_log_and_save_turn()` - Format transcript, log, and save state
-  * Extracted illegal proposal logging into `_log_illegal_proposal()` method
-  * Renamed all `_run_step_X` methods to descriptive names:
-    * `_run_step_1_propose` → `_get_and_validate_proposal`
-    * `_run_step_2_discuss` → `_collect_discussions`
-    * `_run_step_3_revise` → `_handle_revision`
-    * `_run_step_4_vote` → `_collect_votes`
-    * `_run_step_5_resolve` → `_resolve_turn`
-  * Updated all 26 GameLoop unit tests to work with refactored structure
-  * All 111 tests passing with full CI checks (lint, format, type check)
-
-### PROPOSED
-(none)
-
 ## Sprint 5: LLM Player Implementation (Proposed)
 * **Implement `llm_player.py`:**
     * Create `src/nomic_engine/utils/api_clients.py`: A module to abstract `openai`, `anthropic`, etc. API calls.
@@ -81,6 +41,7 @@ Our architecture is built on these principles:
 ## Future Work
 
 This is the long-term backlog and TODO scratchpad.
+  * Victory check. Should have a game state variable for the target score that gets checked against. Allow the judge to set this when setting scores or vetoing or something. I'm thinking that there might be a judge step for "change flags" that will allow the judge to flip game state flags (e.g. unanimous votes versus majority votes) and that could update the victory score, too.
   * **Implement `llm_player.py`:**
       * Create `src/nomic_engine/utils/api_clients.py`: A module to abstract the `openai`, `anthropic`, etc. API calls.
       * **Key Requirement:** The API client must *only* require the key for the *specific model* being called, not all keys in `.env`.
