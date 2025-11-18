@@ -3,6 +3,7 @@ Smoke tests for data models to ensure basic functionality.
 """
 
 from src.nomic_engine.data_models import (
+    ChatMessage,
     GameConfig,
     GameState,
     ModelDefinition,
@@ -113,3 +114,21 @@ def test_model_library_creation():
     )
     assert len(library.models) == 2
     assert library.models[0].id == "gpt-4o"
+
+
+def test_chat_message_creation():
+    """Test that ChatMessage can be created with valid data."""
+    message = ChatMessage(role="user", content="Hello, world!")
+    assert message.role == "user"
+    assert message.content == "Hello, world!"
+
+    # Test all valid roles
+    system_msg = ChatMessage(
+        role="system", content="You are a helpful assistant."
+    )
+    assert system_msg.role == "system"
+
+    assistant_msg = ChatMessage(
+        role="assistant", content="How can I help you?"
+    )
+    assert assistant_msg.role == "assistant"
