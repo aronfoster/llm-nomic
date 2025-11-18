@@ -5,7 +5,7 @@ This module provides a stub for an LLM-powered player that will
 eventually use language models to participate in the game.
 """
 
-from ..data_models import GameState, Proposal, Rule, Vote
+from ..data_models import GameState, ModelDefinition, Proposal, Rule, Vote
 from .base_player import BasePlayer
 
 
@@ -16,6 +16,20 @@ class LLMPlayer(BasePlayer):
     This is a stub implementation - all methods raise NotImplementedError
     until the LLM integration is completed.
     """
+
+    def __init__(
+        self, player_name: str, model_config: ModelDefinition
+    ) -> None:
+        """
+        Initialize an LLM player with a specific model configuration.
+
+        Args:
+            player_name: The unique name for this player.
+            model_config: The ModelDefinition containing API configuration
+                          for this player's LLM.
+        """
+        super().__init__(player_name)
+        self.model_config = model_config
 
     def propose(self, game_state: GameState, rules: list[Rule]) -> Proposal:
         """
