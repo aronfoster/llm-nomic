@@ -119,6 +119,16 @@ Examples of the EXACT format required:
 Remember: Invalid JSON = automatic ABSTAIN. Output only JSON.
 """
 
+VOTE_RETRY_TEMPLATE = """Your previous response was not valid JSON.
+
+This is your FINAL attempt. Output ONLY a valid JSON object with these 
+exact keys in order:
+1. "private_thoughts"
+2. "public_reason"  
+3. "vote"
+
+No other text. Just the JSON object:"""
+
 # -----------------------------------------------------------------
 # DISCUSS ACTION (Stub for your quorum)
 # -----------------------------------------------------------------
