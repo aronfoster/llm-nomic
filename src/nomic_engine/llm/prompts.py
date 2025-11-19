@@ -1,9 +1,51 @@
 """
-Central store for all LLM prompt templates.
+LLM Prompt Templates — Nomic V1 (November 2025)
 
-These templates use standard Python .format() placeholders
-(e.g., {rules_text}, {proposal_text}) which are filled in by the
-PromptBuilder class.
+Design Decisions & Tradeoffs (DO NOT DELETE THIS COMMENT BLOCK):
+
+1. Strict JSON output
+   - Won over XML tags (harder to parse reliably)
+   - Won over free text (parsing nightmare)
+   - Chosen over XML, VOTE:/RATIONALE, etc. after testing all options
+   - Zero regex parsing code. json.loads() either works or it doesn't.
+
+2. KEY ORDERING (CRITICAL)
+   - "private_thoughts" MUST come first
+   - Forces Chain-of-Thought reasoning before commitment
+   - LLMs generate linearly - they can't "think ahead" to later JSON keys
+
+3. AGGRESSIVE FORMAT ENFORCEMENT
+   - Multiple reminders about JSON-only output
+   - Threat of ABSTAIN on format failure (psychological pressure)
+   - No markdown, no explanations, no "here is my response" preamble
+   - Works even on 8B models when threatened properly
+
+4. DUAL REASONING FIELDS
+   - private_thoughts: Real strategy (logged for analysis)
+   - public_reason: Political theater for other players
+   - Mirrors how humans actually play Nomic
+
+WHAT WE DIDN'T DO (saved for V2+):
+- Dynamic examples from current game (too complex for V1)
+- Personality traits affecting strategy (unnecessary complexity)
+- Multi-model parsing (one model tries, another parses)
+- Configurable output formats per model
+- Memory of previous games/strategies
+"""
+
+# =====================================================================
+# PROMPTING CONSTANTS - The aggressive enforcement that actually works
+# =====================================================================
+
+JSON_FORMAT_ENFORCEMENT = """
+OUTPUT REQUIREMENTS:
+1. Your response must be EXACTLY one JSON object
+2. Start with { and end with }
+3. No text before the {
+4. No text after the }
+5. No markdown code blocks
+6. No \"Here is my response\" or similar preamble
+7. If you output anything other than pure JSON, your vote = ABSTAIN
 """
 
 # -----------------------------------------------------------------
@@ -11,21 +53,24 @@ PromptBuilder class.
 # -----------------------------------------------------------------
 
 VOTE_SYSTEM_PROMPT = """
-You are a player in a game of Nomic. You are logical, terse, and creative.
-Your goal is to win the game by earning points, but also to make the game
-more interesting and challenging.
+You are {player_name}, a strategic and calculating player in a game of Nomic.
+You are ruthlessly competitive and aim to win through clever manipulation
+ of the rules.
 
 You are about to vote on a proposal.
 """
 
 VOTE_USER_TEMPLATE = """
-Here is the current state of the game:
+H== GAME STATE ===
+Move #{move_number}
+Scores: {scores_text}
+Your position: {player_position}
+Turn order: {turn_order}
+
+=== ALL CURRENT RULES ===
 {rules_text}
 
----
-Here is the proposal you must vote on:
-
-**Proposal ID:** {proposal_id}
+=== PROPOSAL #{proposal_id} ===
 **Proposer:** {proposer_name}
 **Type:** {proposal_type}
 **Target Rule:** {target_rule_id}
@@ -33,16 +78,45 @@ Here is the proposal you must vote on:
 **New Text:** {new_text}
 **Rationale:** {rationale}
 
----
-Discussions from other players:
+=== DISCUSSIONS ===
 {discussions_text}
 
----
-You must now cast your vote.
-Your response MUST be in this exact format, and nothing else:
+=== YOUR VOTE ===
 
-VOTE: [YES/NO/ABSTAIN]
-RATIONALE: [Your brief rationale for the vote.]
+You must output EXACTLY one JSON object with these keys IN THIS ORDER:
+1. \"private_thoughts\": Your honest strategic analysis. How does this
+   affect your path to victory? What are others really trying to do? (This
+   is private - be Machiavellian)
+2. \"public_reason\": Your explanation to other players (1-3 sentences,
+   be political)
+3. \"vote\": Exactly one of: \"YES\", \"NO\", or \"ABSTAIN\" (uppercase)
+
+The order matters. Think BEFORE you decide.
+
+{json_format_enforcement}
+
+Examples of the EXACT format required:
+
+{{
+  \"private_thoughts\": \"Alice is at 95 points and this rule would give
+    her immediate victory through the transmutation loophole. I must block
+    this or lose instantly. Bob will likely support it since he doesn't see
+    the combo.\",
+  \"public_reason\": \"This proposal undermines the careful balance
+    established by rules 201-203.\",
+  \"vote\": \"NO\"
+}}
+
+{{
+  \"private_thoughts\": \"This nerfs Charlie who's my main competition.
+    The rule itself is harmless to my strategy. Supporting this builds
+    alliance with proposer for my next turn.\",
+  \"public_reason\": \"This clarification prevents future ambiguity and
+    strengthens the game's consistency.\",
+  \"vote\": \"YES\"
+}}
+
+Remember: Invalid JSON = automatic ABSTAIN. Output only JSON.
 """
 
 # -----------------------------------------------------------------
