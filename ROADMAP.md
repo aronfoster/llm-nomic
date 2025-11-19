@@ -38,7 +38,7 @@ Our architecture is built on these principles:
 ### Backlog
 * ✅ **Task 1:** Create `src/nomic_engine/llm/prompts.py` to store prompt templates as string constants.
 * ✅ **Task 2:** Create `src/nomic_engine/llm/api_clients.py` and implement a simple client for the local Ollama/OpenAI-compatible endpoint.
-* **Task 3:** Create `src/nomic_engine/llm/prompt_builder.py` with a class that can build the `vote` prompt.
+* ✅ **Task 3:** Create `src/nomic_engine/llm/prompt_builder.py` with a class that can build the `vote` prompt.
 * **Task 4:** Create `src/nomic_engine/llm/parsers.py` with a function to parse the LLM's text response into a `Vote` object.
 * **Task 5:** Implement the `LLMPlayer.vote()` method, wiring together the new `ApiClient`, `PromptBuilder`, and `parsers`.
 
