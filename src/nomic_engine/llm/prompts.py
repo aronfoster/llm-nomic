@@ -61,7 +61,7 @@ You are about to vote on a proposal.
 """
 
 VOTE_USER_TEMPLATE = """
-H== GAME STATE ===
+=== GAME STATE ===
 Move #{move_number}
 Scores: {scores_text}
 Your position: {player_position}
