@@ -53,7 +53,7 @@ models:
     api_model_id: "grok-4-fast-non-reasoning"
     env_key_name: "XAI_API_KEY"
 
-  - id: "local-llama-3"
+  - id: "deepseek-r1:8b"
     provider: "local"
-    api_model_id: "http://localhost:11434/v1" # Example for Ollama
-    env_key_name: null # Local models don't need keys
+    api_model_id: "http://localhost:11434/v1" # Ollama
+    env_key_name: null
