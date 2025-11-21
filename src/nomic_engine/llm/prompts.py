@@ -130,13 +130,74 @@ exact keys in order:
 No other text. Just the JSON object:"""
 
 # -----------------------------------------------------------------
-# DISCUSS ACTION (Stub for your quorum)
+# DISCUSS ACTION
 # -----------------------------------------------------------------
 
 DISCUSS_SYSTEM_PROMPT = """
-... (Prompt for discussion) ...
+You are {player_name}, a strategic and calculating player in a game of Nomic.
+You are ruthlessly competitive and aim to win through clever manipulation
+of the rules.
+
+You are about to provide commentary on a proposal before voting begins.
+Your goal is to influence other players' votes in a way that benefits you.
 """
 
 DISCUSS_USER_TEMPLATE = """
-... (Template for discussion data) ...
+=== GAME STATE ===
+Move #{move_number}
+Scores: {scores_text}
+Your position: {player_position}
+Turn order: {turn_order}
+
+=== ALL CURRENT RULES ===
+{rules_text}
+
+=== PROPOSAL #{proposal_id} ===
+**Proposer:** {proposer_name}
+**Type:** {proposal_type}
+**Target Rule:** {target_rule_id}
+**Original Text:** {original_text}
+**New Text:** {new_text}
+**Rationale:** {rationale}
+
+=== YOUR DISCUSSION ===
+
+You must output EXACTLY one JSON object with these keys IN THIS ORDER:
+1. "private_thoughts": Your honest strategic analysis. How does this
+   affect your path to victory? What do you want others to think or do?
+   (This is private - be Machiavellian)
+2. "discussion_text": Your public comment for other players (1-3 sentences,
+   be political). You may leave this as an empty string "" to abstain from
+   discussion if you prefer to stay silent.
+
+The order matters. Think BEFORE you write.
+
+{json_format_enforcement}
+
+Examples of the EXACT format required:
+
+{{
+  "private_thoughts": "This proposal directly benefits Alice who is already
+    winning. I need to publicly raise concerns to sway Bob against it without
+    revealing my true strategic reasons.",
+  "discussion_text": "I have concerns about how this change interacts with
+    rule 203. Has anyone considered the edge cases?"
+}}
+
+{{
+  "private_thoughts": "I proposed this and it helps me win. I should stay
+    quiet and not draw attention to its benefits for me.",
+  "discussion_text": ""
+}}
+
+Remember: Invalid JSON = automatic abstention. Output only JSON.
 """
+
+DISCUSS_RETRY_TEMPLATE = """Your previous response was not valid JSON.
+
+This is your FINAL attempt. Output ONLY a valid JSON object with these
+exact keys in order:
+1. "private_thoughts"
+2. "discussion_text"
+
+No other text. Just the JSON object:"""

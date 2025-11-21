@@ -16,7 +16,13 @@ from ..data_models import (
     Rule,
     Vote,
 )
-from ..llm import ApiClient, PromptBuilder, parse_vote_response, prompts
+from ..llm import (
+    ApiClient,
+    PromptBuilder,
+    parse_discussion_response,
+    parse_vote_response,
+    prompts,
+)
 from .base_player import BasePlayer
 
 logger = logging.getLogger(__name__)
@@ -32,6 +38,7 @@ class LLMPlayer(BasePlayer):
 
     # Maximum number of retry attempts when LLM produces invalid JSON
     MAX_VOTE_RETRIES = 2
+    MAX_DISCUSS_RETRIES = 2
 
     def __init__(
         self, player_name: str, model_config: ModelDefinition
@@ -72,6 +79,10 @@ class LLMPlayer(BasePlayer):
         """
         Provide discussion/commentary on a proposal using an LLM.
 
+        This method implements a retry loop to handle the non-deterministic
+        nature of LLMs. If the LLM produces invalid JSON, the error message
+        is fed back to the model for a retry attempt.
+
         Args:
             proposal: The proposal being discussed.
             game_state: The current state of the game.
@@ -79,13 +90,80 @@ class LLMPlayer(BasePlayer):
 
         Returns:
             A string containing the player's discussion, or None to abstain
-            from discussion.
-
-        Raises:
-            NotImplementedError: LLM integration not yet implemented.
+            from discussion. An empty string is treated as abstention.
         """
-        # TODO: MVP Stub; Always abstain from discussion to allow
-        # testing of voting
+        # Build initial messages for the discuss prompt
+        messages = self.prompt_builder.build_discuss_messages(
+            proposal=proposal,
+            rules=rules,
+            game_state=game_state,
+            player_name=self.player_name,
+        )
+
+        # Retry loop with maximum attempts
+        for attempt in range(self.MAX_DISCUSS_RETRIES):
+            # Status indicator for UX
+            print(f"\n🤖 {self.player_name} is thinking...")
+
+            # Get completion from the LLM
+            response_text = self.api_client.get_completion(messages)
+
+            # Handle API errors (None response)
+            if response_text is None:
+                logger.error(
+                    f"{self.player_name}: API error on attempt {attempt + 1}/"
+                    f"{self.MAX_DISCUSS_RETRIES}"
+                )
+                # Continue to retry if attempts remain
+                continue
+
+            # Try to parse the response
+            try:
+                data = parse_discussion_response(response_text)
+
+                # Success! Log private thoughts
+                logger.debug(
+                    f"{self.player_name} private thoughts: "
+                    f"{data['private_thoughts']}"
+                )
+
+                # Return discussion_text (empty string treated as abstain)
+                discussion_text = data["discussion_text"]
+                if discussion_text == "":
+                    return None
+                return discussion_text
+
+            except ValueError as e:
+                # Parsing failed - log the error
+                logger.warning(
+                    f"{self.player_name}: Invalid response on attempt "
+                    f"{attempt + 1}/{self.MAX_DISCUSS_RETRIES}. Error: {e}"
+                )
+
+                # If this was the last attempt, break out
+                if attempt >= self.MAX_DISCUSS_RETRIES - 1:
+                    break
+
+                # Construct retry by appending bad response and error message
+                # Append the LLM's bad response as an assistant message
+                messages.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
+
+                # Append the retry prompt as a user message
+                messages.append(
+                    ChatMessage(
+                        role="user", content=prompts.DISCUSS_RETRY_TEMPLATE
+                    )
+                )
+
+                # Loop continues to retry with updated conversation history
+
+        # All retries exhausted - return None (abstain)
+        logger.error(
+            f"{self.player_name}: Failed to generate valid discussion after "
+            f"{self.MAX_DISCUSS_RETRIES} attempts. Defaulting to abstain."
+        )
         return None
 
     def vote(
@@ -118,6 +196,9 @@ class LLMPlayer(BasePlayer):
 
         # Retry loop with maximum attempts
         for attempt in range(self.MAX_VOTE_RETRIES):
+            # Status indicator for UX
+            print(f"\n🤖 {self.player_name} is thinking...")
+
             # Get completion from the LLM
             response_text = self.api_client.get_completion(messages)
 

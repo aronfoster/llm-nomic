@@ -412,3 +412,330 @@ class TestLLMPlayerVote:
             discussions=[],  # Currently empty
             player_name="TestPlayer",
         )
+
+
+class TestLLMPlayerDiscuss:
+    """Tests for LLMPlayer.discuss() method."""
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
+    def test_discuss_success_first_try(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test successful discussion on the first attempt."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        # Mock the prompt builder to return messages
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_discuss_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock the API client to return valid JSON
+        valid_json_response = """{
+            "private_thoughts": "Strategic analysis here",
+            "discussion_text": "I think this proposal has merit."
+        }"""
+        mock_api_instance.get_completion.return_value = valid_json_response
+
+        # Mock the parser to return valid data
+        mock_parse.return_value = {
+            "private_thoughts": "Strategic analysis here",
+            "discussion_text": "I think this proposal has merit.",
+        }
+
+        # Create player and discuss
+        player = LLMPlayer("TestPlayer", model_config)
+        result = player.discuss(proposal, game_state, rules)
+
+        # Assertions
+        assert result == "I think this proposal has merit."
+
+        # Verify API was called only once
+        assert mock_api_instance.get_completion.call_count == 1
+
+        # Verify parser was called only once
+        assert mock_parse.call_count == 1
+        mock_parse.assert_called_with(valid_json_response)
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
+    def test_discuss_empty_string_returns_none(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that empty discussion_text returns None (abstain)."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_discuss_messages.return_value = (
+            mock_messages
+        )
+
+        mock_api_instance.get_completion.return_value = """{
+            "private_thoughts": "I prefer to stay silent.",
+            "discussion_text": ""
+        }"""
+
+        mock_parse.return_value = {
+            "private_thoughts": "I prefer to stay silent.",
+            "discussion_text": "",
+        }
+
+        # Create player and discuss
+        player = LLMPlayer("TestPlayer", model_config)
+        result = player.discuss(proposal, game_state, rules)
+
+        # Should return None for empty string
+        assert result is None
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
+    def test_discuss_success_after_retry(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test successful discussion after one retry."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_discuss_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock the API client to return bad JSON first, then good JSON
+        bad_json_response = "This is not valid JSON"
+        good_json_response = """{
+            "private_thoughts": "Better analysis now",
+            "discussion_text": "Let me reconsider..."
+        }"""
+        mock_api_instance.get_completion.side_effect = [
+            bad_json_response,
+            good_json_response,
+        ]
+
+        # Mock the parser: raise ValueError first, then return valid data
+        mock_parse.side_effect = [
+            ValueError("Response is not valid JSON. Error: ..."),
+            {
+                "private_thoughts": "Better analysis now",
+                "discussion_text": "Let me reconsider...",
+            },
+        ]
+
+        # Create player and discuss
+        player = LLMPlayer("TestPlayer", model_config)
+        result = player.discuss(proposal, game_state, rules)
+
+        # Assertions
+        assert result == "Let me reconsider..."
+
+        # Verify API was called twice
+        assert mock_api_instance.get_completion.call_count == 2
+
+        # Verify parser was called twice
+        assert mock_parse.call_count == 2
+
+        # Verify that the second API call included the error feedback
+        second_call_messages = mock_api_instance.get_completion.call_args_list[
+            1
+        ][0][0]
+        # system, user, assistant (bad), user (retry)
+        assert len(second_call_messages) == 4
+        assert second_call_messages[2].role == "assistant"
+        assert second_call_messages[2].content == bad_json_response
+        assert second_call_messages[3].role == "user"
+        # The retry template should be in the last message
+        assert "FINAL attempt" in second_call_messages[3].content
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
+    def test_discuss_failure_max_retries_returns_none(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that player returns None after exhausting retries."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_discuss_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock the API client to always return bad JSON
+        bad_json_response = "This is consistently bad JSON {{{{{{"
+        mock_api_instance.get_completion.return_value = bad_json_response
+
+        # Mock the parser to always raise ValueError
+        mock_parse.side_effect = ValueError("Response is not valid JSON")
+
+        # Create player and discuss
+        player = LLMPlayer("TestPlayer", model_config)
+        result = player.discuss(proposal, game_state, rules)
+
+        # Assertions - should return None (abstain)
+        assert result is None
+
+        # Verify API was called MAX_DISCUSS_RETRIES times (2)
+        assert (
+            mock_api_instance.get_completion.call_count
+            == LLMPlayer.MAX_DISCUSS_RETRIES
+        )
+
+        # Verify parser was called MAX_DISCUSS_RETRIES times
+        assert mock_parse.call_count == LLMPlayer.MAX_DISCUSS_RETRIES
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    def test_discuss_all_api_errors_returns_none(
+        self,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that player returns None when API consistently fails."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_discuss_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock the API client to always return None (API error)
+        mock_api_instance.get_completion.return_value = None
+
+        # Create player and discuss
+        player = LLMPlayer("TestPlayer", model_config)
+        result = player.discuss(proposal, game_state, rules)
+
+        # Assertions - should return None (abstain)
+        assert result is None
+
+        # Verify API was called MAX_DISCUSS_RETRIES times
+        assert (
+            mock_api_instance.get_completion.call_count
+            == LLMPlayer.MAX_DISCUSS_RETRIES
+        )
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
+    def test_discuss_prompt_builder_called_correctly(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that PromptBuilder is called with correct arguments."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_discuss_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock successful API response
+        mock_api_instance.get_completion.return_value = (
+            '{"private_thoughts":"Analysis","discussion_text":"Comment"}'
+        )
+        mock_parse.return_value = {
+            "private_thoughts": "Analysis",
+            "discussion_text": "Comment",
+        }
+
+        # Create player and discuss
+        player = LLMPlayer("TestPlayer", model_config)
+        player.discuss(proposal, game_state, rules)
+
+        # Verify PromptBuilder.build_discuss_messages called correctly
+        call = mock_prompt_builder_instance.build_discuss_messages
+        call.assert_called_once_with(
+            proposal=proposal,
+            rules=rules,
+            game_state=game_state,
+            player_name="TestPlayer",
+        )
