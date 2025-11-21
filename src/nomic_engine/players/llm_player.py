@@ -13,6 +13,7 @@ from ..data_models import (
     GameState,
     ModelDefinition,
     Proposal,
+    ProposalType,
     Rule,
     Vote,
 )
@@ -20,6 +21,7 @@ from ..llm import (
     ApiClient,
     PromptBuilder,
     parse_discussion_response,
+    parse_proposal_response,
     parse_vote_response,
     prompts,
 )
@@ -39,6 +41,7 @@ class LLMPlayer(BasePlayer):
     # Maximum number of retry attempts when LLM produces invalid JSON
     MAX_VOTE_RETRIES = 2
     MAX_DISCUSS_RETRIES = 2
+    MAX_PROPOSE_RETRIES = 2
 
     def __init__(
         self, player_name: str, model_config: ModelDefinition
@@ -60,6 +63,11 @@ class LLMPlayer(BasePlayer):
         """
         Generate a proposal using an LLM.
 
+        This method implements a retry loop to handle the non-deterministic
+        nature of LLMs. If the LLM produces invalid JSON or violates game
+        logic constraints, the error message is fed back to the model for
+        a retry attempt.
+
         Args:
             game_state: The current state of the game.
             rules: The current list of all rules.
@@ -69,9 +77,92 @@ class LLMPlayer(BasePlayer):
             proposed change.
 
         Raises:
-            NotImplementedError: LLM integration not yet implemented.
+            RuntimeError: If the LLM fails to generate a valid proposal
+                         after all retry attempts are exhausted.
         """
-        raise NotImplementedError("LLMPlayer is not yet implemented.")
+        # Build initial messages for the propose prompt
+        messages = self.prompt_builder.build_propose_messages(
+            rules=rules,
+            game_state=game_state,
+            player_name=self.player_name,
+        )
+
+        # Retry loop with maximum attempts
+        for attempt in range(self.MAX_PROPOSE_RETRIES):
+            # Status indicator for UX
+            print(f"\n🤖 {self.player_name} is thinking about a proposal...")
+
+            # Get completion from the LLM
+            response_text = self.api_client.get_completion(messages)
+
+            # Handle API errors (None response)
+            if response_text is None:
+                logger.error(
+                    f"{self.player_name}: API error on attempt {attempt + 1}/"
+                    f"{self.MAX_PROPOSE_RETRIES}"
+                )
+                # Continue to retry if attempts remain
+                continue
+
+            # Try to parse the response
+            try:
+                data = parse_proposal_response(response_text)
+
+                # Success! Log private thoughts
+                logger.debug(
+                    f"{self.player_name} private thoughts: "
+                    f"{data['private_thoughts']}"
+                )
+
+                # Construct and return the Proposal object
+                # Note: proposal_id is left as None; GameLoop assigns it
+                return Proposal(
+                    proposer_name=self.player_name,
+                    move_number=game_state.move_number,
+                    type=ProposalType(data["type"]),  # Convert str to enum
+                    proposal_id=None,
+                    target_rule_id=data.get("target_rule_id"),
+                    new_text=data.get("new_text"),
+                    rationale=data.get("rationale"),
+                )
+
+            except ValueError as e:
+                # Parsing failed - log the error
+                logger.warning(
+                    f"{self.player_name}: Invalid response on attempt "
+                    f"{attempt + 1}/{self.MAX_PROPOSE_RETRIES}. Error: {e}"
+                )
+
+                # If this was the last attempt, break out
+                if attempt >= self.MAX_PROPOSE_RETRIES - 1:
+                    break
+
+                # Construct retry by appending bad response and error message
+                # Append the LLM's bad response as an assistant message
+                messages.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
+
+                # Append the retry prompt with the specific error as a user msg
+                retry_message = prompts.PROPOSE_RETRY_TEMPLATE.format(
+                    validation_error=str(e)
+                )
+                messages.append(
+                    ChatMessage(role="user", content=retry_message)
+                )
+
+                # Loop continues to retry with updated conversation history
+
+        # All retries exhausted - raise RuntimeError (better to crash than
+        # to generate a "pass" turn for a proposal phase)
+        logger.error(
+            f"{self.player_name}: Failed to generate valid proposal after "
+            f"{self.MAX_PROPOSE_RETRIES} attempts."
+        )
+        raise RuntimeError(
+            f"LLM failed to generate a valid proposal after "
+            f"{self.MAX_PROPOSE_RETRIES} attempts."
+        )
 
     def discuss(
         self, proposal: Proposal, game_state: GameState, rules: list[Rule]

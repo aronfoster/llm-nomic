@@ -251,3 +251,55 @@ class PromptBuilder:
             ChatMessage(role="system", content=system_prompt_str),
             ChatMessage(role="user", content=user_prompt_str),
         ]
+
+    def build_propose_messages(
+        self,
+        rules: list[Rule],
+        game_state: GameState,
+        player_name: str,
+    ) -> list[ChatMessage]:
+        """
+        Build the complete chat message list for the PROPOSE action.
+
+        This method populates the PROPOSE_SYSTEM_PROMPT and
+        PROPOSE_USER_TEMPLATE with all necessary game data, including
+        calculating derived fields.
+
+        Args:
+            rules: All current rules in the game
+            game_state: The current game state
+            player_name: The name of the player making the proposal
+
+        Returns:
+            A list of ChatMessage objects: [system_message, user_message]
+
+        Raises:
+            ValueError: If player_name is not in turn_order
+            KeyError: If template placeholders are missing
+        """
+        # Prepare formatted data
+        scores_text = self._format_scores(game_state.scores)
+        rules_text = self._format_rules(rules)
+        player_position = self._get_player_position(player_name, game_state)
+        turn_order_str = ", ".join(game_state.turn_order)
+
+        # Format the system prompt
+        system_prompt_str = prompts.PROPOSE_SYSTEM_PROMPT.format(
+            player_name=player_name
+        )
+
+        # Format the user prompt with ALL required placeholders
+        user_prompt_str = prompts.PROPOSE_USER_TEMPLATE.format(
+            move_number=game_state.move_number,
+            scores_text=scores_text,
+            player_position=player_position,
+            turn_order=turn_order_str,
+            rules_text=rules_text,
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+        )
+
+        # Return the message list
+        return [
+            ChatMessage(role="system", content=system_prompt_str),
+            ChatMessage(role="user", content=user_prompt_str),
+        ]

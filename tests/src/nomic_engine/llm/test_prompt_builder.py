@@ -335,6 +335,82 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("N/A", user_content)  # target_rule_id and original_text
         self.assertIn("No rationale provided", user_content)
 
+    def test_build_propose_messages_integration(self):
+        """
+        Integration test using real prompt templates for propose action.
+
+        This test verifies that the method works correctly with the actual
+        templates from prompts.py and all placeholders are populated.
+        """
+        # Call with real templates
+        messages = self.builder.build_propose_messages(
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Alice",
+        )
+
+        # Basic structure verification
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[0].role, "system")
+        self.assertEqual(messages[1].role, "user")
+
+        # Verify system prompt mentions the player
+        self.assertIn("Alice", messages[0].content)
+
+        # Verify user prompt contains key game data
+        user_content = messages[1].content
+        self.assertIn("Move #5", user_content)
+        self.assertIn("1 of 3", user_content)  # Alice's position
+        self.assertIn("Alice, Bob, Charlie", user_content)  # turn order
+
+        # Verify rules are included
+        self.assertIn("101", user_content)  # rule ID
+        self.assertIn("All players must vote on proposals", user_content)
+        self.assertIn("201", user_content)  # rule ID
+        self.assertIn("Players gain 1 point", user_content)
+
+        # Verify JSON format enforcement is included
+        self.assertIn("OUTPUT REQUIREMENTS", user_content)
+        self.assertIn("pure JSON", user_content)
+
+        # Verify proposal-specific content
+        self.assertIn("ADD", user_content)
+        self.assertIn("AMEND", user_content)
+        self.assertIn("REPEAL", user_content)
+        self.assertIn("TRANSMUTE", user_content)
+        self.assertIn("private_thoughts", user_content)
+        self.assertIn("target_rule_id", user_content)
+        self.assertIn("new_text", user_content)
+        self.assertIn("rationale", user_content)
+
+    def test_build_propose_messages_player_not_found(self):
+        """Test build_propose_messages raises ValueError for unknown player."""
+        with self.assertRaises(ValueError) as context:
+            self.builder.build_propose_messages(
+                rules=self.rules,
+                game_state=self.game_state,
+                player_name="Unknown",
+            )
+
+        self.assertIn("Unknown", str(context.exception))
+        self.assertIn("not found in turn order", str(context.exception))
+
+    def test_build_propose_messages_empty_rules(self):
+        """Test build_propose_messages handles empty rule lists."""
+        # Should not raise an exception
+        messages = self.builder.build_propose_messages(
+            rules=[],
+            game_state=self.game_state,
+            player_name="Alice",
+        )
+
+        # Verify it still produces valid messages
+        self.assertEqual(len(messages), 2)
+        user_content = messages[1].content
+
+        # Verify no rules message
+        self.assertIn("No rules defined", user_content)
+
 
 if __name__ == "__main__":
     unittest.main()

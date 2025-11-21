@@ -201,3 +201,118 @@ exact keys in order:
 2. "discussion_text"
 
 No other text. Just the JSON object:"""
+
+# -----------------------------------------------------------------
+# PROPOSE ACTION
+# -----------------------------------------------------------------
+
+PROPOSE_SYSTEM_PROMPT = """
+You are {player_name}, a strategic and calculating player in a game of Nomic.
+You are ruthlessly competitive and aim to win through clever manipulation
+of the rules.
+
+You must make a strategic proposal to change the rules. Your goal is to
+advance your position while making the proposal appealing enough to pass
+the vote of other players.
+"""
+
+PROPOSE_USER_TEMPLATE = """
+=== GAME STATE ===
+Move #{move_number}
+Scores: {scores_text}
+Your position: {player_position}
+Turn order: {turn_order}
+
+=== ALL CURRENT RULES ===
+{rules_text}
+
+=== YOUR PROPOSAL ===
+
+You must propose a rule change. Choose one of these proposal types:
+- "ADD": Create a new rule (provide new_text, NOT target_rule_id)
+- "AMEND": Modify an existing rule (provide target_rule_id AND new_text)
+- "REPEAL": Delete an existing rule (provide target_rule_id, NOT new_text)
+- "TRANSMUTE": Change rule status mutable/immutable (provide target_rule_id)
+
+You must output EXACTLY one JSON object with these keys IN THIS ORDER:
+1. "private_thoughts": Your honest strategic analysis. Why are you making this
+   proposal? How does it help you win? What are the risks? (This is private -
+   be Machiavellian)
+2. "type": Exactly one of: "ADD", "AMEND", "REPEAL", or "TRANSMUTE" (uppercase)
+3. "target_rule_id": The ID of the rule to affect (e.g., "201") or null for ADD
+4. "new_text": The text of the new/amended rule, or null for REPEAL/TRANSMUTE
+5. "rationale": Your public explanation to convince other players to vote YES
+   (1-3 sentences, be political)
+
+The order matters. Think BEFORE you decide.
+
+{json_format_enforcement}
+
+Examples of the EXACT format required:
+
+{{
+  "private_thoughts": "I'm behind in points. Adding a rule that gives bonus
+    points for creative proposals would help me catch up. I'll frame it as
+    improving game quality to make it appealing.",
+  "type": "ADD",
+  "target_rule_id": null,
+  "new_text": "A player with a unanimous proposal gains 5 bonus points.",
+  "rationale": "Encourages thoughtful proposals that benefit everyone."
+}}
+
+{{
+  "private_thoughts": "Rule 201 currently gives Alice a huge advantage. By
+    amending it to cap the bonus, I can slow her down without making it
+    obvious I'm targeting her.",
+  "type": "AMEND",
+  "target_rule_id": "201",
+  "new_text": "Players gain 1 point for successful proposals, max 3 per game.",
+  "rationale": "Balances the game by preventing runaway leaders."
+}}
+
+{{
+  "private_thoughts": "Rule 203 is blocking my winning strategy. I'll argue
+    it's causing confusion to justify removing it.",
+  "type": "REPEAL",
+  "target_rule_id": "203",
+  "new_text": null,
+  "rationale": "This rule has caused confusion and slows down gameplay."
+}}
+
+{{
+  "private_thoughts": "Making rule 105 immutable will lock in my advantage
+    permanently. I'll frame it as protecting the game's foundation.",
+  "type": "TRANSMUTE",
+  "target_rule_id": "105",
+  "new_text": null,
+  "rationale": "This core rule should be protected to maintain game stability."
+}}
+
+CRITICAL VALIDATION RULES:
+- ADD: target_rule_id must be null, new_text is required
+- AMEND: target_rule_id AND new_text are both required
+- REPEAL: target_rule_id is required, new_text must be null
+- TRANSMUTE: target_rule_id is required, new_text must be null
+
+Remember: Invalid JSON or invalid proposal logic = automatic rejection.
+Output only JSON.
+"""
+
+PROPOSE_RETRY_TEMPLATE = """Your previous response was not valid.
+
+Error: {validation_error}
+
+This is your FINAL attempt. Output ONLY a valid JSON object with these
+exact keys in order:
+1. "private_thoughts"
+2. "type" (one of: "ADD", "AMEND", "REPEAL", "TRANSMUTE")
+3. "target_rule_id" (rule ID string or null)
+4. "new_text" (rule text string or null)
+5. "rationale"
+
+Remember the validation rules:
+- ADD: target_rule_id must be null, new_text is required
+- AMEND: target_rule_id AND new_text are both required
+- REPEAL/TRANSMUTE: target_rule_id is required, new_text must be null
+
+No other text. Just the JSON object:"""
