@@ -303,3 +303,90 @@ class PromptBuilder:
             ChatMessage(role="system", content=system_prompt_str),
             ChatMessage(role="user", content=user_prompt_str),
         ]
+
+    def build_revise_messages(
+        self,
+        proposal: Proposal,
+        discussions: list[tuple[str, str]],
+        game_state: GameState,
+        player_name: str,
+    ) -> list[ChatMessage]:
+        """
+        Build the complete chat message list for the REVISE action.
+
+        This method populates the REVISE_SYSTEM_PROMPT and
+        REVISE_USER_TEMPLATE with all necessary game data. It also
+        detects Rule 112 constraints (UNCLEAR/AMBIGUOUS feedback) and
+        injects the appropriate constraint message.
+
+        Args:
+            proposal: The proposal being revised (owned by this player)
+            discussions: List of (player_name, message) tuples from other
+                players
+            game_state: The current game state
+            player_name: The name of the player who is revising
+
+        Returns:
+            A list of ChatMessage objects: [system_message, user_message]
+
+        Raises:
+            ValueError: If player_name is not in turn_order
+            KeyError: If template placeholders are missing
+        """
+        # Prepare formatted data
+        scores_text = self._format_scores(game_state.scores)
+        discussions_text = self._format_discussions(discussions)
+        player_position = self._get_player_position(player_name, game_state)
+        turn_order_str = ", ".join(game_state.turn_order)
+
+        # Handle optional fields in proposal
+        target_rule_id = proposal.target_rule_id or "N/A"
+        new_text = proposal.new_text or "N/A"
+        rationale = proposal.rationale or "No rationale provided."
+
+        # Rule 112 Check: Detect UNCLEAR or AMBIGUOUS in discussions
+        constraint_triggered = False
+        for _, message in discussions:
+            message_upper = message.upper()
+            if "UNCLEAR" in message_upper or "AMBIGUOUS" in message_upper:
+                constraint_triggered = True
+                break
+
+        if constraint_triggered:
+            constraint_message = (
+                "⚠️ CRITICAL: Your proposal was flagged as 'UNCLEAR' or "
+                "'AMBIGUOUS'. Per Rule 112, you MUST either 'MODIFY' or "
+                "'WITHDRAW'. You CANNOT choose 'KEEP'."
+            )
+        else:
+            constraint_message = (
+                "You may choose to KEEP, MODIFY, or WITHDRAW based on "
+                "your strategy."
+            )
+
+        # Format the system prompt
+        system_prompt_str = prompts.REVISE_SYSTEM_PROMPT.format(
+            player_name=player_name
+        )
+
+        # Format the user prompt with ALL required placeholders
+        user_prompt_str = prompts.REVISE_USER_TEMPLATE.format(
+            move_number=game_state.move_number,
+            scores_text=scores_text,
+            player_position=player_position,
+            turn_order=turn_order_str,
+            proposal_id=proposal.proposal_id or "Unknown",
+            proposal_type=proposal.type.value,  # Use the enum value
+            target_rule_id=target_rule_id,
+            new_text=new_text,
+            rationale=rationale,
+            discussions_text=discussions_text,
+            constraint_message=constraint_message,
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+        )
+
+        # Return the message list
+        return [
+            ChatMessage(role="system", content=system_prompt_str),
+            ChatMessage(role="user", content=user_prompt_str),
+        ]

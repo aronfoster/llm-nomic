@@ -328,3 +328,110 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
             )
 
     return data
+
+
+def parse_revision_response(response_text: str) -> dict[str, str | None]:
+    """
+    Parse and validate a revision response from an LLM.
+
+    Expected JSON format:
+    {
+        "private_thoughts": "Strategic analysis...",
+        "action": "KEEP" | "MODIFY" | "WITHDRAW",
+        "new_text": "New rule text..." | null,
+        "rationale": "New rationale..." | null
+    }
+
+    Args:
+        response_text: The raw text response from the LLM.
+
+    Returns:
+        A validated dictionary with keys: private_thoughts, action,
+        new_text, rationale
+
+    Raises:
+        ValueError: If the response is not valid JSON, missing required keys,
+                   contains invalid values, or violates revision logic
+                   constraints. Error messages are descriptive to aid debugging
+                   and can be sent back to the LLM.
+    """
+    # Step 1: Parse JSON
+    try:
+        data = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Response is not valid JSON. Error: {e}. "
+            f"Expected a JSON object with keys: private_thoughts, action, "
+            f"new_text, rationale."
+        )
+
+    # Step 2: Validate that it's a dictionary
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Response must be a JSON object (dict), "
+            f"got {type(data).__name__}."
+        )
+
+    # Step 3: Validate required keys
+    required_keys = ["private_thoughts", "action"]
+    missing_keys = [key for key in required_keys if key not in data]
+    if missing_keys:
+        raise ValueError(
+            f"Missing required key(s): {', '.join(missing_keys)}. "
+            f"Required keys are: private_thoughts, action, new_text, "
+            f"rationale."
+        )
+
+    # Step 4: Validate action value (case-insensitive)
+    action_value = data["action"]
+    if not isinstance(action_value, str):
+        raise ValueError(
+            f"action must be a string, got {type(action_value).__name__}."
+        )
+
+    # Normalize to uppercase for validation
+    action_normalized = action_value.upper()
+    valid_actions = ["KEEP", "MODIFY", "WITHDRAW"]
+    if action_normalized not in valid_actions:
+        raise ValueError(
+            f"Invalid action value: '{action_value}'. "
+            f"Must be one of: {', '.join(valid_actions)} (case-insensitive)."
+        )
+
+    # Update the action to normalized uppercase
+    data["action"] = action_normalized
+
+    # Step 5: Validate that private_thoughts is a string
+    if not isinstance(data["private_thoughts"], str):
+        raise ValueError(
+            f"private_thoughts must be a string, "
+            f"got {type(data['private_thoughts']).__name__}."
+        )
+
+    # Step 6: Validate new_text type (string or null)
+    new_text = data.get("new_text")
+    if new_text is not None and not isinstance(new_text, str):
+        raise ValueError(
+            f"new_text must be a string or null, "
+            f"got {type(new_text).__name__}."
+        )
+
+    # Step 7: Validate rationale type (string or null)
+    rationale = data.get("rationale")
+    if rationale is not None and not isinstance(rationale, str):
+        raise ValueError(
+            f"rationale must be a string or null, "
+            f"got {type(rationale).__name__}."
+        )
+
+    # Step 8: CRITICAL Game Logic Validation for MODIFY action
+    if action_normalized == "MODIFY":
+        # MODIFY: At least one of new_text or rationale must be provided
+        if not new_text and not rationale:
+            raise ValueError(
+                "MODIFY action requires at least one of 'new_text' or "
+                "'rationale' to be provided. If you want to keep the proposal "
+                "unchanged, use 'KEEP' instead."
+            )
+
+    return data
