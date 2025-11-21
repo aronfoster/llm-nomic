@@ -54,8 +54,9 @@ Our architecture is built on these principles:
 This is the long-term backlog and TODO scratchpad.
   * **Implement Full `LLMPlayer`:**
     * Implement the remaining `LLMPlayer` methods (`propose`, `discuss`, `revise`).
+    * Add output for clear status when waiting for LLM response
     * Expand `api_clients.py` to handle cloud providers (Grok, Anthropic) and their respective API keys.
-    * Implement advanced token-saving strategies
+    * Implement advanced token-saving strategies, async behavior
 * **Implement Victory Check:**
     * Add a `target_score` to `GameState`.
     * Add a check for this score in the game loop.
