@@ -84,7 +84,8 @@ class LLMPlayer(BasePlayer):
         Raises:
             NotImplementedError: LLM integration not yet implemented.
         """
-        # TODO: MVP Stub; Always abstain from discussion to allow testing of voting
+        # TODO: MVP Stub; Always abstain from discussion to allow
+        # testing of voting
         return None
 
     def vote(
