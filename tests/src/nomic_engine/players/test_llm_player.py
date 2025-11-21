@@ -1137,3 +1137,436 @@ class TestLLMPlayerPropose:
             game_state=game_state,
             player_name="TestPlayer",
         )
+
+
+class TestLLMPlayerRevise:
+    """Tests for LLMPlayer.revise() method."""
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_withdraw(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that revise returns None when action is WITHDRAW."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_revise_messages.return_value = (
+            mock_messages
+        )
+
+        mock_api_instance.get_completion.return_value = """{
+            "private_thoughts": "Too much opposition, better to withdraw",
+            "action": "WITHDRAW",
+            "new_text": null,
+            "rationale": null
+        }"""
+
+        mock_parse.return_value = {
+            "private_thoughts": "Too much opposition, better to withdraw",
+            "action": "WITHDRAW",
+            "new_text": None,
+            "rationale": None,
+        }
+
+        # Create player and revise
+        player = LLMPlayer("TestPlayer", model_config)
+        discussions = [("Alice", "I have concerns about this.")]
+        result = player.revise(proposal, discussions, game_state, rules)
+
+        # Should return None for withdraw
+        assert result is None
+
+        # Verify API was called only once
+        assert mock_api_instance.get_completion.call_count == 1
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_keep(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that revise returns original proposal when action is KEEP."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_revise_messages.return_value = (
+            mock_messages
+        )
+
+        mock_api_instance.get_completion.return_value = """{
+            "private_thoughts": "Feedback is positive, keep as is",
+            "action": "KEEP",
+            "new_text": null,
+            "rationale": null
+        }"""
+
+        mock_parse.return_value = {
+            "private_thoughts": "Feedback is positive, keep as is",
+            "action": "KEEP",
+            "new_text": None,
+            "rationale": None,
+        }
+
+        # Create player and revise
+        player = LLMPlayer("TestPlayer", model_config)
+        discussions = [("Alice", "I support this.")]
+        result = player.revise(proposal, discussions, game_state, rules)
+
+        # Should return the original proposal object
+        assert result is proposal
+
+        # Verify API was called only once
+        assert mock_api_instance.get_completion.call_count == 1
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_modify(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that revise returns a new proposal with updated text when
+        action is MODIFY."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_revise_messages.return_value = (
+            mock_messages
+        )
+
+        mock_api_instance.get_completion.return_value = """{
+            "private_thoughts": "Will address the concerns by modifying",
+            "action": "MODIFY",
+            "new_text": "Modified rule text",
+            "rationale": "Improved rationale"
+        }"""
+
+        mock_parse.return_value = {
+            "private_thoughts": "Will address the concerns by modifying",
+            "action": "MODIFY",
+            "new_text": "Modified rule text",
+            "rationale": "Improved rationale",
+        }
+
+        # Create player and revise
+        player = LLMPlayer("TestPlayer", model_config)
+        discussions = [("Alice", "This could be better.")]
+        result = player.revise(proposal, discussions, game_state, rules)
+
+        # Should return a new proposal object with updated values
+        assert result is not proposal  # Different object
+        assert result.new_text == "Modified rule text"
+        assert result.rationale == "Improved rationale"
+        # Other fields should be the same
+        assert result.proposer_name == proposal.proposer_name
+        assert result.type == proposal.type
+
+        # Verify API was called only once
+        assert mock_api_instance.get_completion.call_count == 1
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_modify_only_text(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test revise only updates text when only new_text is provided."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_revise_messages.return_value = (
+            mock_messages
+        )
+
+        mock_api_instance.get_completion.return_value = "valid json"
+
+        mock_parse.return_value = {
+            "private_thoughts": "Only updating the text",
+            "action": "MODIFY",
+            "new_text": "Only text updated",
+            "rationale": None,
+        }
+
+        # Create player and revise
+        player = LLMPlayer("TestPlayer", model_config)
+        result = player.revise(proposal, [], game_state, rules)
+
+        # Should update text but keep original rationale
+        assert result is not proposal
+        assert result.new_text == "Only text updated"
+        assert result.rationale == proposal.rationale
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_success_after_retry(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test successful revise after one retry."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_revise_messages.return_value = (
+            mock_messages
+        )
+
+        bad_json_response = "This is not valid JSON"
+        good_json_response = """{
+            "private_thoughts": "Fixed response",
+            "action": "KEEP",
+            "new_text": null,
+            "rationale": null
+        }"""
+        mock_api_instance.get_completion.side_effect = [
+            bad_json_response,
+            good_json_response,
+        ]
+
+        mock_parse.side_effect = [
+            ValueError("Response is not valid JSON. Error: ..."),
+            {
+                "private_thoughts": "Fixed response",
+                "action": "KEEP",
+                "new_text": None,
+                "rationale": None,
+            },
+        ]
+
+        # Create player and revise
+        player = LLMPlayer("TestPlayer", model_config)
+        result = player.revise(proposal, [], game_state, rules)
+
+        # Should return original proposal
+        assert result is proposal
+
+        # Verify API was called twice
+        assert mock_api_instance.get_completion.call_count == 2
+
+        # Verify retry message was included
+        second_call_messages = mock_api_instance.get_completion.call_args_list[
+            1
+        ][0][0]
+        assert len(second_call_messages) == 4
+        assert second_call_messages[2].role == "assistant"
+        assert second_call_messages[3].role == "user"
+        assert "Error:" in second_call_messages[3].content
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_failure_max_retries_returns_original(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test player returns original proposal after exhausting retries."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_revise_messages.return_value = (
+            mock_messages
+        )
+
+        bad_json_response = "This is consistently bad JSON {{{{{{"
+        mock_api_instance.get_completion.return_value = bad_json_response
+
+        mock_parse.side_effect = ValueError("Response is not valid JSON")
+
+        # Create player and revise
+        player = LLMPlayer("TestPlayer", model_config)
+        result = player.revise(proposal, [], game_state, rules)
+
+        # Should return original proposal as fallback (KEEP)
+        assert result is proposal
+
+        # Verify API was called MAX_REVISE_RETRIES times
+        assert (
+            mock_api_instance.get_completion.call_count
+            == LLMPlayer.MAX_REVISE_RETRIES
+        )
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    def test_revise_all_api_errors_returns_original(
+        self,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that player returns original proposal when API consistently
+        fails."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_revise_messages.return_value = (
+            mock_messages
+        )
+
+        mock_api_instance.get_completion.return_value = None
+
+        # Create player and revise
+        player = LLMPlayer("TestPlayer", model_config)
+        result = player.revise(proposal, [], game_state, rules)
+
+        # Should return original proposal as fallback
+        assert result is proposal
+
+        # Verify API was called MAX_REVISE_RETRIES times
+        assert (
+            mock_api_instance.get_completion.call_count
+            == LLMPlayer.MAX_REVISE_RETRIES
+        )
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_prompt_builder_called_correctly(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that PromptBuilder is called with correct arguments."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_revise_messages.return_value = (
+            mock_messages
+        )
+
+        mock_api_instance.get_completion.return_value = (
+            '{"private_thoughts":"A","action":"KEEP","new_text":null,'
+            '"rationale":null}'
+        )
+        mock_parse.return_value = {
+            "private_thoughts": "A",
+            "action": "KEEP",
+            "new_text": None,
+            "rationale": None,
+        }
+
+        # Create player and revise
+        player = LLMPlayer("TestPlayer", model_config)
+        discussions = [("Alice", "Good proposal.")]
+        player.revise(proposal, discussions, game_state, rules)
+
+        # Verify PromptBuilder.build_revise_messages called correctly
+        call = mock_prompt_builder_instance.build_revise_messages
+        call.assert_called_once_with(
+            proposal=proposal,
+            discussions=discussions,
+            game_state=game_state,
+            player_name="TestPlayer",
+        )

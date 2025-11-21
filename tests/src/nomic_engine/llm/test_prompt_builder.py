@@ -411,6 +411,158 @@ class TestPromptBuilder(unittest.TestCase):
         # Verify no rules message
         self.assertIn("No rules defined", user_content)
 
+    def test_build_revise_messages_integration(self):
+        """
+        Integration test using real prompt templates for revise action.
+
+        This test verifies that the method works correctly with the actual
+        templates from prompts.py and all placeholders are populated.
+        """
+        # Create sample discussions
+        discussions = [
+            ("Alice", "I think this is a good idea."),
+            ("Charlie", "I'm not sure about this change."),
+        ]
+
+        # Call with real templates
+        messages = self.builder.build_revise_messages(
+            proposal=self.proposal,
+            discussions=discussions,
+            game_state=self.game_state,
+            player_name="Bob",
+        )
+
+        # Basic structure verification
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[0].role, "system")
+        self.assertEqual(messages[1].role, "user")
+
+        # Verify system prompt mentions the player
+        self.assertIn("Bob", messages[0].content)
+
+        # Verify user prompt contains key game data
+        user_content = messages[1].content
+        self.assertIn("Move #5", user_content)
+        self.assertIn("2 of 3", user_content)  # Bob's position
+        self.assertIn("Alice, Bob, Charlie", user_content)  # turn order
+        self.assertIn("304", user_content)  # proposal ID
+        self.assertIn("Amend", user_content)  # proposal type
+        self.assertIn("201", user_content)  # target rule ID
+        self.assertIn("Players gain 2 points", user_content)  # new text
+        self.assertIn("encourages more active participation", user_content)
+
+        # Verify discussions are included
+        self.assertIn("Alice", user_content)
+        self.assertIn("I think this is a good idea.", user_content)
+        self.assertIn("Charlie", user_content)
+        self.assertIn("I'm not sure about this change.", user_content)
+
+        # Verify JSON format enforcement is included
+        self.assertIn("OUTPUT REQUIREMENTS", user_content)
+        self.assertIn("pure JSON", user_content)
+
+        # Verify revise-specific content
+        self.assertIn("private_thoughts", user_content)
+        self.assertIn("KEEP", user_content)
+        self.assertIn("MODIFY", user_content)
+        self.assertIn("WITHDRAW", user_content)
+
+    def test_build_revise_messages_constraint_triggered(self):
+        """Test that Rule 112 constraint is triggered when discussion
+        contains UNCLEAR or AMBIGUOUS."""
+        # Create discussions with UNCLEAR keyword
+        discussions = [
+            ("Alice", "I think this is unclear to me."),
+            ("Charlie", "I agree, very confusing."),
+        ]
+
+        messages = self.builder.build_revise_messages(
+            proposal=self.proposal,
+            discussions=discussions,
+            game_state=self.game_state,
+            player_name="Bob",
+        )
+
+        user_content = messages[1].content
+
+        # Verify the constraint message is present
+        self.assertIn("MUST either 'MODIFY' or 'WITHDRAW'", user_content)
+        self.assertIn("CANNOT choose 'KEEP'", user_content)
+
+    def test_build_revise_messages_constraint_triggered_ambiguous(self):
+        """Test Rule 112 constraint is triggered with AMBIGUOUS keyword."""
+        # Create discussions with AMBIGUOUS keyword (case insensitive)
+        discussions = [
+            ("Alice", "The wording is a bit AMBIGUOUS."),
+        ]
+
+        messages = self.builder.build_revise_messages(
+            proposal=self.proposal,
+            discussions=discussions,
+            game_state=self.game_state,
+            player_name="Bob",
+        )
+
+        user_content = messages[1].content
+
+        # Verify the constraint message is present
+        self.assertIn("MUST either 'MODIFY' or 'WITHDRAW'", user_content)
+
+    def test_build_revise_messages_no_constraint(self):
+        """Test that permissive message is shown when no UNCLEAR/AMBIGUOUS."""
+        # Create normal discussions without UNCLEAR or AMBIGUOUS
+        discussions = [
+            ("Alice", "I think this is a good idea."),
+            ("Charlie", "I support this change."),
+        ]
+
+        messages = self.builder.build_revise_messages(
+            proposal=self.proposal,
+            discussions=discussions,
+            game_state=self.game_state,
+            player_name="Bob",
+        )
+
+        user_content = messages[1].content
+
+        # Verify the permissive message is present
+        self.assertIn(
+            "You may choose to KEEP, MODIFY, or WITHDRAW based on",
+            user_content,
+        )
+        # Verify the constraint message is NOT present
+        self.assertNotIn("CANNOT choose 'KEEP'", user_content)
+
+    def test_build_revise_messages_handles_none_values(self):
+        """Test build_revise_messages handles None in proposal fields."""
+        # Create a proposal with minimal data (Add type has no target_rule_id)
+        minimal_proposal = Proposal(
+            proposer_name="Alice",
+            move_number=5,
+            type=ProposalType.ADD,
+            proposal_id="305",
+            target_rule_id=None,
+            new_text="New rule text here.",
+            rationale=None,
+        )
+
+        # Should not raise an exception
+        messages = self.builder.build_revise_messages(
+            proposal=minimal_proposal,
+            discussions=[],
+            game_state=self.game_state,
+            player_name="Alice",
+        )
+
+        # Verify it still produces valid messages
+        self.assertEqual(len(messages), 2)
+        user_content = messages[1].content
+
+        # Verify None values are handled
+        self.assertIn("N/A", user_content)  # target_rule_id
+        self.assertIn("No rationale provided", user_content)
+        self.assertIn("No discussions yet", user_content)
+
 
 if __name__ == "__main__":
     unittest.main()

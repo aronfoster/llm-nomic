@@ -22,6 +22,7 @@ from ..llm import (
     PromptBuilder,
     parse_discussion_response,
     parse_proposal_response,
+    parse_revision_response,
     parse_vote_response,
     prompts,
 )
@@ -42,6 +43,7 @@ class LLMPlayer(BasePlayer):
     MAX_VOTE_RETRIES = 2
     MAX_DISCUSS_RETRIES = 2
     MAX_PROPOSE_RETRIES = 2
+    MAX_REVISE_RETRIES = 2
 
     def __init__(
         self, player_name: str, model_config: ModelDefinition
@@ -370,6 +372,10 @@ class LLMPlayer(BasePlayer):
         """
         Revise a proposal based on discussion using an LLM.
 
+        This method implements a retry loop to handle the non-deterministic
+        nature of LLMs. If the LLM produces invalid JSON, the error message
+        is fed back to the model for a retry attempt.
+
         Args:
             proposal: The original proposal made by this player.
             discussions: A list of tuples (player_name, discussion_text).
@@ -379,9 +385,91 @@ class LLMPlayer(BasePlayer):
         Returns:
             The (potentially) revised Proposal object,
             or None if the player chooses to withdraw the proposal.
-
-        Raises:
-            NotImplementedError: LLM integration not yet implemented.
         """
-        # TODO: MVP Stub; Never revise
+        # Build initial messages for the revise prompt
+        messages = self.prompt_builder.build_revise_messages(
+            proposal=proposal,
+            discussions=discussions,
+            game_state=game_state,
+            player_name=self.player_name,
+        )
+
+        # Retry loop with maximum attempts
+        for attempt in range(self.MAX_REVISE_RETRIES):
+            # Status indicator for UX
+            print(f"\n🤖 {self.player_name} is reviewing feedback...")
+
+            # Get completion from the LLM
+            response_text = self.api_client.get_completion(messages)
+
+            # Handle API errors (None response)
+            if response_text is None:
+                logger.error(
+                    f"{self.player_name}: API error on attempt {attempt + 1}/"
+                    f"{self.MAX_REVISE_RETRIES}"
+                )
+                # Continue to retry if attempts remain
+                continue
+
+            # Try to parse the response
+            try:
+                data = parse_revision_response(response_text)
+
+                # Success! Log private thoughts
+                logger.debug(
+                    f"{self.player_name} private thoughts: "
+                    f"{data['private_thoughts']}"
+                )
+
+                # Handle based on action
+                action = data["action"]
+
+                if action == "WITHDRAW":
+                    return None
+
+                if action == "KEEP":
+                    return proposal
+
+                # action == "MODIFY"
+                # Create a copy and update with new values if provided
+                new_proposal = proposal.model_copy()
+                if data.get("new_text"):
+                    new_proposal.new_text = data["new_text"]
+                if data.get("rationale"):
+                    new_proposal.rationale = data["rationale"]
+                return new_proposal
+
+            except ValueError as e:
+                # Parsing failed - log the error
+                logger.warning(
+                    f"{self.player_name}: Invalid response on attempt "
+                    f"{attempt + 1}/{self.MAX_REVISE_RETRIES}. Error: {e}"
+                )
+
+                # If this was the last attempt, break out
+                if attempt >= self.MAX_REVISE_RETRIES - 1:
+                    break
+
+                # Construct retry by appending bad response and error message
+                # Append the LLM's bad response as an assistant message
+                messages.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
+
+                # Append the retry prompt with the specific error as a user msg
+                retry_message = prompts.REVISE_RETRY_TEMPLATE.format(
+                    validation_error=str(e)
+                )
+                messages.append(
+                    ChatMessage(role="user", content=retry_message)
+                )
+
+                # Loop continues to retry with updated conversation history
+
+        # All retries exhausted - return original proposal (KEEP) as fallback
+        # to avoid stalling the game
+        logger.error(
+            f"{self.player_name}: Failed to generate valid revision after "
+            f"{self.MAX_REVISE_RETRIES} attempts. Defaulting to KEEP."
+        )
         return proposal

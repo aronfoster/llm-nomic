@@ -316,3 +316,105 @@ Remember the validation rules:
 - REPEAL/TRANSMUTE: target_rule_id is required, new_text must be null
 
 No other text. Just the JSON object:"""
+
+# -----------------------------------------------------------------
+# REVISE ACTION
+# -----------------------------------------------------------------
+
+REVISE_SYSTEM_PROMPT = """
+You are {player_name}, a strategic and calculating player in a game of Nomic.
+You are ruthlessly competitive and aim to win through clever manipulation
+of the rules.
+
+You are reviewing feedback on your proposal before the vote begins.
+You must decide whether to KEEP, MODIFY, or WITHDRAW your proposal based on
+the discussions from other players.
+"""
+
+REVISE_USER_TEMPLATE = """
+=== GAME STATE ===
+Move #{move_number}
+Scores: {scores_text}
+Your position: {player_position}
+Turn order: {turn_order}
+
+=== YOUR ORIGINAL PROPOSAL #{proposal_id} ===
+**Type:** {proposal_type}
+**Target Rule:** {target_rule_id}
+**New Text:** {new_text}
+**Rationale:** {rationale}
+
+=== DISCUSSIONS FROM OTHER PLAYERS ===
+{discussions_text}
+
+=== REVISION DECISION ===
+
+{constraint_message}
+
+Based on the feedback, you must decide what to do with your proposal:
+- "KEEP": Proceed to vote with the original proposal unchanged
+- "MODIFY": Change the proposal text and/or rationale before voting
+- "WITHDRAW": Cancel the proposal entirely (no vote will occur)
+
+You must output EXACTLY one JSON object with these keys IN THIS ORDER:
+1. "private_thoughts": Your honest strategic analysis. What did you learn from
+   the discussions? How do you interpret other players' positions? What is
+   your best move here? (This is private - be Machiavellian)
+2. "action": Exactly one of: "KEEP", "MODIFY", or "WITHDRAW" (uppercase)
+3. "new_text": If action is "MODIFY" and you want to change the rule text,
+   provide the new text here. Otherwise null.
+4. "rationale": If action is "MODIFY" and you want to change the rationale,
+   provide the new rationale here. Otherwise null.
+
+The order matters. Think BEFORE you decide.
+
+{json_format_enforcement}
+
+Examples of the EXACT format required:
+
+{{
+  "private_thoughts": "The feedback is mostly positive. Alice seems to support
+    this and Bob's concerns are minor. I should proceed as planned.",
+  "action": "KEEP",
+  "new_text": null,
+  "rationale": null
+}}
+
+{{
+  "private_thoughts": "Charlie raised a valid point about the edge case. I can
+    address his concern by modifying the text slightly. This should secure
+    his vote without changing my core strategy.",
+  "action": "MODIFY",
+  "new_text": "Players gain 1 point for successful proposals, excluding
+    unanimous votes.",
+  "rationale": "Addresses concerns about edge cases while maintaining balance."
+}}
+
+{{
+  "private_thoughts": "The discussion revealed strong opposition. Multiple
+    players see through my strategy. Better to withdraw and propose something
+    else next turn than lose political capital in a failed vote.",
+  "action": "WITHDRAW",
+  "new_text": null,
+  "rationale": null
+}}
+
+Remember: Invalid JSON = automatic KEEP. Output only JSON.
+"""
+
+REVISE_RETRY_TEMPLATE = """Your previous response was not valid JSON.
+
+Error: {validation_error}
+
+This is your FINAL attempt. Output ONLY a valid JSON object with these
+exact keys in order:
+1. "private_thoughts"
+2. "action" (one of: "KEEP", "MODIFY", "WITHDRAW")
+3. "new_text" (string if modifying rule text, else null)
+4. "rationale" (string if modifying rationale, else null)
+
+Remember:
+- If action is "MODIFY", at least one of new_text or rationale must be provided
+- If action is "KEEP" or "WITHDRAW", both new_text and rationale should be null
+
+No other text. Just the JSON object:"""
