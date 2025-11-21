@@ -148,6 +148,7 @@ class LLMPlayer(BasePlayer):
                     player_name=self.player_name,
                     vote=vote_value,
                     reason=data["public_reason"],
+                    private_thoughts=data["private_thoughts"],
                 )
 
             except ValueError as e:

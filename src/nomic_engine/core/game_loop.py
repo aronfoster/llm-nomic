@@ -695,10 +695,11 @@ class GameLoop:
 
         lines.append("\n### Votes")
         for vote in votes:
-            vote_line = f"- **{vote.player_name}:** {vote.vote}"
+            lines.append(f"- **{vote.player_name}:** {vote.vote}")
             if vote.reason:
-                vote_line += f" - {vote.reason}"
-            lines.append(vote_line)
+                lines.append(f"  - Public Reason: {vote.reason}")
+            if vote.private_thoughts:
+                lines.append(f"  - Private Thoughts: {vote.private_thoughts}")
 
         lines.append(
             f"\n**Vote Result:** {'PASSED' if proposal_passed else 'FAILED'}"

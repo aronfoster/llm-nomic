@@ -996,7 +996,12 @@ def test_format_transcript_includes_all_details(
     )
 
     votes = [
-        Vote(player_name="Bob", vote="YES", reason="I agree"),
+        Vote(
+            player_name="Bob",
+            vote="YES",
+            reason="I agree",
+            private_thoughts="Strategic analysis: this aligns with my goals",
+        ),
         Vote(player_name="Charlie", vote="NO", reason="I disagree"),
     ]
 
@@ -1039,6 +1044,14 @@ def test_format_transcript_includes_all_details(
     assert "I agree" in transcript
     assert "NO" in transcript
     assert "I disagree" in transcript
+
+    # Verify private thoughts appear for Bob (LLM player)
+    assert "Private Thoughts:" in transcript
+    assert "Strategic analysis: this aligns with my goals" in transcript
+
+    # Verify Charlie's vote doesn't show private thoughts (only Bob has them)
+    private_thoughts_count = transcript.count("Private Thoughts:")
+    assert private_thoughts_count == 1, "Only Bob should have private thoughts"
 
     # Verify vote result and judge approval
     assert "FAILED" in transcript

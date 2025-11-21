@@ -77,9 +77,23 @@ def test_proposal_creation():
 
 def test_vote_creation():
     """Test that Vote can be created with valid data."""
-    vote = Vote(player_name="Bob", vote="YES", reason="I love dancing!")
-    assert vote.player_name == "Bob"
-    assert vote.vote == "YES"
+    # Test without private_thoughts (simulating human player)
+    vote_human = Vote(player_name="Bob", vote="YES", reason="I love dancing!")
+    assert vote_human.player_name == "Bob"
+    assert vote_human.vote == "YES"
+    assert vote_human.private_thoughts is None
+
+    # Test with private_thoughts (simulating LLM player)
+    vote_llm = Vote(
+        player_name="Alice",
+        vote="NO",
+        reason="This doesn't work",
+        private_thoughts="Strategic analysis: this rule conflicts with 102",
+    )
+    assert vote_llm.player_name == "Alice"
+    assert vote_llm.vote == "NO"
+    expected_thoughts = "Strategic analysis: this rule conflicts with 102"
+    assert vote_llm.private_thoughts == expected_thoughts
 
 
 def test_model_definition_creation():
