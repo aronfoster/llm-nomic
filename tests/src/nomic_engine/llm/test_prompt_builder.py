@@ -262,6 +262,79 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("No rationale provided", user_content)
         self.assertIn("No discussions yet", user_content)
 
+    def test_build_discuss_messages_integration(self):
+        """
+        Integration test using real prompt templates for discuss action.
+
+        This test verifies that the method works correctly with the actual
+        templates from prompts.py and all placeholders are populated.
+        """
+        # Call with real templates
+        messages = self.builder.build_discuss_messages(
+            proposal=self.proposal,
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Charlie",
+        )
+
+        # Basic structure verification
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[0].role, "system")
+        self.assertEqual(messages[1].role, "user")
+
+        # Verify system prompt mentions the player
+        self.assertIn("Charlie", messages[0].content)
+
+        # Verify user prompt contains key game data
+        user_content = messages[1].content
+        self.assertIn("Move #5", user_content)
+        self.assertIn("3 of 3", user_content)  # Charlie's position
+        self.assertIn("Alice, Bob, Charlie", user_content)  # turn order
+        self.assertIn("304", user_content)  # proposal ID
+        self.assertIn("Bob", user_content)  # proposer name
+        self.assertIn("Amend", user_content)  # proposal type
+        self.assertIn("201", user_content)  # target rule ID
+        self.assertIn("Players gain 1 point", user_content)
+        self.assertIn("Players gain 2 points", user_content)
+        self.assertIn("encourages more active participation", user_content)
+
+        # Verify JSON format enforcement is included
+        self.assertIn("OUTPUT REQUIREMENTS", user_content)
+        self.assertIn("pure JSON", user_content)
+
+        # Verify discussion-specific content
+        self.assertIn("private_thoughts", user_content)
+        self.assertIn("discussion_text", user_content)
+
+    def test_build_discuss_messages_handles_none_values(self):
+        """Test build_discuss_messages handles None in proposal fields."""
+        # Create a proposal with minimal data (Add type has no target_rule_id)
+        minimal_proposal = Proposal(
+            proposer_name="Alice",
+            move_number=5,
+            type=ProposalType.ADD,
+            proposal_id="305",
+            target_rule_id=None,
+            new_text="New rule text here.",
+            rationale=None,
+        )
+
+        # Should not raise an exception
+        messages = self.builder.build_discuss_messages(
+            proposal=minimal_proposal,
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Alice",
+        )
+
+        # Verify it still produces valid messages
+        self.assertEqual(len(messages), 2)
+        user_content = messages[1].content
+
+        # Verify None values are handled
+        self.assertIn("N/A", user_content)  # target_rule_id and original_text
+        self.assertIn("No rationale provided", user_content)
+
 
 if __name__ == "__main__":
     unittest.main()

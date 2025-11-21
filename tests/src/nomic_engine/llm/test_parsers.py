@@ -4,7 +4,10 @@ Unit tests for LLM response parsers.
 
 import pytest
 
-from src.nomic_engine.llm.parsers import parse_vote_response
+from src.nomic_engine.llm.parsers import (
+    parse_discussion_response,
+    parse_vote_response,
+)
 
 
 class TestParseVoteResponse:
@@ -217,4 +220,118 @@ class TestParseVoteResponse:
         result = parse_vote_response(response)
 
         assert result["vote"] == "YES"
+        assert result["extra_field"] == "This should not cause an error"
+
+
+class TestParseDiscussionResponse:
+    """Tests for the parse_discussion_response function."""
+
+    def test_valid_json_response(self):
+        """Test parsing a valid JSON response."""
+        response = """{
+            "private_thoughts": "This is a strategic analysis",
+            "discussion_text": "I think we should consider the implications."
+        }"""
+
+        result = parse_discussion_response(response)
+
+        assert result["private_thoughts"] == "This is a strategic analysis"
+        assert (
+            result["discussion_text"]
+            == "I think we should consider the implications."
+        )
+
+    def test_valid_json_empty_discussion(self):
+        """Test parsing valid JSON with empty discussion (abstain)."""
+        response = """{
+            "private_thoughts": "I'll stay quiet on this one.",
+            "discussion_text": ""
+        }"""
+
+        result = parse_discussion_response(response)
+
+        assert result["private_thoughts"] == "I'll stay quiet on this one."
+        assert result["discussion_text"] == ""
+
+    def test_invalid_json_syntax(self):
+        """Test that invalid JSON raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "discussion_text": "Comment"
+        """  # Missing closing brace
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_discussion_response(response)
+
+        assert "not valid JSON" in str(exc_info.value)
+
+    def test_missing_private_thoughts_key(self):
+        """Test that missing 'private_thoughts' key raises ValueError."""
+        response = """{
+            "discussion_text": "Some comment"
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_discussion_response(response)
+
+        assert "Missing required key" in str(exc_info.value)
+        assert "private_thoughts" in str(exc_info.value)
+
+    def test_missing_discussion_text_key(self):
+        """Test that missing 'discussion_text' key raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis"
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_discussion_response(response)
+
+        assert "Missing required key" in str(exc_info.value)
+        assert "discussion_text" in str(exc_info.value)
+
+    def test_private_thoughts_not_string(self):
+        """Test that non-string private_thoughts raises ValueError."""
+        response = """{
+            "private_thoughts": 123,
+            "discussion_text": "Comment"
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_discussion_response(response)
+
+        assert "private_thoughts must be a string" in str(exc_info.value)
+
+    def test_discussion_text_not_string(self):
+        """Test that non-string discussion_text raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "discussion_text": ["Comment", "list"]
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_discussion_response(response)
+
+        assert "discussion_text must be a string" in str(exc_info.value)
+
+    def test_response_is_array_not_object(self):
+        """Test that JSON arrays are rejected."""
+        response = """["thoughts", "discussion"]"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_discussion_response(response)
+
+        assert "must be a JSON object" in str(exc_info.value)
+
+    def test_extra_keys_are_allowed(self):
+        """Test that extra keys don't cause errors (forward compatibility)."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "discussion_text": "Comment",
+            "extra_field": "This should not cause an error"
+        }"""
+
+        result = parse_discussion_response(response)
+
+        assert result["private_thoughts"] == "Analysis"
+        assert result["discussion_text"] == "Comment"
         assert result["extra_field"] == "This should not cause an error"
