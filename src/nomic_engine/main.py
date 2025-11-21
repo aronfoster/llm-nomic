@@ -24,11 +24,11 @@ def setup_logging() -> None:
     """
     Configure basic logging for the application.
 
-    Sets up logging to display INFO level messages with a simple format.
+    Sets up logging to display DEBUG level messages with a simple format.
     """
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.DEBUG,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
     )
 
 

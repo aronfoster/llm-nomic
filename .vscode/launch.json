@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Nomic Turn",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.nomic_engine.main",
+      "args": [
+        "--game_dir",
+        "${workspaceFolder}/games/${input:gameName}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "gameName",
+      "type": "promptString",
+      "description": "Enter the game directory name",
+      "default": "first-llm-vote"
+    }
+  ]
+}
