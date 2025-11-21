@@ -84,7 +84,8 @@ class LLMPlayer(BasePlayer):
         Raises:
             NotImplementedError: LLM integration not yet implemented.
         """
-        raise NotImplementedError("LLMPlayer is not yet implemented.")
+        # TODO: MVP Stub; Always abstain from discussion to allow testing of voting
+        return None
 
     def vote(
         self, proposal: Proposal, game_state: GameState, rules: list[Rule]
@@ -208,4 +209,5 @@ class LLMPlayer(BasePlayer):
         Raises:
             NotImplementedError: LLM integration not yet implemented.
         """
-        raise NotImplementedError("LLMPlayer is not yet implemented.")
+        # TODO: MVP Stub; Never revise
+        return proposal
