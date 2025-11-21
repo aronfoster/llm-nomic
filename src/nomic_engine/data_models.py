@@ -129,6 +129,7 @@ class Vote(BaseModel):
     player_name: str
     vote: Literal["YES", "NO", "ABSTAIN"]
     reason: Optional[str] = None
+    private_thoughts: Optional[str] = None
 
 
 # --- Root Model Library (for models.yml) ---

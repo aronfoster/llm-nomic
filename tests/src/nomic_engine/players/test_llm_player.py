@@ -119,6 +119,7 @@ class TestLLMPlayerVote:
         assert vote.player_name == "TestPlayer"
         assert vote.vote == "YES"
         assert vote.reason == "This is good for the game"
+        assert vote.private_thoughts == "Strategic analysis here"
 
         # Verify API was called only once
         assert mock_api_instance.get_completion.call_count == 1
