@@ -159,3 +159,172 @@ def parse_discussion_response(response_text: str) -> dict[str, str]:
         )
 
     return data
+
+
+def parse_proposal_response(response_text: str) -> dict[str, str | None]:
+    """
+    Parse and validate a proposal response from an LLM.
+
+    Expected JSON format:
+    {
+        "private_thoughts": "Strategic analysis...",
+        "type": "ADD" | "AMEND" | "REPEAL" | "TRANSMUTE",
+        "target_rule_id": "201" | null,
+        "new_text": "Rule text..." | null,
+        "rationale": "Public explanation..."
+    }
+
+    Args:
+        response_text: The raw text response from the LLM.
+
+    Returns:
+        A validated dictionary with keys: private_thoughts, type,
+        target_rule_id, new_text, rationale
+
+    Raises:
+        ValueError: If the response is not valid JSON, missing required keys,
+                   contains invalid values, or violates game logic constraints.
+                   Error messages are descriptive to aid debugging and can be
+                   sent back to the LLM.
+    """
+    # Step 1: Parse JSON
+    try:
+        data = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Response is not valid JSON. Error: {e}. "
+            f"Expected a JSON object with keys: private_thoughts, type, "
+            f"target_rule_id, new_text, rationale."
+        )
+
+    # Step 2: Validate that it's a dictionary
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Response must be a JSON object (dict), "
+            f"got {type(data).__name__}."
+        )
+
+    # Step 3: Validate required keys (always required)
+    required_keys = ["private_thoughts", "type", "rationale"]
+    missing_keys = [key for key in required_keys if key not in data]
+    if missing_keys:
+        raise ValueError(
+            f"Missing required key(s): {', '.join(missing_keys)}. "
+            f"Required keys are: private_thoughts, type, target_rule_id, "
+            f"new_text, rationale."
+        )
+
+    # Step 4: Validate type value (case-insensitive)
+    proposal_type = data["type"]
+    if not isinstance(proposal_type, str):
+        raise ValueError(
+            f"type must be a string, got {type(proposal_type).__name__}."
+        )
+
+    # Normalize to capitalized format matching ProposalType enum values
+    proposal_type_upper = proposal_type.upper()
+    # Map from uppercase to ProposalType enum values
+    type_map = {
+        "ADD": "Add",
+        "AMEND": "Amend",
+        "REPEAL": "Repeal",
+        "TRANSMUTE": "Transmute",
+    }
+    if proposal_type_upper not in type_map:
+        valid = "ADD, AMEND, REPEAL, TRANSMUTE"
+        raise ValueError(
+            f"Invalid type value: '{proposal_type}'. "
+            f"Must be one of: {valid} (case-insensitive)."
+        )
+
+    # Update the type to match ProposalType enum value
+    data["type"] = type_map[proposal_type_upper]
+
+    # Step 5: Validate that private_thoughts and rationale are strings
+    if not isinstance(data["private_thoughts"], str):
+        raise ValueError(
+            f"private_thoughts must be a string, "
+            f"got {type(data['private_thoughts']).__name__}."
+        )
+
+    if not isinstance(data["rationale"], str):
+        raise ValueError(
+            f"rationale must be a string, "
+            f"got {type(data['rationale']).__name__}."
+        )
+
+    # Step 6: Validate target_rule_id type (string or null)
+    target_rule_id = data.get("target_rule_id")
+    if target_rule_id is not None and not isinstance(target_rule_id, str):
+        raise ValueError(
+            f"target_rule_id must be a string or null, "
+            f"got {type(target_rule_id).__name__}."
+        )
+
+    # Step 7: Validate new_text type (string or null)
+    new_text = data.get("new_text")
+    if new_text is not None and not isinstance(new_text, str):
+        raise ValueError(
+            f"new_text must be a string or null, "
+            f"got {type(new_text).__name__}."
+        )
+
+    # Step 8: CRITICAL Game Logic Validation
+    # Use the uppercase version for comparisons
+    proposal_type_upper = proposal_type_upper  # Already defined above
+
+    if proposal_type_upper == "ADD":
+        # ADD: new_text is required, target_rule_id must be None
+        if not new_text:
+            raise ValueError(
+                "Missing 'new_text' for ADD proposal. "
+                "ADD proposals must include the text of the new rule."
+            )
+        if target_rule_id is not None:
+            # Clear it rather than error - the LLM might have included it
+            # But log this is a deviation from spec - actually, let's be strict
+            raise ValueError(
+                "ADD proposals must not have a 'target_rule_id'. "
+                "Set target_rule_id to null for ADD proposals."
+            )
+
+    elif proposal_type_upper == "AMEND":
+        # AMEND: target_rule_id AND new_text are required
+        if not target_rule_id:
+            raise ValueError(
+                "Missing 'target_rule_id' for AMEND proposal. "
+                "AMEND proposals must specify which rule to modify."
+            )
+        if not new_text:
+            raise ValueError(
+                "Missing 'new_text' for AMEND proposal. "
+                "AMEND proposals must include the new rule text."
+            )
+
+    elif proposal_type_upper == "REPEAL":
+        # REPEAL: target_rule_id is required, new_text should be null
+        if not target_rule_id:
+            raise ValueError(
+                "Missing 'target_rule_id' for REPEAL proposal. "
+                "REPEAL proposals must specify which rule to delete."
+            )
+        if new_text is not None:
+            raise ValueError(
+                "REPEAL proposals must not have 'new_text'. "
+                "Set new_text to null for REPEAL proposals."
+            )
+
+    elif proposal_type_upper == "TRANSMUTE":
+        # TRANSMUTE: target_rule_id is required, new_text should be null
+        if not target_rule_id:
+            raise ValueError(
+                "Missing 'target_rule_id' for TRANSMUTE proposal. "
+                "TRANSMUTE proposals must specify which rule to transmute."
+            )
+        if new_text is not None:
+            raise ValueError(
+                "TRANSMUTE proposals must not have 'new_text'. "
+                "Set new_text to null for TRANSMUTE proposals."
+            )
+
+    return data

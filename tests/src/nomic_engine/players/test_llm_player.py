@@ -1,5 +1,10 @@
 """
-Unit tests for LLMPlayer voting functionality with retry logic.
+Unit tests for LLMPlayer functionality with retry logic.
+
+Tests cover:
+- vote() method
+- discuss() method
+- propose() method
 """
 
 from unittest.mock import MagicMock, patch
@@ -735,6 +740,399 @@ class TestLLMPlayerDiscuss:
         call = mock_prompt_builder_instance.build_discuss_messages
         call.assert_called_once_with(
             proposal=proposal,
+            rules=rules,
+            game_state=game_state,
+            player_name="TestPlayer",
+        )
+
+
+class TestLLMPlayerPropose:
+    """Tests for LLMPlayer.propose() method."""
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_success_first_try(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Test successful proposal on the first attempt."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        # Mock the prompt builder to return messages
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_propose_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock the API client to return valid JSON
+        valid_json_response = """{
+            "private_thoughts": "Strategic analysis here",
+            "type": "Add",
+            "target_rule_id": null,
+            "new_text": "New rule text for testing",
+            "rationale": "This is good for the game"
+        }"""
+        mock_api_instance.get_completion.return_value = valid_json_response
+
+        # Mock the parser to return valid data
+        mock_parse.return_value = {
+            "private_thoughts": "Strategic analysis here",
+            "type": "Add",
+            "target_rule_id": None,
+            "new_text": "New rule text for testing",
+            "rationale": "This is good for the game",
+        }
+
+        # Create player and propose
+        player = LLMPlayer("TestPlayer", model_config)
+        proposal = player.propose(game_state, rules)
+
+        # Assertions
+        assert proposal.proposer_name == "TestPlayer"
+        assert proposal.type == ProposalType.ADD
+        assert proposal.target_rule_id is None
+        assert proposal.new_text == "New rule text for testing"
+        assert proposal.rationale == "This is good for the game"
+        assert proposal.move_number == game_state.move_number
+
+        # Verify API was called only once
+        assert mock_api_instance.get_completion.call_count == 1
+
+        # Verify parser was called only once
+        assert mock_parse.call_count == 1
+        mock_parse.assert_called_with(valid_json_response)
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_success_amend_type(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Test successful AMEND proposal."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_propose_messages.return_value = (
+            mock_messages
+        )
+
+        mock_api_instance.get_completion.return_value = "valid json"
+
+        mock_parse.return_value = {
+            "private_thoughts": "Analysis",
+            "type": "Amend",
+            "target_rule_id": "201",
+            "new_text": "Amended rule text",
+            "rationale": "This improves the rule",
+        }
+
+        # Create player and propose
+        player = LLMPlayer("TestPlayer", model_config)
+        proposal = player.propose(game_state, rules)
+
+        # Assertions
+        assert proposal.type == ProposalType.AMEND
+        assert proposal.target_rule_id == "201"
+        assert proposal.new_text == "Amended rule text"
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_success_after_retry(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Test successful proposal after one retry."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_propose_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock the API client to return bad JSON first, then good JSON
+        bad_json_response = "This is not valid JSON"
+        good_json_response = '{"type": "Add", ...}'
+        mock_api_instance.get_completion.side_effect = [
+            bad_json_response,
+            good_json_response,
+        ]
+
+        # Mock the parser: raise ValueError first, then return valid data
+        mock_parse.side_effect = [
+            ValueError("Response is not valid JSON. Error: ..."),
+            {
+                "private_thoughts": "Better analysis now",
+                "type": "Add",
+                "target_rule_id": None,
+                "new_text": "Fixed rule text",
+                "rationale": "Better rationale",
+            },
+        ]
+
+        # Create player and propose
+        player = LLMPlayer("TestPlayer", model_config)
+        proposal = player.propose(game_state, rules)
+
+        # Assertions
+        assert proposal.proposer_name == "TestPlayer"
+        assert proposal.type == ProposalType.ADD
+        assert proposal.new_text == "Fixed rule text"
+
+        # Verify API was called twice
+        assert mock_api_instance.get_completion.call_count == 2
+
+        # Verify parser was called twice
+        assert mock_parse.call_count == 2
+
+        # Verify that the second API call included the error feedback
+        second_call_messages = mock_api_instance.get_completion.call_args_list[
+            1
+        ][0][0]
+        # system, user, assistant (bad), user (retry)
+        assert len(second_call_messages) == 4
+        assert second_call_messages[2].role == "assistant"
+        assert second_call_messages[2].content == bad_json_response
+        assert second_call_messages[3].role == "user"
+        # The retry template should mention the error
+        assert "Error:" in second_call_messages[3].content
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_failure_max_retries_raises_runtime_error(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Test that player raises RuntimeError after exhausting retries."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_propose_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock the API client to always return bad JSON
+        bad_json_response = "This is consistently bad JSON {{{{{{"
+        mock_api_instance.get_completion.return_value = bad_json_response
+
+        # Mock the parser to always raise ValueError
+        mock_parse.side_effect = ValueError("Response is not valid JSON")
+
+        # Create player and propose
+        player = LLMPlayer("TestPlayer", model_config)
+
+        # Should raise RuntimeError after exhausting retries
+        with pytest.raises(RuntimeError) as exc_info:
+            player.propose(game_state, rules)
+
+        assert "LLM failed to generate a valid proposal" in str(exc_info.value)
+
+        # Verify API was called MAX_PROPOSE_RETRIES times (2)
+        assert (
+            mock_api_instance.get_completion.call_count
+            == LLMPlayer.MAX_PROPOSE_RETRIES
+        )
+
+        # Verify parser was called MAX_PROPOSE_RETRIES times
+        assert mock_parse.call_count == LLMPlayer.MAX_PROPOSE_RETRIES
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    def test_propose_api_error_then_success(
+        self,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Test that player retries after API errors (None response)."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_propose_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock the API client: first returns None (API error), second succeeds
+        good_json_response = """{
+            "private_thoughts": "Analysis",
+            "type": "Add",
+            "target_rule_id": null,
+            "new_text": "New rule",
+            "rationale": "Reason"
+        }"""
+        mock_api_instance.get_completion.side_effect = [
+            None,
+            good_json_response,
+        ]
+
+        # Create player and propose
+        player = LLMPlayer("TestPlayer", model_config)
+        proposal = player.propose(game_state, rules)
+
+        # Assertions
+        assert proposal.proposer_name == "TestPlayer"
+        assert proposal.type == ProposalType.ADD
+
+        # Verify API was called twice
+        assert mock_api_instance.get_completion.call_count == 2
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    def test_propose_all_api_errors_raises_runtime_error(
+        self,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Test that player raises RuntimeError when API consistently fails."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_propose_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock the API client to always return None (API error)
+        mock_api_instance.get_completion.return_value = None
+
+        # Create player and propose
+        player = LLMPlayer("TestPlayer", model_config)
+
+        # Should raise RuntimeError
+        with pytest.raises(RuntimeError) as exc_info:
+            player.propose(game_state, rules)
+
+        assert "LLM failed to generate a valid proposal" in str(exc_info.value)
+
+        # Verify API was called MAX_PROPOSE_RETRIES times
+        assert (
+            mock_api_instance.get_completion.call_count
+            == LLMPlayer.MAX_PROPOSE_RETRIES
+        )
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_prompt_builder_called_correctly(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Test that PromptBuilder is called with correct arguments."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_messages = [
+            ChatMessage(role="system", content="System prompt"),
+            ChatMessage(role="user", content="User prompt"),
+        ]
+        mock_prompt_builder_instance.build_propose_messages.return_value = (
+            mock_messages
+        )
+
+        # Mock successful API response
+        mock_api_instance.get_completion.return_value = (
+            '{"type":"ADD","private_thoughts":"A","target_rule_id":null,'
+            '"new_text":"text","rationale":"r"}'
+        )
+        mock_parse.return_value = {
+            "type": "Add",
+            "private_thoughts": "A",
+            "target_rule_id": None,
+            "new_text": "text",
+            "rationale": "r",
+        }
+
+        # Create player and propose
+        player = LLMPlayer("TestPlayer", model_config)
+        player.propose(game_state, rules)
+
+        # Verify PromptBuilder.build_propose_messages called correctly
+        call = mock_prompt_builder_instance.build_propose_messages
+        call.assert_called_once_with(
             rules=rules,
             game_state=game_state,
             player_name="TestPlayer",
