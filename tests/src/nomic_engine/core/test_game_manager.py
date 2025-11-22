@@ -8,6 +8,7 @@ test isolation via temporary directories and files.
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -108,58 +109,49 @@ def test_game_logger_init():
         game_dir = Path(tmpdir)
         logger = GameLogger(game_dir)
 
-        assert logger.log_path == game_dir / GAME_LOG_FILE
+        # log_path was removed - events now go through logging module
         assert logger.transcript_path == game_dir / GAME_TRANSCRIPT_FILE
 
 
 def test_game_logger_log_event():
-    """Test logging an event to game_log.jsonl."""
+    """Test logging an event delegates to the standard logging module."""
     with tempfile.TemporaryDirectory() as tmpdir:
         game_dir = Path(tmpdir)
-        log_path = game_dir / GAME_LOG_FILE
-        log_path.touch()
-
         logger = GameLogger(game_dir)
-        logger.log_event("move_start", {"player": "Alice", "move_number": 1})
 
-        # Read back and verify
-        with log_path.open("r", encoding="utf-8") as f:
-            lines = f.readlines()
+        # Patch the logging module used by game_logger
+        with patch("src.nomic_engine.game_logger.logging") as mock_logging:
+            logger.log_event(
+                "move_start", {"player": "Alice", "move_number": 1}
+            )
 
-        assert len(lines) == 1
-        event = json.loads(lines[0])
-
-        assert "timestamp" in event
-        assert event["event_type"] == "move_start"
-        assert event["data"]["player"] == "Alice"
-        assert event["data"]["move_number"] == 1
+            # Verify logging.info was called with correct parameters
+            mock_logging.info.assert_called_once_with(
+                "EVENT: move_start",
+                extra={"player": "Alice", "move_number": 1},
+            )
 
 
 def test_game_logger_log_multiple_events():
-    """Test logging multiple events appends to the log file."""
+    """Test logging multiple events calls logging module multiple times."""
     with tempfile.TemporaryDirectory() as tmpdir:
         game_dir = Path(tmpdir)
-        log_path = game_dir / GAME_LOG_FILE
-        log_path.touch()
-
         logger = GameLogger(game_dir)
-        logger.log_event("event1", {"data": "first"})
-        logger.log_event("event2", {"data": "second"})
-        logger.log_event("event3", {"data": "third"})
 
-        # Read back and verify
-        with log_path.open("r", encoding="utf-8") as f:
-            lines = f.readlines()
+        # Patch the logging module used by game_logger
+        with patch("src.nomic_engine.game_logger.logging") as mock_logging:
+            logger.log_event("event1", {"data": "first"})
+            logger.log_event("event2", {"data": "second"})
+            logger.log_event("event3", {"data": "third"})
 
-        assert len(lines) == 3
+            # Verify logging.info was called three times
+            assert mock_logging.info.call_count == 3
 
-        event1 = json.loads(lines[0])
-        event2 = json.loads(lines[1])
-        event3 = json.loads(lines[2])
-
-        assert event1["event_type"] == "event1"
-        assert event2["event_type"] == "event2"
-        assert event3["event_type"] == "event3"
+            # Verify call arguments
+            calls = mock_logging.info.call_args_list
+            assert calls[0][0][0] == "EVENT: event1"
+            assert calls[1][0][0] == "EVENT: event2"
+            assert calls[2][0][0] == "EVENT: event3"
 
 
 def test_game_logger_log_transcript():
@@ -502,8 +494,13 @@ def test_game_manager_full_lifecycle(temp_game_dir):
     manager.save_game_state()
     manager.save_rules()
 
-    # Log events
-    manager.logger.log_event("test_event", {"test": "data"})
+    # Log events (log_event now delegates to logging module)
+    with patch("src.nomic_engine.game_logger.logging") as mock_logging:
+        manager.logger.log_event("test_event", {"test": "data"})
+        mock_logging.info.assert_called_once_with(
+            "EVENT: test_event", extra={"test": "data"}
+        )
+
     manager.logger.log_transcript("Integration test transcript entry.")
 
     # Create new manager and reload to verify persistence
@@ -515,15 +512,7 @@ def test_game_manager_full_lifecycle(temp_game_dir):
     assert len(manager2.rules_manager.rules) == initial_rules_count + 1
     assert manager2.rules_manager.rules[-1].rule_id == "302"
 
-    # Verify logs
-    log_path = temp_game_dir / GAME_LOG_FILE
-    with log_path.open("r", encoding="utf-8") as f:
-        log_lines = f.readlines()
-
-    assert len(log_lines) >= 1
-    last_event = json.loads(log_lines[-1])
-    assert last_event["event_type"] == "test_event"
-
+    # Verify transcript (still written to file)
     transcript_path = temp_game_dir / GAME_TRANSCRIPT_FILE
     with transcript_path.open("r", encoding="utf-8") as f:
         transcript_content = f.read()
