@@ -14,13 +14,15 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
+* Need to send player's own private thoughts and responses back to LLMs each turn so they know what they're doing
 * LLMs don't know which rule they proposed (vote against their own rule change)
 * LLMs are too mean/hostile
   * Should have a personality string and allow it customized per player
-* INFO level logging should show entire response at each step, even if rejected
+* Shouldn't need "discussion" from the proposer
 
 ### Low Priority
 
+* Overdue for an update to README.md with instructions to launch the game
 * I don't like the logging format. Can we simplify or clarify it? Log level should deftinitely be vertically aligned. It's appearing as
 
   ```
@@ -33,6 +35,7 @@ Our architecture is built on these principles:
   2025-11-16 08:48:43,458 - __main__ - INFO - Starting turn execution
   ```
 * `2025-11-16 10:48:30,725 - src.nomic_engine.game_loop - INFO - Completed turn 2` after completing turn 1.
+  * Unsure if this is still an issue
 
 ## Future Work
 
@@ -41,6 +44,8 @@ This is the long-term backlog and TODO scratchpad.
     * Expand `api_clients.py` to handle cloud providers (Grok, Anthropic) and their respective API keys.
     * Implement advanced token-saving strategies
     * Implement async behavior
+    * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
+    * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
 * **Implement Victory Check:**
     * Add a `target_score` to `GameState`.
     * Add a check for this score in the game loop.
@@ -54,4 +59,3 @@ This is the long-term backlog and TODO scratchpad.
     * Query provider APIs to get a list of available models.
 * **Tooling & Features:**
     * Build a `build_site.py` script to convert `game_history.jsonl` into a shareable HTML file.
-    * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans between turns.
