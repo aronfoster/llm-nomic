@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from src.nomic_engine.data_models import (
     ChatMessage,
+    Discussion,
     GameState,
     Proposal,
     ProposalType,
@@ -62,8 +63,14 @@ class TestPromptBuilder(unittest.TestCase):
 
         # Create sample discussions
         self.discussions = [
-            ("Alice", "I think this is a good idea."),
-            ("Charlie", "I'm not sure about this change."),
+            Discussion(
+                player_name="Alice",
+                text="I think this is a good idea.",
+            ),
+            Discussion(
+                player_name="Charlie",
+                text="I'm not sure about this change.",
+            ),
         ]
 
     def test_format_rules(self):
@@ -488,8 +495,12 @@ class TestPromptBuilder(unittest.TestCase):
         """
         # Create sample discussions
         discussions = [
-            ("Alice", "I think this is a good idea."),
-            ("Charlie", "I'm not sure about this change."),
+            Discussion(
+                player_name="Alice", text="I think this is a good idea."
+            ),
+            Discussion(
+                player_name="Charlie", text="I'm not sure about this change."
+            ),
         ]
 
         # Call with real templates
@@ -540,8 +551,10 @@ class TestPromptBuilder(unittest.TestCase):
         contains UNCLEAR or AMBIGUOUS."""
         # Create discussions with UNCLEAR keyword
         discussions = [
-            ("Alice", "I think this is unclear to me."),
-            ("Charlie", "I agree, very confusing."),
+            Discussion(
+                player_name="Alice", text="I think this is unclear to me."
+            ),
+            Discussion(player_name="Charlie", text="I agree, very confusing."),
         ]
 
         messages = self.builder.build_revise_messages(
@@ -561,7 +574,9 @@ class TestPromptBuilder(unittest.TestCase):
         """Test Rule 112 constraint is triggered with AMBIGUOUS keyword."""
         # Create discussions with AMBIGUOUS keyword (case insensitive)
         discussions = [
-            ("Alice", "The wording is a bit AMBIGUOUS."),
+            Discussion(
+                player_name="Alice", text="The wording is a bit AMBIGUOUS."
+            ),
         ]
 
         messages = self.builder.build_revise_messages(
@@ -580,8 +595,10 @@ class TestPromptBuilder(unittest.TestCase):
         """Test that permissive message is shown when no UNCLEAR/AMBIGUOUS."""
         # Create normal discussions without UNCLEAR or AMBIGUOUS
         discussions = [
-            ("Alice", "I think this is a good idea."),
-            ("Charlie", "I support this change."),
+            Discussion(
+                player_name="Alice", text="I think this is a good idea."
+            ),
+            Discussion(player_name="Charlie", text="I support this change."),
         ]
 
         messages = self.builder.build_revise_messages(
