@@ -116,12 +116,6 @@ class LLMPlayer(BasePlayer):
             try:
                 data = parse_proposal_response(response_text)
 
-                # Success! Log private thoughts
-                logger.debug(
-                    f"{self.player_name} private thoughts: "
-                    f"{data['private_thoughts']}"
-                )
-
                 # Construct and return the Proposal object
                 # Note: proposal_id is left as None; GameLoop assigns it
                 return Proposal(
