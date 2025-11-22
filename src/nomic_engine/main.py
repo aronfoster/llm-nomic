@@ -8,9 +8,12 @@ executing one turn at a time.
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 import pydantic
+from pythonjsonlogger.json import JsonFormatter
 
+from .constants import GAME_LOG_FILE
 from .core.game_loop import GameLoop
 from .core.game_manager import GameManager
 from .data_models import ModelLibrary
@@ -20,16 +23,38 @@ from .players.llm_player import LLMPlayer
 from .utils.loaders import load_model_library
 
 
-def setup_logging() -> None:
+def setup_logging(game_dir: str) -> None:
     """
-    Configure basic logging for the application.
+    Configure logging for the application.
 
-    Sets up logging to display DEBUG level messages with a simple format.
+    Sets up:
+    - Console handler: INFO level with text formatter
+    - File handler: DEBUG level with JSON formatter to game_log.jsonl
+
+    Args:
+        game_dir: Path to the game instance directory
     """
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    # Console handler - INFO level with text formatter
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     )
+    console_handler.setFormatter(console_formatter)
+    root_logger.addHandler(console_handler)
+
+    # File handler - DEBUG level with JSON formatter
+    log_file_path = Path(game_dir) / GAME_LOG_FILE
+    file_handler = logging.FileHandler(log_file_path, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    json_formatter = JsonFormatter(
+        "%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
+    file_handler.setFormatter(json_formatter)
+    root_logger.addHandler(file_handler)
 
 
 def instantiate_players(
@@ -89,10 +114,6 @@ def main() -> None:
         0: Success or user interrupt
         1: Error occurred (file not found, validation error, game error)
     """
-    # Setup logging
-    setup_logging()
-    logger = logging.getLogger(__name__)
-
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
         description="Run one turn of a Nomic game."
@@ -104,6 +125,10 @@ def main() -> None:
         help="Path to the game instance directory",
     )
     args = parser.parse_args()
+
+    # Setup logging (after args so we have game_dir)
+    setup_logging(args.game_dir)
+    logger = logging.getLogger(__name__)
 
     # Load model library
     try:

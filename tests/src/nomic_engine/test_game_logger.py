@@ -2,12 +2,13 @@
 Tests for the GameLogger class.
 
 These tests validate logging functionality including:
-- Event logging to JSON format
+- Event logging via standard logging module
 - Transcript logging to markdown format
 """
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from src.nomic_engine.game_logger import GameLogger
 
@@ -64,24 +65,17 @@ def test_game_logger_log_transcript_multiple_entries() -> None:
 
 
 def test_game_logger_log_event() -> None:
-    """Test that log_event writes JSON-formatted events."""
+    """Test that log_event delegates to the standard logging module."""
     with TemporaryDirectory() as tmpdir:
         game_dir = Path(tmpdir)
         logger = GameLogger(game_dir)
 
-        # Ensure the log file doesn't exist yet
-        assert not logger.log_path.exists()
+        # Patch the logging module used by game_logger
+        with patch("src.nomic_engine.game_logger.logging") as mock_logging:
+            # Log an event
+            logger.log_event("test_event", {"key": "value"})
 
-        # Log an event
-        logger.log_event("test_event", {"key": "value"})
-
-        # Verify the file was created
-        assert logger.log_path.exists()
-
-        # Read and verify the content
-        content = logger.log_path.read_text(encoding="utf-8")
-
-        # Should be a JSON line with timestamp, event_type, and data
-        assert "test_event" in content
-        assert '"key": "value"' in content
-        assert "timestamp" in content
+            # Verify logging.info was called with correct parameters
+            mock_logging.info.assert_called_once_with(
+                "EVENT: test_event", extra={"key": "value"}
+            )
