@@ -262,6 +262,74 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("No rationale provided", user_content)
         self.assertIn("No discussions yet", user_content)
 
+    def test_build_vote_messages_self_proposal(self):
+        """Test that (YOU) is added when voting on own proposal."""
+        # Create a proposal where proposer_name matches player_name
+        self_proposal = Proposal(
+            proposer_name="Alice",
+            move_number=5,
+            type=ProposalType.AMEND,
+            proposal_id="305",
+            target_rule_id="201",
+            new_text="Players gain 3 points for successful proposals.",
+            rationale="Incentivize more proposals.",
+        )
+
+        # Call with player_name matching proposer_name
+        messages = self.builder.build_vote_messages(
+            proposal=self_proposal,
+            rules=self.rules,
+            game_state=self.game_state,
+            discussions=[],
+            player_name="Alice",
+        )
+
+        # Verify the user content contains (YOU) after the proposer's name
+        user_content = messages[1].content
+        self.assertIn("Alice (YOU)", user_content)
+
+    def test_build_vote_messages_other_proposal(self):
+        """Test that (YOU) is NOT added when voting on another's proposal."""
+        # Use the standard proposal (proposer is Bob)
+        messages = self.builder.build_vote_messages(
+            proposal=self.proposal,
+            rules=self.rules,
+            game_state=self.game_state,
+            discussions=self.discussions,
+            player_name="Alice",  # Alice is voting on Bob's proposal
+        )
+
+        # Verify the user content contains Bob's name without (YOU)
+        user_content = messages[1].content
+        self.assertIn("Bob", user_content)
+        self.assertNotIn("Bob (YOU)", user_content)
+        self.assertNotIn("Alice (YOU)", user_content)
+
+    def test_build_discuss_messages_self_proposal(self):
+        """Test that (YOU) is added when discussing own proposal."""
+        # Create a proposal where proposer_name matches player_name
+        self_proposal = Proposal(
+            proposer_name="Charlie",
+            move_number=5,
+            type=ProposalType.ADD,
+            proposal_id="306",
+            target_rule_id=None,
+            new_text="A new rule.",
+            rationale="For testing.",
+        )
+
+        # Call with player_name matching proposer_name
+        messages = self.builder.build_discuss_messages(
+            proposal=self_proposal,
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Charlie",
+        )
+
+        # Verify the user content contains (YOU) after the proposer's name
+        user_content = messages[1].content
+        self.assertIn("Charlie (YOU)", user_content)
+
     def test_build_discuss_messages_integration(self):
         """
         Integration test using real prompt templates for discuss action.
