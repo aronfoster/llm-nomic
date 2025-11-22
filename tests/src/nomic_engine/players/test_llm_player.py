@@ -13,6 +13,7 @@ import pytest
 
 from src.nomic_engine.data_models import (
     ChatMessage,
+    Discussion,
     GameState,
     ModelDefinition,
     Proposal,
@@ -469,8 +470,10 @@ class TestLLMPlayerDiscuss:
         player = LLMPlayer("TestPlayer", model_config)
         result = player.discuss(proposal, game_state, rules)
 
-        # Assertions
-        assert result == "I think this proposal has merit."
+        # Assertions - now returns Discussion object
+        assert isinstance(result, Discussion)
+        assert result.text == "I think this proposal has merit."
+        assert result.player_name == "TestPlayer"
 
         # Verify API was called only once
         assert mock_api_instance.get_completion.call_count == 1
@@ -522,8 +525,10 @@ class TestLLMPlayerDiscuss:
         player = LLMPlayer("TestPlayer", model_config)
         result = player.discuss(proposal, game_state, rules)
 
-        # Should return None for empty string
-        assert result is None
+        # Should return Discussion with empty text for abstention
+        assert isinstance(result, Discussion)
+        assert result.text == ""
+        assert result.player_name == "TestPlayer"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
@@ -578,8 +583,9 @@ class TestLLMPlayerDiscuss:
         player = LLMPlayer("TestPlayer", model_config)
         result = player.discuss(proposal, game_state, rules)
 
-        # Assertions
-        assert result == "Let me reconsider..."
+        # Assertions - now returns Discussion object
+        assert isinstance(result, Discussion)
+        assert result.text == "Let me reconsider..."
 
         # Verify API was called twice
         assert mock_api_instance.get_completion.call_count == 2
@@ -639,8 +645,10 @@ class TestLLMPlayerDiscuss:
         player = LLMPlayer("TestPlayer", model_config)
         result = player.discuss(proposal, game_state, rules)
 
-        # Assertions - should return None (abstain)
-        assert result is None
+        # Assertions - Discussion with empty text (abstain fallback)
+        assert isinstance(result, Discussion)
+        assert result.text == ""
+        assert result.player_name == "TestPlayer"
 
         # Verify API was called MAX_DISCUSS_RETRIES times (2)
         assert (
@@ -685,8 +693,10 @@ class TestLLMPlayerDiscuss:
         player = LLMPlayer("TestPlayer", model_config)
         result = player.discuss(proposal, game_state, rules)
 
-        # Assertions - should return None (abstain)
-        assert result is None
+        # Assertions - Discussion with empty text (abstain fallback)
+        assert isinstance(result, Discussion)
+        assert result.text == ""
+        assert result.player_name == "TestPlayer"
 
         # Verify API was called MAX_DISCUSS_RETRIES times
         assert (
@@ -1187,7 +1197,9 @@ class TestLLMPlayerRevise:
 
         # Create player and revise
         player = LLMPlayer("TestPlayer", model_config)
-        discussions = [("Alice", "I have concerns about this.")]
+        discussions = [
+            Discussion(player_name="Alice", text="I have concerns about this.")
+        ]
         result = player.revise(proposal, discussions, game_state, rules)
 
         # Should return None for withdraw
@@ -1241,11 +1253,14 @@ class TestLLMPlayerRevise:
 
         # Create player and revise
         player = LLMPlayer("TestPlayer", model_config)
-        discussions = [("Alice", "I support this.")]
+        discussions = [Discussion(player_name="Alice", text="I support this.")]
         result = player.revise(proposal, discussions, game_state, rules)
 
-        # Should return the original proposal object
-        assert result is proposal
+        # Should return a proposal with same fields but updated thoughts
+        assert result is not None
+        assert result.new_text == proposal.new_text
+        assert result.rationale == proposal.rationale
+        assert result.private_thoughts == "Feedback is positive, keep as is"
 
         # Verify API was called only once
         assert mock_api_instance.get_completion.call_count == 1
@@ -1296,7 +1311,9 @@ class TestLLMPlayerRevise:
 
         # Create player and revise
         player = LLMPlayer("TestPlayer", model_config)
-        discussions = [("Alice", "This could be better.")]
+        discussions = [
+            Discussion(player_name="Alice", text="This could be better.")
+        ]
         result = player.revise(proposal, discussions, game_state, rules)
 
         # Should return a new proposal object with updated values
@@ -1412,8 +1429,11 @@ class TestLLMPlayerRevise:
         player = LLMPlayer("TestPlayer", model_config)
         result = player.revise(proposal, [], game_state, rules)
 
-        # Should return original proposal
-        assert result is proposal
+        # Should return a proposal with same fields but updated thoughts
+        assert result is not None
+        assert result.new_text == proposal.new_text
+        assert result.rationale == proposal.rationale
+        assert result.private_thoughts == "Fixed response"
 
         # Verify API was called twice
         assert mock_api_instance.get_completion.call_count == 2
@@ -1559,7 +1579,7 @@ class TestLLMPlayerRevise:
 
         # Create player and revise
         player = LLMPlayer("TestPlayer", model_config)
-        discussions = [("Alice", "Good proposal.")]
+        discussions = [Discussion(player_name="Alice", text="Good proposal.")]
         player.revise(proposal, discussions, game_state, rules)
 
         # Verify PromptBuilder.build_revise_messages called correctly

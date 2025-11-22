@@ -7,7 +7,14 @@ to participate in the game.
 
 from typing import Literal
 
-from ..data_models import GameState, Proposal, ProposalType, Rule, Vote
+from ..data_models import (
+    Discussion,
+    GameState,
+    Proposal,
+    ProposalType,
+    Rule,
+    Vote,
+)
 from .base_player import BasePlayer
 
 
@@ -96,11 +103,12 @@ class HumanPlayer(BasePlayer):
             target_rule_id=rule_id,
             new_text=new_text,
             rationale=rationale,
+            private_thoughts=None,
         )
 
     def discuss(
         self, proposal: Proposal, game_state: GameState, rules: list[Rule]
-    ) -> str | None:
+    ) -> Discussion:
         """
         Allow the human player to discuss a proposal.
 
@@ -112,8 +120,8 @@ class HumanPlayer(BasePlayer):
             rules: The current list of all rules.
 
         Returns:
-            A string containing the discussion, or None if the user
-            chooses not to discuss.
+            A Discussion object containing the player's discussion.
+            If the player skips, Discussion.text will be empty.
         """
         print(f"\n--- {self.player_name}'s Turn: Discussion Phase ---")
         print(f"Proposal by {proposal.proposer_name}:")
@@ -145,10 +153,14 @@ class HumanPlayer(BasePlayer):
         if proposal.rationale:
             print(f"  Rationale: {proposal.rationale}")
 
-        discussion = input(
+        discussion_text = input(
             "Enter discussion (or press Enter to skip): "
         ).strip()
-        return discussion if discussion else None
+        return Discussion(
+            player_name=self.player_name,
+            text=discussion_text,
+            private_thoughts=None,
+        )
 
     def vote(
         self, proposal: Proposal, game_state: GameState, rules: list[Rule]
@@ -227,7 +239,7 @@ class HumanPlayer(BasePlayer):
     def revise(
         self,
         proposal: Proposal,
-        discussions: list[tuple[str, str]],
+        discussions: list[Discussion],
         game_state: GameState,
         rules: list[Rule],
     ) -> Proposal | None:
@@ -241,7 +253,7 @@ class HumanPlayer(BasePlayer):
 
         Args:
             proposal: The original proposal made by this player.
-            discussions: A list of tuples (player_name, discussion_text).
+            discussions: A list of Discussion objects from all players.
             game_state: The current state of the game.
             rules: The current list of all rules.
 
@@ -263,13 +275,16 @@ class HumanPlayer(BasePlayer):
 
         # Print all discussions
         print("\n--- Discussions ---")
-        for name, text in discussions:
-            print(f"{name}: {text}")
+        for discussion in discussions:
+            if discussion.text:
+                print(f"{discussion.player_name}: {discussion.text}")
+            else:
+                print(f"{discussion.player_name}: (Abstained)")
 
         # Check for Rule 112: must revise if any discussion contains
         # "UNCLEAR" or "AMBIGUOUS"
         must_revise = any(
-            "UNCLEAR" in d[1].upper() or "AMBIGUOUS" in d[1].upper()
+            "UNCLEAR" in d.text.upper() or "AMBIGUOUS" in d.text.upper()
             for d in discussions
         )
 

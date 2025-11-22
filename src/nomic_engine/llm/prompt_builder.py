@@ -6,7 +6,7 @@ game data, calculating derived fields like player position and
 formatting complex data structures.
 """
 
-from ..data_models import ChatMessage, GameState, Proposal, Rule
+from ..data_models import ChatMessage, Discussion, GameState, Proposal, Rule
 from . import prompts
 
 
@@ -57,12 +57,12 @@ class PromptBuilder:
             f"- {name}: {score}" for name, score in sorted_players
         )
 
-    def _format_discussions(self, discussions: list[tuple[str, str]]) -> str:
+    def _format_discussions(self, discussions: list[Discussion]) -> str:
         """
         Format discussion messages into a readable conversation.
 
         Args:
-            discussions: List of (player_name, message) tuples
+            discussions: List of Discussion objects
 
         Returns:
             Formatted string with each discussion message
@@ -72,8 +72,15 @@ class PromptBuilder:
             return "No discussions yet."
 
         formatted_lines = []
-        for player_name, message in discussions:
-            formatted_lines.append(f"**{player_name}:** {message}")
+        for discussion in discussions:
+            # Only include non-empty discussions (skip abstentions)
+            if discussion.text:
+                formatted_lines.append(
+                    f"**{discussion.player_name}:** {discussion.text}"
+                )
+
+        if not formatted_lines:
+            return "No discussions yet."
 
         return "\n".join(formatted_lines)
 
@@ -106,7 +113,7 @@ class PromptBuilder:
         proposal: Proposal,
         rules: list[Rule],
         game_state: GameState,
-        discussions: list[tuple[str, str]],
+        discussions: list[Discussion],
         player_name: str,
     ) -> list[ChatMessage]:
         """
@@ -119,7 +126,7 @@ class PromptBuilder:
             proposal: The proposal being voted on
             rules: All current rules in the game
             game_state: The current game state
-            discussions: List of (player_name, message) tuples
+            discussions: List of Discussion objects from all players
             player_name: The name of the player who is voting
 
         Returns:
@@ -317,7 +324,7 @@ class PromptBuilder:
     def build_revise_messages(
         self,
         proposal: Proposal,
-        discussions: list[tuple[str, str]],
+        discussions: list[Discussion],
         game_state: GameState,
         player_name: str,
     ) -> list[ChatMessage]:
@@ -331,8 +338,7 @@ class PromptBuilder:
 
         Args:
             proposal: The proposal being revised (owned by this player)
-            discussions: List of (player_name, message) tuples from other
-                players
+            discussions: List of Discussion objects from all players
             game_state: The current game state
             player_name: The name of the player who is revising
 
@@ -356,8 +362,8 @@ class PromptBuilder:
 
         # Rule 112 Check: Detect UNCLEAR or AMBIGUOUS in discussions
         constraint_triggered = False
-        for _, message in discussions:
-            message_upper = message.upper()
+        for discussion in discussions:
+            message_upper = discussion.text.upper()
             if "UNCLEAR" in message_upper or "AMBIGUOUS" in message_upper:
                 constraint_triggered = True
                 break

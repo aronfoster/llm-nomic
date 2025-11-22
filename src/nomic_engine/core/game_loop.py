@@ -7,7 +7,7 @@ calculating state changes, and interfacing with the Human Judge.
 
 import logging
 
-from ..data_models import Proposal, ProposalType, Rule, Vote
+from ..data_models import Discussion, Proposal, ProposalType, Rule, Vote
 from ..judge.human_judge import get_scores_from_judge, get_veto
 from ..players.base_player import BasePlayer
 from ..validation.validator import validate_proposal
@@ -89,7 +89,7 @@ class GameLoop:
                 return
 
             # Step 2: Discuss
-            discussions: list[tuple[str, str]] = self._collect_discussions(
+            discussions: list[Discussion] = self._collect_discussions(
                 proposal, self.players
             )
 
@@ -277,7 +277,7 @@ class GameLoop:
 
     def _collect_discussions(
         self, proposal: Proposal, players: list[BasePlayer]
-    ) -> list[tuple[str, str]]:
+    ) -> list[Discussion]:
         """
         Collect discussion from all players.
 
@@ -288,14 +288,14 @@ class GameLoop:
             players: List of all players
 
         Returns:
-            List of tuples (player_name, discussion) (excludes None responses)
+            List of Discussion objects from all players (includes abstentions)
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
 
         logger.info("Step 2: Discussion phase")
 
-        discussions: list[tuple[str, str]] = []
+        discussions: list[Discussion] = []
 
         for player in players:
             discussion = player.discuss(
@@ -304,8 +304,8 @@ class GameLoop:
                 rules=self.game_manager.rules_manager.rules,
             )
 
-            if discussion is not None:
-                discussions.append((player.player_name, discussion))
+            discussions.append(discussion)
+            if discussion.text:
                 logger.debug(f"{player.player_name} provided discussion")
             else:
                 logger.debug(f"{player.player_name} abstained from discussion")
@@ -317,7 +317,7 @@ class GameLoop:
         self,
         current_player: BasePlayer,
         proposal: Proposal,
-        discussions: list[tuple[str, str]],
+        discussions: list[Discussion],
     ) -> Proposal | None:
         """
         Allow proposer to revise based on discussion.
@@ -332,7 +332,7 @@ class GameLoop:
         Args:
             current_player: The player who made the proposal
             proposal: The original proposal
-            discussions: List of tuples (player_name, discussion) from players
+            discussions: List of Discussion objects from all players
 
         Returns:
             The (potentially) revised Proposal object, or None if withdrawn
@@ -514,7 +514,7 @@ class GameLoop:
         self,
         proposal: Proposal,
         votes: list[Vote],
-        discussions: list[tuple[str, str]],
+        discussions: list[Discussion],
         proposal_passed: bool,
         judge_approved: bool,
     ) -> None:
@@ -524,7 +524,7 @@ class GameLoop:
         Args:
             proposal: The proposal that was voted on
             votes: List of Vote objects from all players
-            discussions: List of tuples (player_name, discussion)
+            discussions: List of Discussion objects from all players
             proposal_passed: Whether the vote passed
             judge_approved: Whether the judge approved (not vetoed)
         """
@@ -551,7 +551,7 @@ class GameLoop:
         self,
         proposal: Proposal,
         votes: list[Vote],
-        discussions: list[tuple[str, str]],
+        discussions: list[Discussion],
     ) -> None:
         """
         Resolve the turn by tallying votes, consulting judge, applying changes.
@@ -567,8 +567,7 @@ class GameLoop:
         Args:
             proposal: The proposal that was voted on
             votes: List of Vote objects from all players
-            discussions: List of tuples (player_name, discussion) from
-                discussion phase
+            discussions: List of Discussion objects from discussion phase
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
@@ -636,7 +635,7 @@ class GameLoop:
         votes: list[Vote],
         proposal_passed: bool,
         judge_approved: bool,
-        discussions: list[tuple[str, str]],
+        discussions: list[Discussion],
         rules: list[Rule],
     ) -> str:
         """
@@ -647,7 +646,7 @@ class GameLoop:
             votes: List of votes
             proposal_passed: Whether the vote passed
             judge_approved: Whether the judge approved
-            discussions: List of tuples (player_name, discussion)
+            discussions: List of Discussion objects from all players
             rules: List of all current rules
 
         Returns:
@@ -671,6 +670,9 @@ class GameLoop:
         if proposal.rationale:
             lines.append(f"**Rationale:** {proposal.rationale}")
 
+        if proposal.private_thoughts:
+            lines.append(f"**Private Thoughts:** {proposal.private_thoughts}")
+
         # Add original text for AMEND, REPEAL, or TRANSMUTE proposals
         if proposal.type in [
             ProposalType.AMEND,
@@ -687,11 +689,18 @@ class GameLoop:
                         )
                         break
 
-        # Add discussions section
-        if discussions:
-            lines.append("\n### Discussions")
-            for player_name, discussion in discussions:
-                lines.append(f"- **{player_name}:** {discussion}")
+        # Add discussions section (always include, even if all abstained)
+        lines.append("\n### Discussions")
+        for discussion in discussions:
+            name = discussion.player_name
+            if discussion.text:
+                lines.append(f"- **{name}:** {discussion.text}")
+            else:
+                lines.append(f"- **{name}:** *(Abstained)*")
+            if discussion.private_thoughts:
+                lines.append(
+                    f"  - Private Thoughts: {discussion.private_thoughts}"
+                )
 
         lines.append("\n### Votes")
         for vote in votes:

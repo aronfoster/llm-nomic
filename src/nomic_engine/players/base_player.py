@@ -7,7 +7,7 @@ This module defines the interface that all player implementations
 
 from abc import ABC, abstractmethod
 
-from ..data_models import GameState, Proposal, Rule, Vote
+from ..data_models import Discussion, GameState, Proposal, Rule, Vote
 
 
 class BasePlayer(ABC):
@@ -45,7 +45,7 @@ class BasePlayer(ABC):
     @abstractmethod
     def discuss(
         self, proposal: Proposal, game_state: GameState, rules: list[Rule]
-    ) -> str | None:
+    ) -> Discussion:
         """
         Provide discussion/commentary on a proposal.
 
@@ -55,8 +55,8 @@ class BasePlayer(ABC):
             rules: The current list of all rules.
 
         Returns:
-            A string containing the player's discussion, or None to abstain
-            from discussion.
+            A Discussion object containing the player's discussion.
+            If the player abstains, Discussion.text will be empty.
         """
         pass
 
@@ -81,7 +81,7 @@ class BasePlayer(ABC):
     def revise(
         self,
         proposal: Proposal,
-        discussions: list[tuple[str, str]],
+        discussions: list[Discussion],
         game_state: GameState,
         rules: list[Rule],
     ) -> Proposal | None:
@@ -90,7 +90,7 @@ class BasePlayer(ABC):
 
         Args:
             proposal: The original proposal made by this player.
-            discussions: A list of tuples (player_name, discussion_text).
+            discussions: A list of Discussion objects from all players.
             game_state: The current state of the game.
             rules: The current list of all rules.
 

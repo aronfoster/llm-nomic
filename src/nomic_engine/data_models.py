@@ -121,6 +121,18 @@ class Proposal(BaseModel):
     rationale: Optional[str] = Field(
         None, description="The player's justification."
     )
+    private_thoughts: Optional[str] = Field(
+        None,
+        description="The LLM's private reasoning (for transcript logging).",
+    )
+
+
+class Discussion(BaseModel):
+    """Represents a player's discussion comment on a proposal."""
+
+    player_name: str
+    text: str
+    private_thoughts: Optional[str] = None
 
 
 class Vote(BaseModel):

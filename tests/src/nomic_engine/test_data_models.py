@@ -4,6 +4,7 @@ Smoke tests for data models to ensure basic functionality.
 
 from src.nomic_engine.data_models import (
     ChatMessage,
+    Discussion,
     GameConfig,
     GameState,
     ModelDefinition,
@@ -73,6 +74,60 @@ def test_proposal_creation():
     assert proposal.type == "Add"
     assert proposal.proposal_id is None
     assert proposal.target_rule_id is None
+    assert proposal.private_thoughts is None
+
+
+def test_proposal_with_private_thoughts():
+    """Test that Proposal can have private_thoughts (for LLM players)."""
+    proposal = Proposal(
+        proposer_name="Claude",
+        move_number=1,
+        type="Add",
+        new_text="Players must consider long-term strategy.",
+        rationale="Strategic depth is important.",
+        private_thoughts="This rule will help me build alliances early game.",
+    )
+    assert proposal.proposer_name == "Claude"
+    assert proposal.type == "Add"
+    expected_thoughts = "This rule will help me build alliances early game."
+    assert proposal.private_thoughts == expected_thoughts
+
+
+def test_discussion_creation():
+    """Test that Discussion can be created with valid data."""
+    # Test without private_thoughts (simulating human player)
+    discussion_human = Discussion(
+        player_name="Bob",
+        text="I think this is a good proposal.",
+    )
+    assert discussion_human.player_name == "Bob"
+    assert discussion_human.text == "I think this is a good proposal."
+    assert discussion_human.private_thoughts is None
+
+
+def test_discussion_with_private_thoughts():
+    """Test that Discussion can have private_thoughts (for LLM players)."""
+    discussion_llm = Discussion(
+        player_name="Claude",
+        text="I support this proposal.",
+        private_thoughts="Supporting this will gain me favor.",
+    )
+    assert discussion_llm.player_name == "Claude"
+    assert discussion_llm.text == "I support this proposal."
+    expected_thoughts = "Supporting this will gain me favor."
+    assert discussion_llm.private_thoughts == expected_thoughts
+
+
+def test_discussion_abstention():
+    """Test that Discussion can represent an abstention (empty text)."""
+    discussion_abstain = Discussion(
+        player_name="Charlie",
+        text="",
+        private_thoughts="I have nothing strategic to add here.",
+    )
+    assert discussion_abstain.player_name == "Charlie"
+    assert discussion_abstain.text == ""
+    assert discussion_abstain.private_thoughts is not None
 
 
 def test_vote_creation():

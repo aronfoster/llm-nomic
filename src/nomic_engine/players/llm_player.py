@@ -10,6 +10,7 @@ from typing import Literal
 
 from ..data_models import (
     ChatMessage,
+    Discussion,
     GameState,
     ModelDefinition,
     Proposal,
@@ -131,6 +132,7 @@ class LLMPlayer(BasePlayer):
                     target_rule_id=data.get("target_rule_id"),
                     new_text=data.get("new_text"),
                     rationale=data.get("rationale"),
+                    private_thoughts=data.get("private_thoughts"),
                 )
 
             except ValueError as e:
@@ -173,7 +175,7 @@ class LLMPlayer(BasePlayer):
 
     def discuss(
         self, proposal: Proposal, game_state: GameState, rules: list[Rule]
-    ) -> str | None:
+    ) -> Discussion:
         """
         Provide discussion/commentary on a proposal using an LLM.
 
@@ -187,8 +189,8 @@ class LLMPlayer(BasePlayer):
             rules: The current list of all rules.
 
         Returns:
-            A string containing the player's discussion, or None to abstain
-            from discussion. An empty string is treated as abstention.
+            A Discussion object containing the player's discussion.
+            If the player abstains, Discussion.text will be empty.
         """
         # Build initial messages for the discuss prompt
         messages = self.prompt_builder.build_discuss_messages(
@@ -230,11 +232,12 @@ class LLMPlayer(BasePlayer):
                     f"{data['private_thoughts']}"
                 )
 
-                # Return discussion_text (empty string treated as abstain)
-                discussion_text = data["discussion_text"]
-                if discussion_text == "":
-                    return None
-                return discussion_text
+                # Return Discussion object (empty text means abstention)
+                return Discussion(
+                    player_name=self.player_name,
+                    text=data["discussion_text"],
+                    private_thoughts=data.get("private_thoughts"),
+                )
 
             except ValueError as e:
                 # Parsing failed - log the error
@@ -262,12 +265,16 @@ class LLMPlayer(BasePlayer):
 
                 # Loop continues to retry with updated conversation history
 
-        # All retries exhausted - return None (abstain)
+        # All retries exhausted - return empty Discussion (abstain)
         logger.error(
             f"{self.player_name}: Failed to generate valid discussion after "
             f"{self.MAX_DISCUSS_RETRIES} attempts. Defaulting to abstain."
         )
-        return None
+        return Discussion(
+            player_name=self.player_name,
+            text="",
+            private_thoughts=None,
+        )
 
     def vote(
         self, proposal: Proposal, game_state: GameState, rules: list[Rule]
@@ -380,7 +387,7 @@ class LLMPlayer(BasePlayer):
     def revise(
         self,
         proposal: Proposal,
-        discussions: list[tuple[str, str]],
+        discussions: list[Discussion],
         game_state: GameState,
         rules: list[Rule],
     ) -> Proposal | None:
@@ -393,7 +400,7 @@ class LLMPlayer(BasePlayer):
 
         Args:
             proposal: The original proposal made by this player.
-            discussions: A list of tuples (player_name, discussion_text).
+            discussions: A list of Discussion objects from all players.
             game_state: The current state of the game.
             rules: The current list of all rules.
 
@@ -448,7 +455,11 @@ class LLMPlayer(BasePlayer):
                     return None
 
                 if action == "KEEP":
-                    return proposal
+                    # Create a copy to update private_thoughts
+                    kept_proposal = proposal.model_copy()
+                    thoughts = data.get("private_thoughts")
+                    kept_proposal.private_thoughts = thoughts
+                    return kept_proposal
 
                 # action == "MODIFY"
                 # Create a copy and update with new values if provided
@@ -457,6 +468,7 @@ class LLMPlayer(BasePlayer):
                     new_proposal.new_text = data["new_text"]
                 if data.get("rationale"):
                     new_proposal.rationale = data["rationale"]
+                new_proposal.private_thoughts = data.get("private_thoughts")
                 return new_proposal
 
             except ValueError as e:

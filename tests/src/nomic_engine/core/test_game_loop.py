@@ -16,6 +16,7 @@ import pytest
 from src.nomic_engine.core.game_loop import GameLoop
 from src.nomic_engine.core.game_manager import GameManager
 from src.nomic_engine.data_models import (
+    Discussion,
     GameState,
     Proposal,
     ProposalType,
@@ -105,8 +106,14 @@ def mock_players(
             )
         )
 
-        # Default discussion (return some text)
-        player.discuss = Mock(return_value=f"{name}'s discussion")
+        # Default discussion (return Discussion object)
+        player.discuss = Mock(
+            return_value=Discussion(
+                player_name=name,
+                text=f"{name}'s discussion",
+                private_thoughts=None,
+            )
+        )
 
         # Default revise (return the original proposal unchanged)
         # This is a callable that takes a proposal argument and returns it
@@ -291,18 +298,21 @@ def test_step_2_discuss_collects_all_responses(
     discussions = game_loop._collect_discussions(proposal, all_players)
 
     assert len(discussions) == 3
-    assert ("Alice", "Alice's discussion") in discussions
-    assert ("Bob", "Bob's discussion") in discussions
-    assert ("Charlie", "Charlie's discussion") in discussions
+    assert discussions[0].player_name == "Alice"
+    assert discussions[0].text == "Alice's discussion"
+    assert discussions[1].player_name == "Bob"
+    assert discussions[1].text == "Bob's discussion"
+    assert discussions[2].player_name == "Charlie"
+    assert discussions[2].text == "Charlie's discussion"
 
     for player in all_players:
         player.discuss.assert_called_once()
 
 
-def test_step_2_discuss_filters_none_responses(
+def test_step_2_discuss_includes_abstentions(
     game_loop: GameLoop, mock_players: list[Mock]
 ) -> None:
-    """Test _collect_discussions filters out None responses (abstentions)."""
+    """Test _collect_discussions includes abstentions (empty text)."""
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -311,18 +321,26 @@ def test_step_2_discuss_filters_none_responses(
         new_text="Test rule.",
     )
 
-    # Bob abstains (returns None)
-    mock_players[1].discuss.return_value = None
+    # Bob abstains (returns Discussion with empty text)
+    mock_players[1].discuss.return_value = Discussion(
+        player_name="Bob",
+        text="",
+        private_thoughts="Strategic silence",
+    )
 
     all_players = mock_players
 
     discussions = game_loop._collect_discussions(proposal, all_players)
 
-    assert len(discussions) == 2
-    assert ("Alice", "Alice's discussion") in discussions
-    assert ("Charlie", "Charlie's discussion") in discussions
-    # Verify Bob is not in the discussions
-    assert not any(name == "Bob" for name, _ in discussions)
+    # All 3 players should be collected, including abstention
+    assert len(discussions) == 3
+    assert discussions[0].player_name == "Alice"
+    assert discussions[0].text == "Alice's discussion"
+    assert discussions[1].player_name == "Bob"
+    assert discussions[1].text == ""  # Bob abstained
+    assert discussions[1].private_thoughts == "Strategic silence"
+    assert discussions[2].player_name == "Charlie"
+    assert discussions[2].text == "Charlie's discussion"
 
 
 # --- Tests for Step 3: Revise ---
@@ -352,7 +370,10 @@ def test_step_3_revise_can_return_revised_proposal(
         rationale="Updated based on feedback.",
     )
 
-    discussions = [("Alice", "Discussion 1"), ("Bob", "Discussion 2")]
+    discussions = [
+        Discussion(player_name="Alice", text="Discussion 1"),
+        Discussion(player_name="Bob", text="Discussion 2"),
+    ]
 
     # Mock the player's revise method to return the revised proposal
     alice.revise = Mock(return_value=revised_proposal)
@@ -396,7 +417,7 @@ def test_step_3_revise_rejects_illegal_revised_proposal(
         rationale="This should be rejected.",
     )
 
-    discussions = [("Bob", "Discussion")]
+    discussions = [Discussion(player_name="Bob", text="Discussion")]
 
     # Mock the player's revise method to return the illegal revised proposal
     alice.revise = Mock(return_value=illegal_revised_proposal)
@@ -503,7 +524,7 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    discussions: list[tuple[str, str]] = []
+    discussions: list[Discussion] = []
 
     # Store initial next_proposal_id
     initial_proposal_id = mock_game_state.next_proposal_id
@@ -562,7 +583,7 @@ def test_step_5_resolve_judge_veto(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    discussions: list[tuple[str, str]] = []
+    discussions: list[Discussion] = []
 
     # Store initial next_proposal_id
     initial_proposal_id = mock_game_state.next_proposal_id
@@ -616,7 +637,7 @@ def test_step_5_resolve_failed_proposal_score_penalty(
         Vote(player_name="Charlie", vote="NO"),
     ]
 
-    discussions: list[tuple[str, str]] = []
+    discussions: list[Discussion] = []
 
     # Store initial next_proposal_id
     initial_proposal_id = mock_game_state.next_proposal_id
@@ -662,7 +683,7 @@ def test_step_5_resolve_manual_score_entry(
         Vote(player_name="Charlie", vote="NO"),
     ]
 
-    discussions: list[tuple[str, str]] = []
+    discussions: list[Discussion] = []
 
     game_loop._resolve_turn(proposal, votes, discussions)
 
@@ -694,7 +715,7 @@ def test_step_5_resolve_turn_advances_correctly(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    discussions: list[tuple[str, str]] = []
+    discussions: list[Discussion] = []
 
     # Current player is Alice, should advance to Bob
     game_loop._resolve_turn(proposal, votes, discussions)
@@ -724,7 +745,7 @@ def test_step_5_resolve_turn_wraps_around(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    discussions: list[tuple[str, str]] = []
+    discussions: list[Discussion] = []
 
     # Set current player to Charlie (last in turn order)
     mock_game_state.current_player_name = "Charlie"
@@ -758,7 +779,7 @@ def test_step_5_resolve_zero_voters_automatic_pass(
     # Empty votes list (zero voters)
     votes: list[Vote] = []
 
-    discussions: list[tuple[str, str]] = []
+    discussions: list[Discussion] = []
 
     # Store initial next_proposal_id
     initial_proposal_id = mock_game_state.next_proposal_id
@@ -818,7 +839,7 @@ def test_step_5_resolve_veto_blocks_proposal_application(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    discussions: list[tuple[str, str]] = []
+    discussions: list[Discussion] = []
 
     game_loop._resolve_turn(proposal, votes, discussions)
 
@@ -993,6 +1014,7 @@ def test_format_transcript_includes_all_details(
         target_rule_id="201",  # Mutable rule from fixture
         new_text="Updated rule text.",
         rationale="This is a good idea.",
+        private_thoughts="I think this will give me an advantage.",
     )
 
     votes = [
@@ -1006,8 +1028,16 @@ def test_format_transcript_includes_all_details(
     ]
 
     discussions = [
-        ("Bob", "This is unclear"),
-        ("Charlie", "I have concerns"),
+        Discussion(
+            player_name="Bob",
+            text="This is unclear",
+            private_thoughts="Testing the proposer's reasoning",
+        ),
+        Discussion(
+            player_name="Charlie",
+            text="I have concerns",
+            private_thoughts=None,
+        ),
     ]
 
     transcript = game_loop._format_transcript(
@@ -1027,6 +1057,9 @@ def test_format_transcript_includes_all_details(
     assert "Updated rule text." in transcript
     assert "This is a good idea." in transcript
 
+    # Verify proposal private thoughts are present
+    assert "I think this will give me an advantage." in transcript
+
     # Verify original text is present (for AMEND proposal)
     assert "Original Text (Rule 201):" in transcript
     assert "Players take turns." in transcript  # Text from mock_rules fixture
@@ -1038,6 +1071,9 @@ def test_format_transcript_includes_all_details(
     assert "Charlie" in transcript
     assert "I have concerns" in transcript
 
+    # Verify discussion private thoughts for Bob
+    assert "Testing the proposer's reasoning" in transcript
+
     # Verify votes section with reasons
     assert "### Votes" in transcript
     assert "YES" in transcript
@@ -1045,14 +1081,55 @@ def test_format_transcript_includes_all_details(
     assert "NO" in transcript
     assert "I disagree" in transcript
 
-    # Verify private thoughts appear for Bob (LLM player)
-    assert "Private Thoughts:" in transcript
+    # Verify private thoughts appear for Bob's vote (LLM player)
     assert "Strategic analysis: this aligns with my goals" in transcript
-
-    # Verify Charlie's vote doesn't show private thoughts (only Bob has them)
-    private_thoughts_count = transcript.count("Private Thoughts:")
-    assert private_thoughts_count == 1, "Only Bob should have private thoughts"
 
     # Verify vote result and judge approval
     assert "FAILED" in transcript
     assert "Judge Approval:**" in transcript or "Judge Approval:" in transcript
+
+
+def test_format_transcript_shows_abstentions(
+    game_loop: GameLoop, mock_rules: list[Rule]
+) -> None:
+    """Test _format_transcript shows abstentions as '(Abstained)'."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+    ]
+
+    # Bob abstains (empty text)
+    discussions = [
+        Discussion(
+            player_name="Alice",
+            text="I support my proposal.",
+            private_thoughts=None,
+        ),
+        Discussion(
+            player_name="Bob",
+            text="",
+            private_thoughts="Nothing useful to say",
+        ),
+    ]
+
+    transcript = game_loop._format_transcript(
+        proposal=proposal,
+        votes=votes,
+        proposal_passed=True,
+        judge_approved=True,
+        discussions=discussions,
+        rules=mock_rules,
+    )
+
+    # Verify abstention appears
+    assert "*(Abstained)*" in transcript
+    # Bob's private thoughts should still appear
+    assert "Nothing useful to say" in transcript
