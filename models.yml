@@ -57,3 +57,8 @@ models:
     provider: "local"
     api_model_id: "http://localhost:11434/v1" # Ollama
     env_key_name: null
+
+  - id: "deepseek-r1-64k"
+    provider: "local"
+    api_model_id: "http://localhost:11434/v1" # Ollama
+    env_key_name: null

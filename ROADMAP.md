@@ -14,7 +14,10 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-(none)
+* LLMs don't know which rule they proposed (vote against their own rule change)
+* LLMs are too mean/hostile
+  * Should have a personality string and allow it customized per player
+* INFO level logging should show entire response at each step, even if rejected
 
 ### Low Priority
 
@@ -31,32 +34,13 @@ Our architecture is built on these principles:
   ```
 * `2025-11-16 10:48:30,725 - src.nomic_engine.game_loop - INFO - Completed turn 2` after completing turn 1.
 
-## Sprint 5: LLM Implementation (MVP) ✅ **COMPLETE**
-
-**Goal:** A local Ollama-powered `LLMPlayer` can successfully receive a proposal and cast a valid `Vote`.
-
-### Completed Tasks
-* ✅ **Task 1:** Create `src/nomic_engine/llm/prompts.py` to store prompt templates as string constants.
-* ✅ **Task 2:** Create `src/nomic_engine/llm/api_clients.py` and implement a simple client for the local Ollama/OpenAI-compatible endpoint.
-* ✅ **Task 3:** Create `src/nomic_engine/llm/prompt_builder.py` with a class that can build the `vote` prompt.
-* ✅ **Task 4:** Create `src/nomic_engine/llm/parsers.py` with a function to parse the LLM's text response into a `Vote` object with proper validation and error handling.
-* ✅ **Task 5:** Implement the `LLMPlayer.vote()` method with retry logic, wiring together the new `ApiClient`, `PromptBuilder`, and `parsers`.
-
-**Implementation Notes:**
-- Parser validates JSON structure, required keys, and vote values (case-insensitive)
-- LLMPlayer implements robust retry logic: feeds error messages back to the LLM for up to 2 attempts
-- Falls back to ABSTAIN vote if LLM consistently produces invalid output or API fails
-- Comprehensive test coverage for both parsers and LLMPlayer voting logic
-- All tests pass (`make ci` ✓)
-
 ## Future Work
 
 This is the long-term backlog and TODO scratchpad.
   * **Implement Full `LLMPlayer`:**
-    * Implement the remaining `LLMPlayer` methods (`propose`, `discuss`, `revise`).
-    * Add output for clear status when waiting for LLM response
     * Expand `api_clients.py` to handle cloud providers (Grok, Anthropic) and their respective API keys.
-    * Implement advanced token-saving strategies, async behavior
+    * Implement advanced token-saving strategies
+    * Implement async behavior
 * **Implement Victory Check:**
     * Add a `target_score` to `GameState`.
     * Add a check for this score in the game loop.
