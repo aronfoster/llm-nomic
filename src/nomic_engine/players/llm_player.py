@@ -97,6 +97,11 @@ class LLMPlayer(BasePlayer):
             # Get completion from the LLM
             response_text = self.api_client.get_completion(messages)
 
+            # Log raw response for debugging
+            logger.info(
+                f"Raw LLM Response from {self.player_name}:\n{response_text}"
+            )
+
             # Handle API errors (None response)
             if response_text is None:
                 logger.error(
@@ -201,6 +206,11 @@ class LLMPlayer(BasePlayer):
             # Get completion from the LLM
             response_text = self.api_client.get_completion(messages)
 
+            # Log raw response for debugging
+            logger.info(
+                f"Raw LLM Response from {self.player_name}:\n{response_text}"
+            )
+
             # Handle API errors (None response)
             if response_text is None:
                 logger.error(
@@ -294,6 +304,11 @@ class LLMPlayer(BasePlayer):
 
             # Get completion from the LLM
             response_text = self.api_client.get_completion(messages)
+
+            # Log raw response for debugging
+            logger.info(
+                f"Raw LLM Response from {self.player_name}:\n{response_text}"
+            )
 
             # Handle API errors (None response)
             if response_text is None:
@@ -401,6 +416,11 @@ class LLMPlayer(BasePlayer):
 
             # Get completion from the LLM
             response_text = self.api_client.get_completion(messages)
+
+            # Log raw response for debugging
+            logger.info(
+                f"Raw LLM Response from {self.player_name}:\n{response_text}"
+            )
 
             # Handle API errors (None response)
             if response_text is None:

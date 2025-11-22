@@ -149,6 +149,11 @@ class PromptBuilder:
         new_text = proposal.new_text or "N/A"
         rationale = proposal.rationale or "No rationale provided."
 
+        # Mark proposer as (YOU) if voting on own proposal
+        display_proposer = proposal.proposer_name
+        if proposal.proposer_name == player_name:
+            display_proposer = f"{proposal.proposer_name} (YOU)"
+
         # Format the system prompt
         system_prompt_str = prompts.VOTE_SYSTEM_PROMPT.format(
             player_name=player_name
@@ -162,7 +167,7 @@ class PromptBuilder:
             turn_order=turn_order_str,
             rules_text=rules_text,
             proposal_id=proposal.proposal_id or "Unknown",
-            proposer_name=proposal.proposer_name,
+            proposer_name=display_proposer,
             proposal_type=proposal.type.value,  # Use the enum value
             target_rule_id=target_rule_id,
             original_text=original_text,
@@ -224,6 +229,11 @@ class PromptBuilder:
         new_text = proposal.new_text or "N/A"
         rationale = proposal.rationale or "No rationale provided."
 
+        # Mark proposer as (YOU) if discussing own proposal
+        display_proposer = proposal.proposer_name
+        if proposal.proposer_name == player_name:
+            display_proposer = f"{proposal.proposer_name} (YOU)"
+
         # Format the system prompt
         system_prompt_str = prompts.DISCUSS_SYSTEM_PROMPT.format(
             player_name=player_name
@@ -237,7 +247,7 @@ class PromptBuilder:
             turn_order=turn_order_str,
             rules_text=rules_text,
             proposal_id=proposal.proposal_id or "Unknown",
-            proposer_name=proposal.proposer_name,
+            proposer_name=display_proposer,
             proposal_type=proposal.type.value,  # Use the enum value
             target_rule_id=target_rule_id,
             original_text=original_text,
