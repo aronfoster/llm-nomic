@@ -261,8 +261,8 @@ def create_game_files(
     logger.info(f"Creating {config_path}")
     game_config = GameConfig(players=players)
     with config_path.open("w", encoding="utf-8") as f:
-        # Convert to dict and then to YAML
-        config_dict = game_config.model_dump()
+        # Convert to dict and then to YAML (mode='json' serializes enums to values)
+        config_dict = game_config.model_dump(mode="json")
         yaml.safe_dump(config_dict, f, default_flow_style=False, sort_keys=False)
 
     # 2. Create game_state.json
