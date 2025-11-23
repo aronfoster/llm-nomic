@@ -61,15 +61,27 @@ class LLMPlayer(BasePlayer):
         self.model_config = model_config
         self.api_client = ApiClient(self.model_config)
         self.prompt_builder = PromptBuilder()
+        # Stateful conversation history for the current turn
+        self.turn_history: list[ChatMessage] = []
+
+    def _reset_history(self, system_message: ChatMessage) -> None:
+        """
+        Reset the conversation history for a new turn/action.
+
+        Clears the turn_history and starts fresh with the given system message.
+
+        Args:
+            system_message: The system message to start the new context.
+        """
+        self.turn_history = [system_message]
 
     def propose(self, game_state: GameState, rules: list[Rule]) -> Proposal:
         """
         Generate a proposal using an LLM.
 
-        This method implements a retry loop to handle the non-deterministic
-        nature of LLMs. If the LLM produces invalid JSON or violates game
-        logic constraints, the error message is fed back to the model for
-        a retry attempt.
+        This method starts a new turn for the Proposer by resetting the
+        conversation history. It implements a retry loop to handle the
+        non-deterministic nature of LLMs.
 
         Args:
             game_state: The current state of the game.
@@ -83,20 +95,24 @@ class LLMPlayer(BasePlayer):
             RuntimeError: If the LLM fails to generate a valid proposal
                          after all retry attempts are exhausted.
         """
-        # Build initial messages for the propose prompt
-        messages = self.prompt_builder.build_propose_messages(
+        # Build system message for proposer (starts new turn)
+        system_message = self.prompt_builder.build_proposer_system_message(
             rules=rules,
             game_state=game_state,
             player_name=self.player_name,
+            personality="machiavellian",  # Default personality
         )
+
+        # Reset history for new turn
+        self._reset_history(system_message)
 
         # Retry loop with maximum attempts
         for attempt in range(self.MAX_PROPOSE_RETRIES):
             # Status indicator for UX
             print(f"\n🤖 {self.player_name} is thinking about a proposal...")
 
-            # Get completion from the LLM
-            response_text = self.api_client.get_completion(messages)
+            # Get completion from the LLM using turn history
+            response_text = self.api_client.get_completion(self.turn_history)
 
             # Log raw response for debugging
             logger.info(
@@ -115,6 +131,11 @@ class LLMPlayer(BasePlayer):
             # Try to parse the response
             try:
                 data = parse_proposal_response(response_text)
+
+                # Success! Append valid response to history
+                self.turn_history.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
 
                 # Construct and return the Proposal object
                 # Note: proposal_id is left as None; GameLoop assigns it
@@ -142,7 +163,7 @@ class LLMPlayer(BasePlayer):
 
                 # Construct retry by appending bad response and error message
                 # Append the LLM's bad response as an assistant message
-                messages.append(
+                self.turn_history.append(
                     ChatMessage(role="assistant", content=response_text)
                 )
 
@@ -150,7 +171,7 @@ class LLMPlayer(BasePlayer):
                 retry_message = prompts.PROPOSE_RETRY_TEMPLATE.format(
                     validation_error=str(e)
                 )
-                messages.append(
+                self.turn_history.append(
                     ChatMessage(role="user", content=retry_message)
                 )
 
@@ -173,9 +194,9 @@ class LLMPlayer(BasePlayer):
         """
         Provide discussion/commentary on a proposal using an LLM.
 
-        This method implements a retry loop to handle the non-deterministic
-        nature of LLMs. If the LLM produces invalid JSON, the error message
-        is fed back to the model for a retry attempt.
+        This method starts a new turn for discussers by resetting the
+        conversation history. It implements a retry loop to handle the
+        non-deterministic nature of LLMs.
 
         Args:
             proposal: The proposal being discussed.
@@ -186,21 +207,25 @@ class LLMPlayer(BasePlayer):
             A Discussion object containing the player's discussion.
             If the player abstains, Discussion.text will be empty.
         """
-        # Build initial messages for the discuss prompt
-        messages = self.prompt_builder.build_discuss_messages(
+        # Build system message for discusser (starts new turn for this player)
+        system_message = self.prompt_builder.build_discusser_system_message(
             proposal=proposal,
             rules=rules,
             game_state=game_state,
             player_name=self.player_name,
+            personality="machiavellian",  # Default personality
         )
+
+        # Reset history for new turn
+        self._reset_history(system_message)
 
         # Retry loop with maximum attempts
         for attempt in range(self.MAX_DISCUSS_RETRIES):
             # Status indicator for UX
             print(f"\n🤖 {self.player_name} is thinking...")
 
-            # Get completion from the LLM
-            response_text = self.api_client.get_completion(messages)
+            # Get completion from the LLM using turn history
+            response_text = self.api_client.get_completion(self.turn_history)
 
             # Log raw response for debugging
             logger.info(
@@ -220,7 +245,12 @@ class LLMPlayer(BasePlayer):
             try:
                 data = parse_discussion_response(response_text)
 
-                # Success! Log private thoughts
+                # Success! Append valid response to history
+                self.turn_history.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
+
+                # Log private thoughts
                 logger.debug(
                     f"{self.player_name} private thoughts: "
                     f"{data['private_thoughts']}"
@@ -246,12 +276,12 @@ class LLMPlayer(BasePlayer):
 
                 # Construct retry by appending bad response and error message
                 # Append the LLM's bad response as an assistant message
-                messages.append(
+                self.turn_history.append(
                     ChatMessage(role="assistant", content=response_text)
                 )
 
                 # Append the retry prompt as a user message
-                messages.append(
+                self.turn_history.append(
                     ChatMessage(
                         role="user", content=prompts.DISCUSS_RETRY_TEMPLATE
                     )
@@ -271,40 +301,49 @@ class LLMPlayer(BasePlayer):
         )
 
     def vote(
-        self, proposal: Proposal, game_state: GameState, rules: list[Rule]
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+        discussions: list[Discussion] | None = None,
     ) -> Vote:
         """
         Cast a vote on a proposal using an LLM.
 
-        This method implements a retry loop to handle the non-deterministic
-        nature of LLMs. If the LLM produces invalid JSON, the error message
-        is fed back to the model for a retry attempt.
+        This method continues the player's turn (does NOT reset history).
+        It appends the vote instruction to the existing conversation history.
 
         Args:
             proposal: The proposal being voted on.
             game_state: The current state of the game.
             rules: The current list of all rules.
+            discussions: Optional list of Discussion objects from all players.
+                        Used to provide context for the vote decision.
 
         Returns:
             A complete Vote object representing the player's vote.
             If all retry attempts fail, returns an ABSTAIN vote.
         """
-        # Build initial messages for the vote prompt
-        messages = self.prompt_builder.build_vote_messages(
+        # Use empty list if discussions not provided
+        if discussions is None:
+            discussions = []
+
+        # Build vote instruction and append to history (continues turn)
+        vote_instruction = self.prompt_builder.build_vote_instruction(
             proposal=proposal,
+            discussions=discussions,
             rules=rules,
-            game_state=game_state,
-            discussions=[],  # Empty for now
             player_name=self.player_name,
         )
+        self.turn_history.append(vote_instruction)
 
         # Retry loop with maximum attempts
         for attempt in range(self.MAX_VOTE_RETRIES):
             # Status indicator for UX
             print(f"\n🤖 {self.player_name} is thinking...")
 
-            # Get completion from the LLM
-            response_text = self.api_client.get_completion(messages)
+            # Get completion from the LLM using turn history
+            response_text = self.api_client.get_completion(self.turn_history)
 
             # Log raw response for debugging
             logger.info(
@@ -324,7 +363,12 @@ class LLMPlayer(BasePlayer):
             try:
                 data = parse_vote_response(response_text)
 
-                # Success! Log private thoughts and return vote
+                # Success! Append valid response to history
+                self.turn_history.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
+
+                # Log private thoughts
                 logger.debug(
                     f"{self.player_name} private thoughts: "
                     f"{data['private_thoughts']}"
@@ -354,12 +398,12 @@ class LLMPlayer(BasePlayer):
 
                 # Construct retry by appending bad response and error message
                 # Append the LLM's bad response as an assistant message
-                messages.append(
+                self.turn_history.append(
                     ChatMessage(role="assistant", content=response_text)
                 )
 
                 # Append the retry prompt as a user message
-                messages.append(
+                self.turn_history.append(
                     ChatMessage(
                         role="user", content=prompts.VOTE_RETRY_TEMPLATE
                     )
@@ -388,9 +432,9 @@ class LLMPlayer(BasePlayer):
         """
         Revise a proposal based on discussion using an LLM.
 
-        This method implements a retry loop to handle the non-deterministic
-        nature of LLMs. If the LLM produces invalid JSON, the error message
-        is fed back to the model for a retry attempt.
+        This method continues the proposer's turn (does NOT reset history).
+        It appends the revision instruction with peer feedback to the existing
+        conversation history.
 
         Args:
             proposal: The original proposal made by this player.
@@ -402,21 +446,19 @@ class LLMPlayer(BasePlayer):
             The (potentially) revised Proposal object,
             or None if the player chooses to withdraw the proposal.
         """
-        # Build initial messages for the revise prompt
-        messages = self.prompt_builder.build_revise_messages(
-            proposal=proposal,
-            discussions=discussions,
-            game_state=game_state,
-            player_name=self.player_name,
+        # Build revision instruction and append to history (continues turn)
+        revision_instruction = self.prompt_builder.build_revision_instruction(
+            discussions=discussions
         )
+        self.turn_history.append(revision_instruction)
 
         # Retry loop with maximum attempts
         for attempt in range(self.MAX_REVISE_RETRIES):
             # Status indicator for UX
             print(f"\n🤖 {self.player_name} is reviewing feedback...")
 
-            # Get completion from the LLM
-            response_text = self.api_client.get_completion(messages)
+            # Get completion from the LLM using turn history
+            response_text = self.api_client.get_completion(self.turn_history)
 
             # Log raw response for debugging
             logger.info(
@@ -436,7 +478,12 @@ class LLMPlayer(BasePlayer):
             try:
                 data = parse_revision_response(response_text)
 
-                # Success! Log private thoughts
+                # Success! Append valid response to history
+                self.turn_history.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
+
+                # Log private thoughts
                 logger.debug(
                     f"{self.player_name} private thoughts: "
                     f"{data['private_thoughts']}"
@@ -478,7 +525,7 @@ class LLMPlayer(BasePlayer):
 
                 # Construct retry by appending bad response and error message
                 # Append the LLM's bad response as an assistant message
-                messages.append(
+                self.turn_history.append(
                     ChatMessage(role="assistant", content=response_text)
                 )
 
@@ -486,7 +533,7 @@ class LLMPlayer(BasePlayer):
                 retry_message = prompts.REVISE_RETRY_TEMPLATE.format(
                     validation_error=str(e)
                 )
-                messages.append(
+                self.turn_history.append(
                     ChatMessage(role="user", content=retry_message)
                 )
 

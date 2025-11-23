@@ -65,15 +65,28 @@ Our architecture is built on these principles:
     * Legacy wrapper methods maintained for backward compatibility with current LLMPlayer.
     * Comprehensive unit tests with mocking to isolate template dependencies.
 
-* **Task 3: Implement Stateful LLMPlayer**
-    * Update `src/nomic_engine/players/llm_player.py` to maintain `self.turn_history: list[ChatMessage]`.
-    * Implement `_add_message(role, content)` helper.
-    * Refactor `propose`, `discuss`, `revise`, and `vote` to:
-        1.  Check if history exists; if not, build initial context.
-        2.  If history exists, append the new instruction (User message).
+* **Task 3: Implement Stateful LLMPlayer** ✅ COMPLETE
+    * Updated `src/nomic_engine/players/llm_player.py` to maintain `self.turn_history: list[ChatMessage]`.
+    * Implemented `_reset_history(system_message)` helper to clear and initialize history.
+    * Refactored `propose()` and `discuss()` to **reset** history (start new turn):
+        1.  Build system message using `build_proposer_system_message()` or `build_discusser_system_message()`.
+        2.  Call `_reset_history()` with the system message.
+        3.  Send `turn_history` to `ApiClient`.
+        4.  Append valid response (Assistant message) to history on success.
+        5.  Append invalid response + retry instruction on failure.
+    * Refactored `revise()` and `vote()` to **extend** history (continue turn):
+        1.  Build instruction using `build_revision_instruction()` or `build_vote_instruction()`.
+        2.  Append instruction (User message) to existing `turn_history`.
         3.  Send full history to `ApiClient`.
         4.  Append response (Assistant message) to history.
-    * Ensure history is cleared at the start of a new turn.
+    * Added optional `discussions` parameter to `vote()` for context.
+    * Updated unit tests with new PromptBuilder method mocks and history assertions.
+    * Added `TestLLMPlayerStatefulHistory` test class with:
+        * `test_propose_initializes_history`: Verifies [System, Assistant] after propose.
+        * `test_revise_extends_history`: Verifies history grows from [S, A] to [S, A, U, A].
+        * `test_vote_extends_history`: Verifies history grows from [S, A] to [S, A, U, A].
+        * `test_discuss_initializes_history`: Verifies discuss resets history.
+        * `test_propose_resets_existing_history`: Verifies propose resets old history.
 
 ## Future Work
 
