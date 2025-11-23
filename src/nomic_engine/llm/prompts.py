@@ -86,7 +86,7 @@ Turn order: {turn_order}
 You must output EXACTLY one JSON object with these keys IN THIS ORDER:
 1. \"private_thoughts\": Your honest strategic analysis. How does this
    affect your path to victory? What are others really trying to do? (This
-   is private - be Machiavellian)
+   is private)
 2. \"public_reason\": Your explanation to other players (1-3 sentences,
    be political)
 3. \"vote\": Exactly one of: \"YES\", \"NO\", or \"ABSTAIN\" (uppercase)
@@ -165,7 +165,7 @@ Turn order: {turn_order}
 You must output EXACTLY one JSON object with these keys IN THIS ORDER:
 1. "private_thoughts": Your honest strategic analysis. How does this
    affect your path to victory? What do you want others to think or do?
-   (This is private - be Machiavellian)
+   (This is private)
 2. "discussion_text": Your public comment for other players (1-3 sentences,
    be political). You may leave this as an empty string "" to abstain from
    discussion if you prefer to stay silent.
@@ -236,8 +236,7 @@ You must propose a rule change. Choose one of these proposal types:
 
 You must output EXACTLY one JSON object with these keys IN THIS ORDER:
 1. "private_thoughts": Your honest strategic analysis. Why are you making this
-   proposal? How does it help you win? What are the risks? (This is private -
-   be Machiavellian)
+   proposal? How does it help you win? What are the risks? (This is private)
 2. "type": Exactly one of: "ADD", "AMEND", "REPEAL", or "TRANSMUTE" (uppercase)
 3. "target_rule_id": The ID of the rule to affect (e.g., "201") or null for ADD
 4. "new_text": The text of the new/amended rule, or null for REPEAL/TRANSMUTE
@@ -359,7 +358,7 @@ Based on the feedback, you must decide what to do with your proposal:
 You must output EXACTLY one JSON object with these keys IN THIS ORDER:
 1. "private_thoughts": Your honest strategic analysis. What did you learn from
    the discussions? How do you interpret other players' positions? What is
-   your best move here? (This is private - be Machiavellian)
+   your best move here? (This is private)
 2. "action": Exactly one of: "KEEP", "MODIFY", or "WITHDRAW" (uppercase)
 3. "new_text": If action is "MODIFY" and you want to change the rule text,
    provide the new text here. Otherwise null.
@@ -488,8 +487,7 @@ You must propose a rule change. Choose one of these proposal types:
 
 You must output EXACTLY one JSON object with these keys IN THIS ORDER:
 1. "private_thoughts": Your honest strategic analysis. Why are you making this
-   proposal? How does it help you win? What are the risks? (This is private -
-   be Machiavellian)
+   proposal? How does it help you win? What are the risks? (This is private)
 2. "type": Exactly one of: "ADD", "AMEND", "REPEAL", or "TRANSMUTE" (uppercase)
 3. "target_rule_id": The ID of the rule to affect (e.g., "201") or null for ADD
 4. "new_text": The text of the new/amended rule, or null for REPEAL/TRANSMUTE
@@ -557,7 +555,7 @@ that benefits you. Be strategic about what you reveal and how you frame issues.
 You must output EXACTLY one JSON object with these keys IN THIS ORDER:
 1. "private_thoughts": Your honest strategic analysis. How does this
    affect your path to victory? What do you want others to think or do?
-   (This is private - be Machiavellian)
+   (This is private)
 2. "discussion_text": Your public comment for other players (1-3 sentences,
    be political). You may leave this as an empty string "" to abstain from
    discussion if you prefer to stay silent.
@@ -596,7 +594,7 @@ Based on the feedback, you must decide what to do with your proposal:
 You must output EXACTLY one JSON object with these keys IN THIS ORDER:
 1. "private_thoughts": Your honest strategic analysis. What did you learn from
    the discussions? How do you interpret other players' positions? What is
-   your best move here? (This is private - be Machiavellian)
+   your best move here? (This is private)
 2. "action": Exactly one of: "KEEP", "MODIFY", or "WITHDRAW" (uppercase)
 3. "new_text": If action is "MODIFY" and you want to change the rule text,
    provide the new text here. Otherwise null.
@@ -646,7 +644,7 @@ the game balance, and your relationships with other players.
 You must output EXACTLY one JSON object with these keys IN THIS ORDER:
 1. "private_thoughts": Your honest strategic analysis. How does this
    affect your path to victory? What are others really trying to do? (This
-   is private - be Machiavellian)
+   is private)
 2. "public_reason": Your explanation to other players (1-3 sentences,
    be political)
 3. "vote": Exactly one of: "YES", "NO", or "ABSTAIN" (uppercase)
