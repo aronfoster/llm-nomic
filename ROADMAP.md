@@ -37,21 +37,21 @@ Our architecture is built on these principles:
 
 **Goal:** Implement a stateful conversation history per player, per turn. This allows LLMs to "remember" their own previous actions (e.g., "I just proposed this") and reduces token redundancy.
 
-* **Task 1: Atomize Prompt Templates**
-    * Refactor `src/nomic_engine/llm/prompts.py` to break monolithic templates into composable blocks (e.g. Persona, Game State, Rules, Action Instructions).
-      * **Requirement:** We need to break these into composable "atoms" so we can mix and match them to build the initial context and subsequent updates.
-      * Keep `JSON_FORMAT_ENFORCEMENT`
-      * `MACHIAVELLIAN_PERSONALITY`: Introduction of game, player, personality (from existing text)
-      * `FRIENDLY_PERSONALITY`: Introduction of game, player, personality (for a more friendly player)
-        * This may also require adding a personality type to PlayerConfig, or we could default to one of them
-      * `RULES_BLOCK`: The formatting for rules.
-      * `GAME_STATE_BLOCK`: Scores, Turn Order, Position.
-      * `PROPOSAL_BLOCK`: rule under discussion
-      * `DISCUSSION_BLOCK`: Responses from other players
-      * `INSTRUCTION_PROPOSE`: Specific instructions & examples for proposing.
-      * `INSTRUCTION_DISCUSS`: Specific instructions & examples for discussing.
-      * `INSTRUCTION_REVISE`: Specific instructions & examples for revision.
-      * `INSTRUCTION_VOTE`: Specific instructions & examples for voting.
+* **Task 1: Atomize Prompt Templates** ✅ COMPLETE
+    * Refactored `src/nomic_engine/llm/prompts.py` to break monolithic templates into composable blocks.
+    * Added `personality` field to `PlayerConfig` in `data_models.py`.
+    * New atomized blocks:
+      * `MACHIAVELLIAN_PERSONALITY`: Ruthless, competitive persona.
+      * `FRIENDLY_PERSONALITY`: Cooperative, consensus-building persona.
+      * `RULES_BLOCK`: Header and placeholder for rules text.
+      * `GAME_STATE_BLOCK`: Move number, scores, position, turn order.
+      * `PROPOSAL_BLOCK`: Active proposal details.
+      * `DISCUSSION_BLOCK`: Peer discussion text.
+      * `INSTRUCTION_PROPOSE`: Instructions + JSON format for proposing.
+      * `INSTRUCTION_DISCUSS`: Instructions + JSON format for discussing.
+      * `INSTRUCTION_REVISE`: Instructions + JSON format for revision (with constraint_message).
+      * `INSTRUCTION_VOTE`: Instructions + JSON format for voting.
+    * Old templates retained for backward compatibility until Task 2.
 
 * **Task 2: Refactor PromptBuilder for Stateful Context**
     * Update `src/nomic_engine/llm/prompt_builder.py`.

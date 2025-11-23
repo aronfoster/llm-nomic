@@ -59,6 +59,10 @@ class PlayerConfig(BaseModel):
             "or 'human'."
         ),
     )
+    personality: str = Field(
+        "machiavellian",
+        description="The persona key to use (machiavellian|friendly)",
+    )
 
 
 class GameConfig(BaseModel):
