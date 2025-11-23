@@ -189,13 +189,8 @@ class TestParseVoteResponse:
 
         assert "private_thoughts must be a string" in str(exc_info.value)
 
-    def test_markdown_wrapped_json_fails_with_todo_note(self):
-        """
-        Test that markdown-wrapped JSON currently fails.
-
-        This documents the TODO in parsers.py - cleaning markdown
-        will be implemented in a future iteration.
-        """
+    def test_markdown_wrapped_json_succeeds(self):
+        """Test that markdown-wrapped JSON is parsed successfully."""
         response = """```json
 {
     "private_thoughts": "Analysis",
@@ -204,10 +199,55 @@ class TestParseVoteResponse:
 }
 ```"""
 
-        with pytest.raises(ValueError) as exc_info:
-            parse_vote_response(response)
+        result = parse_vote_response(response)
 
-        assert "not valid JSON" in str(exc_info.value)
+        assert result["vote"] == "YES"
+        assert result["public_reason"] == "Reason"
+        assert result["private_thoughts"] == "Analysis"
+
+    def test_json_with_preamble(self):
+        """Test that JSON with conversational preamble is parsed."""
+        response = """Here is the data: {
+    "private_thoughts": "Thinking about this",
+    "public_reason": "My reason",
+    "vote": "NO"
+}"""
+
+        result = parse_vote_response(response)
+
+        assert result["vote"] == "NO"
+        assert result["public_reason"] == "My reason"
+        assert result["private_thoughts"] == "Thinking about this"
+
+    def test_json_with_postscript(self):
+        """Test that JSON with postscript text is parsed successfully."""
+        response = """{
+    "private_thoughts": "Strategy",
+    "public_reason": "Explanation",
+    "vote": "ABSTAIN"
+} hope this helps!"""
+
+        result = parse_vote_response(response)
+
+        assert result["vote"] == "ABSTAIN"
+        assert result["public_reason"] == "Explanation"
+        assert result["private_thoughts"] == "Strategy"
+
+    def test_json_embedded(self):
+        """Test that JSON embedded in markdown with text is parsed."""
+        response = """Sure! ```json
+{
+    "private_thoughts": "Deep analysis",
+    "public_reason": "Clear reason",
+    "vote": "YES"
+}
+``` Done."""
+
+        result = parse_vote_response(response)
+
+        assert result["vote"] == "YES"
+        assert result["public_reason"] == "Clear reason"
+        assert result["private_thoughts"] == "Deep analysis"
 
     def test_extra_keys_are_allowed(self):
         """Test that extra keys don't cause errors (forward compatibility)."""
