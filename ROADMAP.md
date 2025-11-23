@@ -53,12 +53,16 @@ Our architecture is built on these principles:
       * `INSTRUCTION_VOTE`: Instructions + JSON format for voting.
     * Old templates retained for backward compatibility until Task 2.
 
-* **Task 2: Refactor PromptBuilder for Stateful Context**
-    * Update `src/nomic_engine/llm/prompt_builder.py`.
-    * Create `build_propose_context(...)` to generate the starting system prompt for the proposer's turn.
-    * Create `build_discuss_context(...)` to generate the starting system prompt for non-proposer's turn.
-    * Create `build_revision_context(...)` to generate the user prompt containing discussion from other players plus instructions_revise
-    * Create `build_vote_context(...)` to generate the user prompt containing discussion from other players, revised rule proposal, and instruction_vote
+* **Task 2: Refactor PromptBuilder for Stateful Context** ✅ COMPLETE
+    * Updated `src/nomic_engine/llm/prompt_builder.py` with granular methods.
+    * New methods that return single `ChatMessage` context blocks:
+      * `build_proposer_system_message()`: System message for proposer with persona, game state, rules, and instructions.
+      * `build_discusser_system_message()`: System message for discussers with persona, game state, rules, proposal, and instructions.
+      * `build_revision_instruction()`: User message with discussions and revision instructions (preserves Rule 112 constraint).
+      * `build_vote_instruction()`: User message with final proposal, discussions, and vote instructions.
+    * Added `_format_proposal()` and `_get_personality_block()` helper methods.
+    * Legacy wrapper methods maintained for backward compatibility with current LLMPlayer.
+    * Comprehensive unit tests with mocking to isolate template dependencies.
 
 * **Task 3: Implement Stateful LLMPlayer**
     * Update `src/nomic_engine/players/llm_player.py` to maintain `self.turn_history: list[ChatMessage]`.

@@ -1,8 +1,10 @@
 """
 Unit tests for the PromptBuilder class.
 
-These tests verify that the PromptBuilder correctly injects game data into
-prompt templates, calculates derived fields, and handles edge cases.
+These tests verify that the PromptBuilder correctly builds incremental
+context blocks (System or User messages) using the atomized prompt templates.
+
+Sprint 6: Tests now verify single ChatMessage outputs instead of message lists.
 """
 
 import unittest
@@ -73,6 +75,10 @@ class TestPromptBuilder(unittest.TestCase):
             ),
         ]
 
+    # =========================================================================
+    # Tests for helper methods
+    # =========================================================================
+
     def test_format_rules(self):
         """Test that _format_rules correctly formats a list of rules."""
         result = self.builder._format_rules(self.rules)
@@ -140,107 +146,31 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("Unknown", str(context.exception))
         self.assertIn("not found in turn order", str(context.exception))
 
-    @patch("src.nomic_engine.llm.prompt_builder.prompts.VOTE_SYSTEM_PROMPT")
-    @patch("src.nomic_engine.llm.prompt_builder.prompts.VOTE_USER_TEMPLATE")
-    @patch(
-        "src.nomic_engine.llm.prompt_builder.prompts.JSON_FORMAT_ENFORCEMENT"
-    )
-    def test_build_vote_messages_data_injection(
-        self, mock_json_format, mock_user_template, mock_system_prompt
-    ):
-        """
-        Test build_vote_messages correctly injects all data into
-        templates.
-
-        This test mocks the prompt templates to avoid dependency on
-        their exact text, and verifies placeholders are populated.
-        """
-        # Set up mock templates with all required placeholders
-        mock_system_prompt.format = (
-            lambda **kwargs: f"System: {kwargs['player_name']}"
-        )
-        mock_user_template.format = lambda **kwargs: (
-            f"move_number={kwargs['move_number']}, "
-            f"scores_text={kwargs['scores_text'][:20]}..., "
-            f"player_position={kwargs['player_position']}, "
-            f"turn_order={kwargs['turn_order']}, "
-            f"proposal_id={kwargs['proposal_id']}, "
-            f"json_format={kwargs['json_format_enforcement'][:20]}..."
-        )
-        mock_json_format.return_value = "JSON FORMAT ENFORCEMENT TEXT"
-
-        # Call the method
-        messages = self.builder.build_vote_messages(
-            proposal=self.proposal,
-            rules=self.rules,
-            game_state=self.game_state,
-            discussions=self.discussions,
-            player_name="Bob",
+    def test_format_proposal(self):
+        """Test _format_proposal correctly formats a proposal."""
+        result = self.builder._format_proposal(
+            self.proposal, self.rules, "Charlie"
         )
 
-        # Verify the result is a list of exactly 2 ChatMessage objects
-        self.assertIsInstance(messages, list)
-        self.assertEqual(len(messages), 2)
+        # Verify proposal details are included
+        self.assertIn("304", result)  # proposal_id
+        self.assertIn("Bob", result)  # proposer_name
+        self.assertIn("Amend", result)  # proposal_type
+        self.assertIn("201", result)  # target_rule_id
+        self.assertIn("Players gain 1 point", result)  # original_text
+        self.assertIn("Players gain 2 points", result)  # new_text
+        self.assertIn("encourages more active participation", result)
 
-        # Verify the message roles
-        self.assertIsInstance(messages[0], ChatMessage)
-        self.assertEqual(messages[0].role, "system")
-        self.assertIsInstance(messages[1], ChatMessage)
-        self.assertEqual(messages[1].role, "user")
-
-        # Verify system prompt contains player name
-        self.assertIn("Bob", messages[0].content)
-
-        # Verify user prompt contains injected data
-        user_content = messages[1].content
-        self.assertIn("move_number=5", user_content)
-        self.assertIn("player_position=2 of 3", user_content)
-        self.assertIn("proposal_id=304", user_content)
-
-    def test_build_vote_messages_integration(self):
-        """
-        Integration test using real prompt templates (not mocked).
-
-        This test verifies that the method works correctly with the actual
-        templates from prompts.py and all placeholders are populated.
-        """
-        # Call with real templates
-        messages = self.builder.build_vote_messages(
-            proposal=self.proposal,
-            rules=self.rules,
-            game_state=self.game_state,
-            discussions=self.discussions,
-            player_name="Charlie",
+    def test_format_proposal_marks_self_as_you(self):
+        """Test _format_proposal marks proposer as (YOU) when applicable."""
+        result = self.builder._format_proposal(
+            self.proposal, self.rules, "Bob"  # Bob is the proposer
         )
 
-        # Basic structure verification
-        self.assertEqual(len(messages), 2)
-        self.assertEqual(messages[0].role, "system")
-        self.assertEqual(messages[1].role, "user")
+        self.assertIn("Bob (YOU)", result)
 
-        # Verify system prompt mentions the player
-        self.assertIn("Charlie", messages[0].content)
-
-        # Verify user prompt contains key game data
-        user_content = messages[1].content
-        self.assertIn("Move #5", user_content)
-        self.assertIn("3 of 3", user_content)  # Charlie's position
-        self.assertIn("Alice, Bob, Charlie", user_content)  # turn order
-        self.assertIn("304", user_content)  # proposal ID
-        self.assertIn("Bob", user_content)  # proposer name
-        self.assertIn("Amend", user_content)  # proposal type
-        self.assertIn("201", user_content)  # target rule ID
-        self.assertIn("Players gain 1 point", user_content)
-        self.assertIn("Players gain 2 points", user_content)
-        self.assertIn("encourages more active participation", user_content)
-
-        # Verify JSON format enforcement is included
-        self.assertIn("OUTPUT REQUIREMENTS", user_content)
-        self.assertIn("pure JSON", user_content)
-
-    def test_build_vote_messages_handles_none_values(self):
-        """Test build_vote_messages handles None in proposal fields."""
-        # Create a proposal with minimal data (Add type has no target_rule_id)
+    def test_format_proposal_handles_none_values(self):
+        """Test _format_proposal handles None in proposal fields."""
         minimal_proposal = Proposal(
             proposer_name="Alice",
             move_number=5,
@@ -251,376 +181,197 @@ class TestPromptBuilder(unittest.TestCase):
             rationale=None,
         )
 
-        # Should not raise an exception
-        messages = self.builder.build_vote_messages(
-            proposal=minimal_proposal,
-            rules=self.rules,
-            game_state=self.game_state,
-            discussions=[],
-            player_name="Alice",
+        result = self.builder._format_proposal(
+            minimal_proposal, self.rules, "Bob"
         )
 
-        # Verify it still produces valid messages
-        self.assertEqual(len(messages), 2)
-        user_content = messages[1].content
+        self.assertIn("N/A", result)  # target_rule_id
+        self.assertIn("No rationale provided", result)
 
-        # Verify None values are handled
-        self.assertIn("N/A", user_content)  # target_rule_id and original_text
-        self.assertIn("No rationale provided", user_content)
-        self.assertIn("No discussions yet", user_content)
+    def test_get_personality_block_machiavellian(self):
+        """Test _get_personality_block returns machiavellian persona."""
+        result = self.builder._get_personality_block("machiavellian")
+        self.assertIn("ruthlessly competitive", result)
 
-    def test_build_vote_messages_self_proposal(self):
-        """Test that (YOU) is added when voting on own proposal."""
-        # Create a proposal where proposer_name matches player_name
-        self_proposal = Proposal(
-            proposer_name="Alice",
-            move_number=5,
-            type=ProposalType.AMEND,
-            proposal_id="305",
-            target_rule_id="201",
-            new_text="Players gain 3 points for successful proposals.",
-            rationale="Incentivize more proposals.",
+    def test_get_personality_block_friendly(self):
+        """Test _get_personality_block returns friendly persona."""
+        result = self.builder._get_personality_block("friendly")
+        self.assertIn("cooperative player", result)
+
+    def test_get_personality_block_defaults_to_friendly(self):
+        """Test _get_personality_block defaults to friendly for unknown."""
+        result = self.builder._get_personality_block("unknown")
+        self.assertIn("cooperative player", result)
+
+    # =========================================================================
+    # Tests for build_proposer_system_message (with mocking)
+    # =========================================================================
+
+    @patch("src.nomic_engine.llm.prompt_builder.prompts")
+    def test_build_proposer_system_message_mocked(self, mock_prompts):
+        """Test build_proposer_system_message with mocked templates."""
+        # Setup mocks
+        mock_prompts.MACHIAVELLIAN_PERSONALITY = "PERSONA:{player_name}"
+        mock_prompts.GAME_STATE_BLOCK = (
+            "STATE:{move_number},{scores_text},{player_position},{turn_order}"
         )
+        mock_prompts.RULES_BLOCK = "RULES:{rules_text}"
+        mock_prompts.INSTRUCTION_PROPOSE = "PROPOSE:{json_format_enforcement}"
+        mock_prompts.JSON_FORMAT_ENFORCEMENT = "JSON_ENFORCE"
 
-        # Call with player_name matching proposer_name
-        messages = self.builder.build_vote_messages(
-            proposal=self_proposal,
-            rules=self.rules,
-            game_state=self.game_state,
-            discussions=[],
-            player_name="Alice",
-        )
-
-        # Verify the user content contains (YOU) after the proposer's name
-        user_content = messages[1].content
-        self.assertIn("Alice (YOU)", user_content)
-
-    def test_build_vote_messages_other_proposal(self):
-        """Test that (YOU) is NOT added when voting on another's proposal."""
-        # Use the standard proposal (proposer is Bob)
-        messages = self.builder.build_vote_messages(
-            proposal=self.proposal,
-            rules=self.rules,
-            game_state=self.game_state,
-            discussions=self.discussions,
-            player_name="Alice",  # Alice is voting on Bob's proposal
-        )
-
-        # Verify the user content contains Bob's name without (YOU)
-        user_content = messages[1].content
-        self.assertIn("Bob", user_content)
-        self.assertNotIn("Bob (YOU)", user_content)
-        self.assertNotIn("Alice (YOU)", user_content)
-
-    def test_build_discuss_messages_self_proposal(self):
-        """Test that (YOU) is added when discussing own proposal."""
-        # Create a proposal where proposer_name matches player_name
-        self_proposal = Proposal(
-            proposer_name="Charlie",
-            move_number=5,
-            type=ProposalType.ADD,
-            proposal_id="306",
-            target_rule_id=None,
-            new_text="A new rule.",
-            rationale="For testing.",
-        )
-
-        # Call with player_name matching proposer_name
-        messages = self.builder.build_discuss_messages(
-            proposal=self_proposal,
-            rules=self.rules,
-            game_state=self.game_state,
-            player_name="Charlie",
-        )
-
-        # Verify the user content contains (YOU) after the proposer's name
-        user_content = messages[1].content
-        self.assertIn("Charlie (YOU)", user_content)
-
-    def test_build_discuss_messages_integration(self):
-        """
-        Integration test using real prompt templates for discuss action.
-
-        This test verifies that the method works correctly with the actual
-        templates from prompts.py and all placeholders are populated.
-        """
-        # Call with real templates
-        messages = self.builder.build_discuss_messages(
-            proposal=self.proposal,
-            rules=self.rules,
-            game_state=self.game_state,
-            player_name="Charlie",
-        )
-
-        # Basic structure verification
-        self.assertEqual(len(messages), 2)
-        self.assertEqual(messages[0].role, "system")
-        self.assertEqual(messages[1].role, "user")
-
-        # Verify system prompt mentions the player
-        self.assertIn("Charlie", messages[0].content)
-
-        # Verify user prompt contains key game data
-        user_content = messages[1].content
-        self.assertIn("Move #5", user_content)
-        self.assertIn("3 of 3", user_content)  # Charlie's position
-        self.assertIn("Alice, Bob, Charlie", user_content)  # turn order
-        self.assertIn("304", user_content)  # proposal ID
-        self.assertIn("Bob", user_content)  # proposer name
-        self.assertIn("Amend", user_content)  # proposal type
-        self.assertIn("201", user_content)  # target rule ID
-        self.assertIn("Players gain 1 point", user_content)
-        self.assertIn("Players gain 2 points", user_content)
-        self.assertIn("encourages more active participation", user_content)
-
-        # Verify JSON format enforcement is included
-        self.assertIn("OUTPUT REQUIREMENTS", user_content)
-        self.assertIn("pure JSON", user_content)
-
-        # Verify discussion-specific content
-        self.assertIn("private_thoughts", user_content)
-        self.assertIn("discussion_text", user_content)
-
-    def test_build_discuss_messages_handles_none_values(self):
-        """Test build_discuss_messages handles None in proposal fields."""
-        # Create a proposal with minimal data (Add type has no target_rule_id)
-        minimal_proposal = Proposal(
-            proposer_name="Alice",
-            move_number=5,
-            type=ProposalType.ADD,
-            proposal_id="305",
-            target_rule_id=None,
-            new_text="New rule text here.",
-            rationale=None,
-        )
-
-        # Should not raise an exception
-        messages = self.builder.build_discuss_messages(
-            proposal=minimal_proposal,
+        message = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
             player_name="Alice",
+            personality="machiavellian",
         )
 
-        # Verify it still produces valid messages
-        self.assertEqual(len(messages), 2)
-        user_content = messages[1].content
+        # Verify returns single system message
+        self.assertIsInstance(message, ChatMessage)
+        self.assertEqual(message.role, "system")
 
-        # Verify None values are handled
-        self.assertIn("N/A", user_content)  # target_rule_id and original_text
-        self.assertIn("No rationale provided", user_content)
+        # Verify content includes all blocks
+        self.assertIn("PERSONA:Alice", message.content)
+        self.assertIn("STATE:5,", message.content)
+        self.assertIn("1 of 3", message.content)  # player position
+        self.assertIn("RULES:", message.content)
+        self.assertIn("PROPOSE:JSON_ENFORCE", message.content)
 
-    def test_build_propose_messages_integration(self):
-        """
-        Integration test using real prompt templates for propose action.
-
-        This test verifies that the method works correctly with the actual
-        templates from prompts.py and all placeholders are populated.
-        """
-        # Call with real templates
-        messages = self.builder.build_propose_messages(
+    def test_build_proposer_system_message_integration(self):
+        """Integration test using real templates (not mocked)."""
+        message = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
             player_name="Alice",
+            personality="machiavellian",
         )
 
-        # Basic structure verification
-        self.assertEqual(len(messages), 2)
-        self.assertEqual(messages[0].role, "system")
-        self.assertEqual(messages[1].role, "user")
+        # Verify single system message
+        self.assertIsInstance(message, ChatMessage)
+        self.assertEqual(message.role, "system")
 
-        # Verify system prompt mentions the player
-        self.assertIn("Alice", messages[0].content)
+        # Verify content includes expected data
+        self.assertIn("Alice", message.content)  # player name in persona
+        self.assertIn("Move #5", message.content)  # from game state
+        self.assertIn("1 of 3", message.content)  # Alice's position
+        self.assertIn("101", message.content)  # rule ID
+        self.assertIn("ADD", message.content)  # from instruction
+        self.assertIn("OUTPUT REQUIREMENTS", message.content)  # JSON format
 
-        # Verify user prompt contains key game data
-        user_content = messages[1].content
-        self.assertIn("Move #5", user_content)
-        self.assertIn("1 of 3", user_content)  # Alice's position
-        self.assertIn("Alice, Bob, Charlie", user_content)  # turn order
+    def test_build_proposer_system_message_friendly_personality(self):
+        """Test proposer message with friendly personality."""
+        message = self.builder.build_proposer_system_message(
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Alice",
+            personality="friendly",
+        )
 
-        # Verify rules are included
-        self.assertIn("101", user_content)  # rule ID
-        self.assertIn("All players must vote on proposals", user_content)
-        self.assertIn("201", user_content)  # rule ID
-        self.assertIn("Players gain 1 point", user_content)
+        # Verify friendly persona is used
+        self.assertIn("cooperative player", message.content)
+        self.assertNotIn("ruthlessly competitive", message.content)
 
-        # Verify JSON format enforcement is included
-        self.assertIn("OUTPUT REQUIREMENTS", user_content)
-        self.assertIn("pure JSON", user_content)
+    def test_build_proposer_system_message_empty_rules(self):
+        """Test proposer message handles empty rule lists."""
+        message = self.builder.build_proposer_system_message(
+            rules=[],
+            game_state=self.game_state,
+            player_name="Alice",
+            personality="machiavellian",
+        )
 
-        # Verify proposal-specific content
-        self.assertIn("ADD", user_content)
-        self.assertIn("AMEND", user_content)
-        self.assertIn("REPEAL", user_content)
-        self.assertIn("TRANSMUTE", user_content)
-        self.assertIn("private_thoughts", user_content)
-        self.assertIn("target_rule_id", user_content)
-        self.assertIn("new_text", user_content)
-        self.assertIn("rationale", user_content)
+        self.assertEqual(message.role, "system")
+        self.assertIn("No rules defined", message.content)
 
-    def test_build_propose_messages_player_not_found(self):
-        """Test build_propose_messages raises ValueError for unknown player."""
+    def test_build_proposer_system_message_player_not_found(self):
+        """Test proposer message raises ValueError for unknown player."""
         with self.assertRaises(ValueError) as context:
-            self.builder.build_propose_messages(
+            self.builder.build_proposer_system_message(
                 rules=self.rules,
                 game_state=self.game_state,
                 player_name="Unknown",
+                personality="machiavellian",
             )
 
         self.assertIn("Unknown", str(context.exception))
         self.assertIn("not found in turn order", str(context.exception))
 
-    def test_build_propose_messages_empty_rules(self):
-        """Test build_propose_messages handles empty rule lists."""
-        # Should not raise an exception
-        messages = self.builder.build_propose_messages(
-            rules=[],
-            game_state=self.game_state,
-            player_name="Alice",
+    # =========================================================================
+    # Tests for build_discusser_system_message (with mocking)
+    # =========================================================================
+
+    @patch("src.nomic_engine.llm.prompt_builder.prompts")
+    def test_build_discusser_system_message_mocked(self, mock_prompts):
+        """Test build_discusser_system_message with mocked templates."""
+        # Setup mocks
+        mock_prompts.FRIENDLY_PERSONALITY = "PERSONA:{player_name}"
+        mock_prompts.GAME_STATE_BLOCK = (
+            "STATE:{move_number},{scores_text},{player_position},{turn_order}"
         )
+        mock_prompts.RULES_BLOCK = "RULES:{rules_text}"
+        mock_prompts.PROPOSAL_BLOCK = (
+            "PROPOSAL:{proposal_id},{proposer_name},{proposal_type},"
+            "{target_rule_id},{original_text},{new_text},{rationale}"
+        )
+        mock_prompts.INSTRUCTION_DISCUSS = "DISCUSS:{json_format_enforcement}"
+        mock_prompts.JSON_FORMAT_ENFORCEMENT = "JSON_ENFORCE"
 
-        # Verify it still produces valid messages
-        self.assertEqual(len(messages), 2)
-        user_content = messages[1].content
-
-        # Verify no rules message
-        self.assertIn("No rules defined", user_content)
-
-    def test_build_revise_messages_integration(self):
-        """
-        Integration test using real prompt templates for revise action.
-
-        This test verifies that the method works correctly with the actual
-        templates from prompts.py and all placeholders are populated.
-        """
-        # Create sample discussions
-        discussions = [
-            Discussion(
-                player_name="Alice", text="I think this is a good idea."
-            ),
-            Discussion(
-                player_name="Charlie", text="I'm not sure about this change."
-            ),
-        ]
-
-        # Call with real templates
-        messages = self.builder.build_revise_messages(
+        message = self.builder.build_discusser_system_message(
             proposal=self.proposal,
-            discussions=discussions,
+            rules=self.rules,
             game_state=self.game_state,
-            player_name="Bob",
+            player_name="Charlie",
+            personality="friendly",
         )
 
-        # Basic structure verification
-        self.assertEqual(len(messages), 2)
-        self.assertEqual(messages[0].role, "system")
-        self.assertEqual(messages[1].role, "user")
+        # Verify returns single system message
+        self.assertIsInstance(message, ChatMessage)
+        self.assertEqual(message.role, "system")
 
-        # Verify system prompt mentions the player
-        self.assertIn("Bob", messages[0].content)
+        # Verify content includes all blocks
+        self.assertIn("PERSONA:Charlie", message.content)
+        self.assertIn("STATE:5,", message.content)
+        self.assertIn("RULES:", message.content)
+        self.assertIn("PROPOSAL:304", message.content)
+        self.assertIn("DISCUSS:JSON_ENFORCE", message.content)
 
-        # Verify user prompt contains key game data
-        user_content = messages[1].content
-        self.assertIn("Move #5", user_content)
-        self.assertIn("2 of 3", user_content)  # Bob's position
-        self.assertIn("Alice, Bob, Charlie", user_content)  # turn order
-        self.assertIn("304", user_content)  # proposal ID
-        self.assertIn("Amend", user_content)  # proposal type
-        self.assertIn("201", user_content)  # target rule ID
-        self.assertIn("Players gain 2 points", user_content)  # new text
-        self.assertIn("encourages more active participation", user_content)
-
-        # Verify discussions are included
-        self.assertIn("Alice", user_content)
-        self.assertIn("I think this is a good idea.", user_content)
-        self.assertIn("Charlie", user_content)
-        self.assertIn("I'm not sure about this change.", user_content)
-
-        # Verify JSON format enforcement is included
-        self.assertIn("OUTPUT REQUIREMENTS", user_content)
-        self.assertIn("pure JSON", user_content)
-
-        # Verify revise-specific content
-        self.assertIn("private_thoughts", user_content)
-        self.assertIn("KEEP", user_content)
-        self.assertIn("MODIFY", user_content)
-        self.assertIn("WITHDRAW", user_content)
-
-    def test_build_revise_messages_constraint_triggered(self):
-        """Test that Rule 112 constraint is triggered when discussion
-        contains UNCLEAR or AMBIGUOUS."""
-        # Create discussions with UNCLEAR keyword
-        discussions = [
-            Discussion(
-                player_name="Alice", text="I think this is unclear to me."
-            ),
-            Discussion(player_name="Charlie", text="I agree, very confusing."),
-        ]
-
-        messages = self.builder.build_revise_messages(
+    def test_build_discusser_system_message_integration(self):
+        """Integration test using real templates (not mocked)."""
+        message = self.builder.build_discusser_system_message(
             proposal=self.proposal,
-            discussions=discussions,
+            rules=self.rules,
             game_state=self.game_state,
-            player_name="Bob",
+            player_name="Charlie",
+            personality="machiavellian",
         )
 
-        user_content = messages[1].content
+        # Verify single system message
+        self.assertIsInstance(message, ChatMessage)
+        self.assertEqual(message.role, "system")
 
-        # Verify the constraint message is present
-        self.assertIn("MUST either 'MODIFY' or 'WITHDRAW'", user_content)
-        self.assertIn("CANNOT choose 'KEEP'", user_content)
+        # Verify content includes expected data
+        self.assertIn("Charlie", message.content)  # player name
+        self.assertIn("Move #5", message.content)  # from game state
+        self.assertIn("3 of 3", message.content)  # Charlie's position
+        self.assertIn("304", message.content)  # proposal ID
+        self.assertIn("Bob", message.content)  # proposer name
+        self.assertIn("Amend", message.content)  # proposal type
+        self.assertIn("discussion_text", message.content)  # from instruction
 
-    def test_build_revise_messages_constraint_triggered_ambiguous(self):
-        """Test Rule 112 constraint is triggered with AMBIGUOUS keyword."""
-        # Create discussions with AMBIGUOUS keyword (case insensitive)
-        discussions = [
-            Discussion(
-                player_name="Alice", text="The wording is a bit AMBIGUOUS."
-            ),
-        ]
-
-        messages = self.builder.build_revise_messages(
+    def test_build_discusser_system_message_self_proposal(self):
+        """Test discusser message marks (YOU) when discussing own proposal."""
+        message = self.builder.build_discusser_system_message(
             proposal=self.proposal,
-            discussions=discussions,
+            rules=self.rules,
             game_state=self.game_state,
-            player_name="Bob",
+            player_name="Bob",  # Bob is the proposer
+            personality="machiavellian",
         )
 
-        user_content = messages[1].content
+        self.assertIn("Bob (YOU)", message.content)
 
-        # Verify the constraint message is present
-        self.assertIn("MUST either 'MODIFY' or 'WITHDRAW'", user_content)
-
-    def test_build_revise_messages_no_constraint(self):
-        """Test that permissive message is shown when no UNCLEAR/AMBIGUOUS."""
-        # Create normal discussions without UNCLEAR or AMBIGUOUS
-        discussions = [
-            Discussion(
-                player_name="Alice", text="I think this is a good idea."
-            ),
-            Discussion(player_name="Charlie", text="I support this change."),
-        ]
-
-        messages = self.builder.build_revise_messages(
-            proposal=self.proposal,
-            discussions=discussions,
-            game_state=self.game_state,
-            player_name="Bob",
-        )
-
-        user_content = messages[1].content
-
-        # Verify the permissive message is present
-        self.assertIn(
-            "You may choose to KEEP, MODIFY, or WITHDRAW based on",
-            user_content,
-        )
-        # Verify the constraint message is NOT present
-        self.assertNotIn("CANNOT choose 'KEEP'", user_content)
-
-    def test_build_revise_messages_handles_none_values(self):
-        """Test build_revise_messages handles None in proposal fields."""
-        # Create a proposal with minimal data (Add type has no target_rule_id)
+    def test_build_discusser_system_message_handles_none_values(self):
+        """Test discusser message handles None in proposal fields."""
         minimal_proposal = Proposal(
             proposer_name="Alice",
             move_number=5,
@@ -631,22 +382,224 @@ class TestPromptBuilder(unittest.TestCase):
             rationale=None,
         )
 
-        # Should not raise an exception
-        messages = self.builder.build_revise_messages(
+        message = self.builder.build_discusser_system_message(
             proposal=minimal_proposal,
-            discussions=[],
+            rules=self.rules,
             game_state=self.game_state,
-            player_name="Alice",
+            player_name="Bob",
+            personality="machiavellian",
         )
 
-        # Verify it still produces valid messages
-        self.assertEqual(len(messages), 2)
-        user_content = messages[1].content
+        self.assertEqual(message.role, "system")
+        self.assertIn("N/A", message.content)
+        self.assertIn("No rationale provided", message.content)
 
-        # Verify None values are handled
-        self.assertIn("N/A", user_content)  # target_rule_id
-        self.assertIn("No rationale provided", user_content)
-        self.assertIn("No discussions yet", user_content)
+    # =========================================================================
+    # Tests for build_revision_instruction (with mocking)
+    # =========================================================================
+
+    @patch("src.nomic_engine.llm.prompt_builder.prompts")
+    def test_build_revision_instruction_mocked(self, mock_prompts):
+        """Test build_revision_instruction with mocked templates."""
+        # Setup mocks
+        mock_prompts.DISCUSSION_BLOCK = "DISCUSSIONS:{discussions_text}"
+        mock_prompts.INSTRUCTION_REVISE = (
+            "REVISE:{constraint_message},{json_format_enforcement}"
+        )
+        mock_prompts.JSON_FORMAT_ENFORCEMENT = "JSON_ENFORCE"
+
+        message = self.builder.build_revision_instruction(
+            discussions=self.discussions
+        )
+
+        # Verify returns single user message
+        self.assertIsInstance(message, ChatMessage)
+        self.assertEqual(message.role, "user")
+
+        # Verify content includes all blocks
+        self.assertIn("DISCUSSIONS:", message.content)
+        self.assertIn("Alice", message.content)
+        self.assertIn("Charlie", message.content)
+        self.assertIn("REVISE:", message.content)
+        self.assertIn("JSON_ENFORCE", message.content)
+
+    def test_build_revision_instruction_integration(self):
+        """Integration test using real templates (not mocked)."""
+        message = self.builder.build_revision_instruction(
+            discussions=self.discussions
+        )
+
+        # Verify single user message
+        self.assertIsInstance(message, ChatMessage)
+        self.assertEqual(message.role, "user")
+
+        # Verify content includes expected data
+        self.assertIn("Alice", message.content)
+        self.assertIn("I think this is a good idea.", message.content)
+        self.assertIn("Charlie", message.content)
+        self.assertIn("I'm not sure about this change.", message.content)
+        self.assertIn("KEEP", message.content)
+        self.assertIn("MODIFY", message.content)
+        self.assertIn("WITHDRAW", message.content)
+
+    def test_build_revision_instruction_constraint_triggered_unclear(self):
+        """Test Rule 112 constraint is triggered with UNCLEAR keyword."""
+        discussions = [
+            Discussion(player_name="Alice", text="I think this is UNCLEAR."),
+            Discussion(player_name="Charlie", text="I agree."),
+        ]
+
+        message = self.builder.build_revision_instruction(
+            discussions=discussions
+        )
+
+        self.assertIn("MUST either 'MODIFY' or 'WITHDRAW'", message.content)
+        self.assertIn("CANNOT choose 'KEEP'", message.content)
+
+    def test_build_revision_instruction_constraint_triggered_ambiguous(self):
+        """Test Rule 112 constraint is triggered with AMBIGUOUS keyword."""
+        discussions = [
+            Discussion(
+                player_name="Alice", text="The wording is a bit ambiguous."
+            ),
+        ]
+
+        message = self.builder.build_revision_instruction(
+            discussions=discussions
+        )
+
+        self.assertIn("MUST either 'MODIFY' or 'WITHDRAW'", message.content)
+
+    def test_build_revision_instruction_no_constraint(self):
+        """Test permissive message shown when no UNCLEAR/AMBIGUOUS."""
+        discussions = [
+            Discussion(player_name="Alice", text="I think this is good."),
+            Discussion(player_name="Charlie", text="I support this change."),
+        ]
+
+        message = self.builder.build_revision_instruction(
+            discussions=discussions
+        )
+
+        self.assertIn(
+            "You may choose to KEEP, MODIFY, or WITHDRAW based on",
+            message.content,
+        )
+        self.assertNotIn("CANNOT choose 'KEEP'", message.content)
+
+    def test_build_revision_instruction_empty_discussions(self):
+        """Test revision instruction handles empty discussions."""
+        message = self.builder.build_revision_instruction(discussions=[])
+
+        self.assertEqual(message.role, "user")
+        self.assertIn("No discussions yet", message.content)
+        # Should show permissive message when no discussions
+        self.assertIn(
+            "You may choose to KEEP, MODIFY, or WITHDRAW", message.content
+        )
+
+    # =========================================================================
+    # Tests for build_vote_instruction (with mocking)
+    # =========================================================================
+
+    @patch("src.nomic_engine.llm.prompt_builder.prompts")
+    def test_build_vote_instruction_mocked(self, mock_prompts):
+        """Test build_vote_instruction with mocked templates."""
+        # Setup mocks
+        mock_prompts.PROPOSAL_BLOCK = (
+            "PROPOSAL:{proposal_id},{proposer_name},{proposal_type},"
+            "{target_rule_id},{original_text},{new_text},{rationale}"
+        )
+        mock_prompts.DISCUSSION_BLOCK = "DISCUSSIONS:{discussions_text}"
+        mock_prompts.INSTRUCTION_VOTE = "VOTE:{json_format_enforcement}"
+        mock_prompts.JSON_FORMAT_ENFORCEMENT = "JSON_ENFORCE"
+
+        message = self.builder.build_vote_instruction(
+            proposal=self.proposal,
+            discussions=self.discussions,
+            rules=self.rules,
+            player_name="Charlie",
+        )
+
+        # Verify returns single user message
+        self.assertIsInstance(message, ChatMessage)
+        self.assertEqual(message.role, "user")
+
+        # Verify content includes all blocks
+        self.assertIn("PROPOSAL:304", message.content)
+        self.assertIn("DISCUSSIONS:", message.content)
+        self.assertIn("VOTE:JSON_ENFORCE", message.content)
+
+    def test_build_vote_instruction_integration(self):
+        """Integration test using real templates (not mocked)."""
+        message = self.builder.build_vote_instruction(
+            proposal=self.proposal,
+            discussions=self.discussions,
+            rules=self.rules,
+            player_name="Charlie",
+        )
+
+        # Verify single user message
+        self.assertIsInstance(message, ChatMessage)
+        self.assertEqual(message.role, "user")
+
+        # Verify content includes expected data
+        self.assertIn("304", message.content)  # proposal ID
+        self.assertIn("Bob", message.content)  # proposer name
+        self.assertIn("Amend", message.content)  # proposal type
+        self.assertIn("201", message.content)  # target rule ID
+        self.assertIn("Players gain 2 points", message.content)  # new text
+        self.assertIn("Alice", message.content)  # from discussions
+        self.assertIn("YES", message.content)  # from vote instruction
+        self.assertIn("NO", message.content)  # from vote instruction
+        self.assertIn("ABSTAIN", message.content)  # from vote instruction
+
+    def test_build_vote_instruction_self_proposal(self):
+        """Test vote instruction marks (YOU) when voting on own proposal."""
+        message = self.builder.build_vote_instruction(
+            proposal=self.proposal,
+            discussions=self.discussions,
+            rules=self.rules,
+            player_name="Bob",  # Bob is the proposer
+        )
+
+        self.assertIn("Bob (YOU)", message.content)
+
+    def test_build_vote_instruction_handles_none_values(self):
+        """Test vote instruction handles None in proposal fields."""
+        minimal_proposal = Proposal(
+            proposer_name="Alice",
+            move_number=5,
+            type=ProposalType.ADD,
+            proposal_id="305",
+            target_rule_id=None,
+            new_text="New rule text here.",
+            rationale=None,
+        )
+
+        message = self.builder.build_vote_instruction(
+            proposal=minimal_proposal,
+            discussions=[],
+            rules=self.rules,
+            player_name="Bob",
+        )
+
+        self.assertEqual(message.role, "user")
+        self.assertIn("N/A", message.content)
+        self.assertIn("No rationale provided", message.content)
+        self.assertIn("No discussions yet", message.content)
+
+    def test_build_vote_instruction_empty_discussions(self):
+        """Test vote instruction handles empty discussions."""
+        message = self.builder.build_vote_instruction(
+            proposal=self.proposal,
+            discussions=[],
+            rules=self.rules,
+            player_name="Charlie",
+        )
+
+        self.assertEqual(message.role, "user")
+        self.assertIn("No discussions yet", message.content)
 
 
 if __name__ == "__main__":
