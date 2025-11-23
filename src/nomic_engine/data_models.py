@@ -178,7 +178,8 @@ class ModelLibrary(BaseModel):
 # --- LLM API Data Models ---
 
 
-# TODO: Explain user is for other players text, assistant is this player
+# TODO: Explain user is for game and other players text,
+# whereas assistant is this player
 class ChatMessage(BaseModel):
     """A single message in a chat completion request."""
 

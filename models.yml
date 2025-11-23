@@ -62,3 +62,13 @@ models:
     provider: "local"
     api_model_id: "http://localhost:11434/v1" # Ollama
     env_key_name: null
+
+  - id: "gemma3-4b-128k:latest"
+    provider: "local"
+    api_model_id: "http://localhost:11434/v1" # Ollama
+    env_key_name: null
+
+  - id: "gemma3-12b-20k:latest"
+    provider: "local"
+    api_model_id: "http://localhost:11434/v1" # Ollama
+    env_key_name: null

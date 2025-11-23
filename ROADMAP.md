@@ -14,10 +14,6 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-* Need to send player's own private thoughts and responses back to LLMs each turn so they know what they're doing
-* LLMs don't know which rule they proposed (vote against their own rule change)
-* LLMs are too mean/hostile
-  * Should have a personality string and allow it customized per player
 * Shouldn't need "discussion" from the proposer
 
 ### Low Priority
@@ -36,6 +32,43 @@ Our architecture is built on these principles:
   ```
 * `2025-11-16 10:48:30,725 - src.nomic_engine.game_loop - INFO - Completed turn 2` after completing turn 1.
   * Unsure if this is still an issue
+
+## Sprint 6: Context-Aware Conversation Architecture
+
+**Goal:** Implement a stateful conversation history per player, per turn. This allows LLMs to "remember" their own previous actions (e.g., "I just proposed this") and reduces token redundancy.
+
+* **Task 1: Atomize Prompt Templates**
+    * Refactor `src/nomic_engine/llm/prompts.py` to break monolithic templates into composable blocks (e.g. Persona, Game State, Rules, Action Instructions).
+      * **Requirement:** We need to break these into composable "atoms" so we can mix and match them to build the initial context and subsequent updates.
+      * Keep `JSON_FORMAT_ENFORCEMENT`
+      * `MACHIAVELLIAN_PERSONALITY`: Introduction of game, player, personality (from existing text)
+      * `FRIENDLY_PERSONALITY`: Introduction of game, player, personality (for a more friendly player)
+        * This may also require adding a personality type to PlayerConfig, or we could default to one of them
+      * `RULES_BLOCK`: The formatting for rules.
+      * `GAME_STATE_BLOCK`: Scores, Turn Order, Position.
+      * `PROPOSAL_BLOCK`: rule under discussion
+      * `DISCUSSION_BLOCK`: Responses from other players
+      * `INSTRUCTION_PROPOSE`: Specific instructions & examples for proposing.
+      * `INSTRUCTION_DISCUSS`: Specific instructions & examples for discussing.
+      * `INSTRUCTION_REVISE`: Specific instructions & examples for revision.
+      * `INSTRUCTION_VOTE`: Specific instructions & examples for voting.
+
+* **Task 2: Refactor PromptBuilder for Stateful Context**
+    * Update `src/nomic_engine/llm/prompt_builder.py`.
+    * Create `build_propose_context(...)` to generate the starting system prompt for the proposer's turn.
+    * Create `build_discuss_context(...)` to generate the starting system prompt for non-proposer's turn.
+    * Create `build_revision_context(...)` to generate the user prompt containing discussion from other players plus instructions_revise
+    * Create `build_vote_context(...)` to generate the user prompt containing discussion from other players, revised rule proposal, and instruction_vote
+
+* **Task 3: Implement Stateful LLMPlayer**
+    * Update `src/nomic_engine/players/llm_player.py` to maintain `self.turn_history: list[ChatMessage]`.
+    * Implement `_add_message(role, content)` helper.
+    * Refactor `propose`, `discuss`, `revise`, and `vote` to:
+        1.  Check if history exists; if not, build initial context.
+        2.  If history exists, append the new instruction (User message).
+        3.  Send full history to `ApiClient`.
+        4.  Append response (Assistant message) to history.
+    * Ensure history is cleared at the start of a new turn.
 
 ## Future Work
 
