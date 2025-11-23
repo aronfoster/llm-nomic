@@ -34,6 +34,33 @@ def test_player_config_creation():
     assert player.model_id == "claude-3-5-sonnet-20240620"
 
 
+def test_player_config_default_personality():
+    """Test that PlayerConfig defaults to machiavellian personality."""
+    player = PlayerConfig(name="Claude", model_id="claude-3-5-sonnet-20240620")
+    assert player.personality == "machiavellian"
+
+
+def test_player_config_custom_personality():
+    """Test that PlayerConfig can be created with custom personality."""
+    player = PlayerConfig(
+        name="Claude",
+        model_id="claude-3-5-sonnet-20240620",
+        personality="friendly",
+    )
+    assert player.name == "Claude"
+    assert player.personality == "friendly"
+
+
+def test_player_config_machiavellian_personality():
+    """Test PlayerConfig with explicit machiavellian personality."""
+    player = PlayerConfig(
+        name="Alice",
+        model_id="gpt-4o",
+        personality="machiavellian",
+    )
+    assert player.personality == "machiavellian"
+
+
 def test_game_config_creation():
     """Test that GameConfig can be created with a list of players."""
     config = GameConfig(
