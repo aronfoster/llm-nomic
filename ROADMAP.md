@@ -109,6 +109,7 @@ This is the long-term backlog and TODO scratchpad.
     * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
     * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
     * need to handle "revision -> withdraw" logic to have them come up with a new proposal
+    * Explore https://openrouter.ai/ support for tokens/models
 
 * **Implement Victory Check:**
     * Add a `target_score` to `GameState`.
