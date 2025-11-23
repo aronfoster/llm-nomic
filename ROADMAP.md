@@ -16,6 +16,7 @@ Our architecture is built on these principles:
 
 * pylance is giving type errors in vs code that aren't caught by `make ci`
 * Shouldn't need "discussion" from the proposer
+* Judge point review includes the new rule and not the old rule, even though one of the rules says that the points are calculated before the new rule goes into effect.
 
 ### Low Priority
 
