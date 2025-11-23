@@ -11,6 +11,30 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _extract_json_string(text: str) -> str:
+    """
+    Extract JSON object from text that may contain surrounding content.
+
+    Many LLMs wrap JSON output in markdown code blocks or include
+    conversational text. This function extracts the JSON substring
+    by finding the first '{' and last '}' characters.
+
+    Args:
+        text: The raw text that may contain a JSON object.
+
+    Returns:
+        The extracted JSON substring if braces are found in valid positions,
+        otherwise returns the original text unchanged.
+    """
+    start = text.find("{")
+    end = text.rfind("}")
+
+    if start != -1 and end != -1 and start < end:
+        return text[start : end + 1]
+
+    return text
+
+
 def parse_vote_response(response_text: str) -> dict[str, str]:
     """
     Parse and validate a vote response from an LLM.
@@ -33,13 +57,12 @@ def parse_vote_response(response_text: str) -> dict[str, str]:
                    or contains invalid values. Error messages are descriptive
                    to aid debugging and can be sent back to the LLM.
     """
-    # TODO: Add string cleaning for responses wrapped in markdown code blocks
-    # e.g., responses like: ```json\n{...}\n```
-    # This will be implemented in a future iteration
+    # Step 1: Extract JSON from potential markdown/conversational wrapping
+    cleaned_text = _extract_json_string(response_text)
 
-    # Step 1: Parse JSON
+    # Step 2: Parse JSON
     try:
-        data = json.loads(response_text)
+        data = json.loads(cleaned_text)
     except json.JSONDecodeError as e:
         raise ValueError(
             f"Response is not valid JSON. Error: {e}. "
@@ -119,9 +142,12 @@ def parse_discussion_response(response_text: str) -> dict[str, str]:
                    or contains invalid values. Error messages are descriptive
                    to aid debugging and can be sent back to the LLM.
     """
-    # Step 1: Parse JSON
+    # Step 1: Extract JSON from potential markdown/conversational wrapping
+    cleaned_text = _extract_json_string(response_text)
+
+    # Step 2: Parse JSON
     try:
-        data = json.loads(response_text)
+        data = json.loads(cleaned_text)
     except json.JSONDecodeError as e:
         raise ValueError(
             f"Response is not valid JSON. Error: {e}. "
@@ -187,9 +213,12 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
                    Error messages are descriptive to aid debugging and can be
                    sent back to the LLM.
     """
-    # Step 1: Parse JSON
+    # Step 1: Extract JSON from potential markdown/conversational wrapping
+    cleaned_text = _extract_json_string(response_text)
+
+    # Step 2: Parse JSON
     try:
-        data = json.loads(response_text)
+        data = json.loads(cleaned_text)
     except json.JSONDecodeError as e:
         raise ValueError(
             f"Response is not valid JSON. Error: {e}. "
@@ -355,9 +384,12 @@ def parse_revision_response(response_text: str) -> dict[str, str | None]:
                    constraints. Error messages are descriptive to aid debugging
                    and can be sent back to the LLM.
     """
-    # Step 1: Parse JSON
+    # Step 1: Extract JSON from potential markdown/conversational wrapping
+    cleaned_text = _extract_json_string(response_text)
+
+    # Step 2: Parse JSON
     try:
-        data = json.loads(response_text)
+        data = json.loads(cleaned_text)
     except json.JSONDecodeError as e:
         raise ValueError(
             f"Response is not valid JSON. Error: {e}. "
