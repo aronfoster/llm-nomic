@@ -14,6 +14,7 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
+* pylance is giving type errors in vs code that aren't caught by `make ci`
 * Shouldn't need "discussion" from the proposer
 
 ### Low Priority
@@ -83,6 +84,8 @@ This is the long-term backlog and TODO scratchpad.
     * Implement async behavior
     * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
     * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
+    * need to handle "revision -> withdraw" logic to have them come up with a new proposal
+
 * **Implement Victory Check:**
     * Add a `target_score` to `GameState`.
     * Add a check for this score in the game loop.
