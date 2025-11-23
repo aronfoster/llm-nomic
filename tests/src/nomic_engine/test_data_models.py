@@ -71,14 +71,27 @@ def test_player_personality_enum_values():
     """Test that PlayerPersonality enum has expected values."""
     assert PlayerPersonality.MACHIAVELLIAN.value == "machiavellian"
     assert PlayerPersonality.FRIENDLY.value == "friendly"
+    assert PlayerPersonality.NONE.value == "none"
 
 
 def test_player_personality_enum_iteration():
     """Test that PlayerPersonality enum can be iterated."""
     personalities = list(PlayerPersonality)
-    assert len(personalities) >= 2
+    assert len(personalities) >= 3
     assert PlayerPersonality.MACHIAVELLIAN in personalities
     assert PlayerPersonality.FRIENDLY in personalities
+    assert PlayerPersonality.NONE in personalities
+
+
+def test_player_config_none_personality():
+    """Test PlayerConfig with explicit none personality."""
+    player = PlayerConfig(
+        name="Alice",
+        model_id="gpt-4o",
+        personality=PlayerPersonality.NONE,
+    )
+    assert player.personality == PlayerPersonality.NONE
+    assert player.personality == "none"
 
 
 def test_player_config_personality_from_string():

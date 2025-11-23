@@ -158,15 +158,18 @@ class PromptBuilder:
         Get the appropriate personality block based on the personality key.
 
         Args:
-            personality: Either "machiavellian" or "friendly"
+            personality: One of "machiavellian", "friendly", or "none"
 
         Returns:
             The appropriate personality template string
         """
-        if personality.lower() == "machiavellian":
+        personality_lower = personality.lower()
+        if personality_lower == "machiavellian":
             return prompts.MACHIAVELLIAN_PERSONALITY
+        elif personality_lower == "none":
+            return prompts.NONE_PERSONALITY
         else:
-            # Default to friendly for any non-machiavellian value
+            # Default to friendly for any other value
             return prompts.FRIENDLY_PERSONALITY
 
     def _format_game_state_block(
