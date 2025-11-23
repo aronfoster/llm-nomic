@@ -13,6 +13,7 @@ from ..data_models import (
     Discussion,
     GameState,
     ModelDefinition,
+    PlayerPersonality,
     Proposal,
     ProposalType,
     Rule,
@@ -47,7 +48,10 @@ class LLMPlayer(BasePlayer):
     MAX_REVISE_RETRIES = 2
 
     def __init__(
-        self, player_name: str, model_config: ModelDefinition
+        self,
+        player_name: str,
+        model_config: ModelDefinition,
+        personality: PlayerPersonality = PlayerPersonality.FRIENDLY,
     ) -> None:
         """
         Initialize an LLM player with a specific model configuration.
@@ -56,9 +60,12 @@ class LLMPlayer(BasePlayer):
             player_name: The unique name for this player.
             model_config: The ModelDefinition containing API configuration
                           for this player's LLM.
+            personality: The PlayerPersonality enum value dictating which
+                         system prompt persona to use.
         """
         super().__init__(player_name)
         self.model_config = model_config
+        self.personality = personality
         self.api_client = ApiClient(self.model_config)
         self.prompt_builder = PromptBuilder()
         # Stateful conversation history for the current turn
@@ -100,7 +107,7 @@ class LLMPlayer(BasePlayer):
             rules=rules,
             game_state=game_state,
             player_name=self.player_name,
-            personality="machiavellian",  # Default personality
+            personality=self.personality.value,
         )
 
         # Reset history for new turn
@@ -213,7 +220,7 @@ class LLMPlayer(BasePlayer):
             rules=rules,
             game_state=game_state,
             player_name=self.player_name,
-            personality="machiavellian",  # Default personality
+            personality=self.personality.value,
         )
 
         # Reset history for new turn

@@ -30,6 +30,14 @@ class ProposalType(str, Enum):
     TRANSMUTE = "Transmute"
 
 
+class PlayerPersonality(str, Enum):
+    """Enum for player personality/persona values."""
+
+    MACHIAVELLIAN = "machiavellian"
+    FRIENDLY = "friendly"
+    # Add others here later (e.g. CHAOTIC)
+
+
 # --- Rule Data Model (for rules.jsonl) ---
 
 
@@ -59,9 +67,9 @@ class PlayerConfig(BaseModel):
             "or 'human'."
         ),
     )
-    personality: str = Field(
-        "machiavellian",
-        description="The persona key to use (machiavellian|friendly)",
+    personality: PlayerPersonality = Field(
+        default=PlayerPersonality.FRIENDLY,
+        description="The strategic persona for this player.",
     )
 
 

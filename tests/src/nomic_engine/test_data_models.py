@@ -2,6 +2,8 @@
 Smoke tests for data models to ensure basic functionality.
 """
 
+import pytest
+
 from src.nomic_engine.data_models import (
     ChatMessage,
     Discussion,
@@ -10,6 +12,7 @@ from src.nomic_engine.data_models import (
     ModelDefinition,
     ModelLibrary,
     PlayerConfig,
+    PlayerPersonality,
     Proposal,
     Rule,
     Vote,
@@ -35,9 +38,11 @@ def test_player_config_creation():
 
 
 def test_player_config_default_personality():
-    """Test that PlayerConfig defaults to machiavellian personality."""
+    """Test that PlayerConfig defaults to friendly personality."""
     player = PlayerConfig(name="Claude", model_id="claude-3-5-sonnet-20240620")
-    assert player.personality == "machiavellian"
+    assert player.personality == PlayerPersonality.FRIENDLY
+    # Enum inherits from str, so string comparison should also work
+    assert player.personality == "friendly"
 
 
 def test_player_config_custom_personality():
@@ -45,9 +50,10 @@ def test_player_config_custom_personality():
     player = PlayerConfig(
         name="Claude",
         model_id="claude-3-5-sonnet-20240620",
-        personality="friendly",
+        personality=PlayerPersonality.FRIENDLY,
     )
     assert player.name == "Claude"
+    assert player.personality == PlayerPersonality.FRIENDLY
     assert player.personality == "friendly"
 
 
@@ -56,9 +62,44 @@ def test_player_config_machiavellian_personality():
     player = PlayerConfig(
         name="Alice",
         model_id="gpt-4o",
-        personality="machiavellian",
+        personality=PlayerPersonality.MACHIAVELLIAN,
     )
-    assert player.personality == "machiavellian"
+    assert player.personality == PlayerPersonality.MACHIAVELLIAN
+
+
+def test_player_personality_enum_values():
+    """Test that PlayerPersonality enum has expected values."""
+    assert PlayerPersonality.MACHIAVELLIAN.value == "machiavellian"
+    assert PlayerPersonality.FRIENDLY.value == "friendly"
+
+
+def test_player_personality_enum_iteration():
+    """Test that PlayerPersonality enum can be iterated."""
+    personalities = list(PlayerPersonality)
+    assert len(personalities) >= 2
+    assert PlayerPersonality.MACHIAVELLIAN in personalities
+    assert PlayerPersonality.FRIENDLY in personalities
+
+
+def test_player_config_personality_from_string():
+    """Test that PlayerConfig accepts string values for personality."""
+    # Pydantic should coerce valid string values to enum
+    player = PlayerConfig(
+        name="Alice",
+        model_id="gpt-4o",
+        personality="friendly",
+    )
+    assert player.personality == PlayerPersonality.FRIENDLY
+
+
+def test_player_config_invalid_personality():
+    """Test that PlayerConfig rejects invalid personality values."""
+    with pytest.raises(ValueError):
+        PlayerConfig(
+            name="Alice",
+            model_id="gpt-4o",
+            personality="invalid_personality",
+        )
 
 
 def test_game_config_creation():

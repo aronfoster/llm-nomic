@@ -88,6 +88,17 @@ Our architecture is built on these principles:
         * `test_discuss_initializes_history`: Verifies discuss resets history.
         * `test_propose_resets_existing_history`: Verifies propose resets old history.
 
+* **Task 4: Add Configurable Personality to Game Creation** ✅ COMPLETE
+    * Added `PlayerPersonality` enum to `src/nomic_engine/data_models.py`:
+      * `MACHIAVELLIAN = "machiavellian"`
+      * `FRIENDLY = "friendly"` (default)
+    * Updated `PlayerConfig` to use strongly-typed `PlayerPersonality` enum instead of string.
+    * Updated `create_game.py` to prompt users for personality selection when configuring LLM players.
+    * Updated `LLMPlayer` constructor to accept `personality` parameter.
+    * Updated `LLMPlayer.propose()` and `LLMPlayer.discuss()` to use the player's personality.
+    * Updated `main.py` to pass personality from `PlayerConfig` to `LLMPlayer`.
+    * Added comprehensive unit tests for `PlayerPersonality` enum behavior and validation.
+
 ## Future Work
 
 This is the long-term backlog and TODO scratchpad.

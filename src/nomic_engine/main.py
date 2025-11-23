@@ -98,7 +98,13 @@ def instantiate_players(
                     f"model library. Available models: {available}"
                 )
 
-            players.append(LLMPlayer(player_config.name, model_def))
+            players.append(
+                LLMPlayer(
+                    player_config.name,
+                    model_def,
+                    player_config.personality,
+                )
+            )
 
     return players
 
