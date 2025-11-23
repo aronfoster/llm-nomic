@@ -749,7 +749,7 @@ class TestLLMPlayerDiscuss:
             rules=rules,
             game_state=game_state,
             player_name="TestPlayer",
-            personality="machiavellian",
+            personality="friendly",
         )
 
 
@@ -1121,7 +1121,7 @@ class TestLLMPlayerPropose:
             rules=rules,
             game_state=game_state,
             player_name="TestPlayer",
-            personality="machiavellian",
+            personality="friendly",
         )
 
 

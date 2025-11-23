@@ -31,6 +31,7 @@ from src.nomic_engine.data_models import (
     GameState,
     ModelLibrary,
     PlayerConfig,
+    PlayerPersonality,
 )
 from src.nomic_engine.core.rules_manager import RulesManager
 from src.nomic_engine.utils.loaders import load_model_library
@@ -162,6 +163,30 @@ def choose_llm_model(model_library: ModelLibrary) -> str:
             print("Please enter a valid number.")
 
 
+def choose_personality() -> PlayerPersonality:
+    """
+    Display available personalities and let the user choose one.
+
+    Returns:
+        The chosen PlayerPersonality enum value.
+    """
+    personalities = list(PlayerPersonality)
+    print("\nAvailable personalities:")
+    for idx, personality in enumerate(personalities, start=1):
+        print(f"  {idx}. {personality.value}")
+
+    while True:
+        try:
+            choice = input("Choose a personality by number: ").strip()
+            choice_idx = int(choice) - 1
+            if 0 <= choice_idx < len(personalities):
+                return personalities[choice_idx]
+            else:
+                print(f"Please enter a number between 1 and {len(personalities)}")
+        except ValueError:
+            print("Please enter a valid number.")
+
+
 def configure_players(model_library: ModelLibrary) -> list[PlayerConfig]:
     """
     Interactively configure all players for the game.
@@ -197,14 +222,19 @@ def configure_players(model_library: ModelLibrary) -> list[PlayerConfig]:
                 break
             print("Please enter either 'human' or 'llm'.")
 
-        # Get model ID
+        # Get model ID and personality
         if player_type == "llm":
             model_id = choose_llm_model(model_library)
+            personality = choose_personality()
         else:
             model_id = "human"
+            personality = PlayerPersonality.FRIENDLY  # Default for human
 
-        players.append(PlayerConfig(name=name, model_id=model_id))
-        print(f"Added {name} as {player_type} player" + (f" using {model_id}" if player_type == "llm" else ""))
+        players.append(PlayerConfig(name=name, model_id=model_id, personality=personality))
+        if player_type == "llm":
+            print(f"Added {name} as {player_type} player using {model_id} with {personality.value} personality")
+        else:
+            print(f"Added {name} as {player_type} player")
 
     return players
 
