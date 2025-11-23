@@ -203,6 +203,14 @@ class TestPromptBuilder(unittest.TestCase):
         result = self.builder._get_personality_block("unknown")
         self.assertIn("cooperative player", result)
 
+    def test_get_personality_block_none(self):
+        """Test _get_personality_block returns none persona."""
+        result = self.builder._get_personality_block("none")
+        self.assertIn("player in a game of Nomic", result)
+        # Should be minimal - no strategy guidance
+        self.assertNotIn("ruthlessly competitive", result)
+        self.assertNotIn("cooperative player", result)
+
     # =========================================================================
     # Tests for build_proposer_system_message (with mocking)
     # =========================================================================
@@ -269,6 +277,21 @@ class TestPromptBuilder(unittest.TestCase):
 
         # Verify friendly persona is used
         self.assertIn("cooperative player", message.content)
+        self.assertNotIn("ruthlessly competitive", message.content)
+
+    def test_build_proposer_system_message_none_personality(self):
+        """Test proposer message with none personality."""
+        message = self.builder.build_proposer_system_message(
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Alice",
+            personality="none",
+        )
+
+        # Verify none persona is used - minimal, no strategy guidance
+        self.assertIn("Alice", message.content)
+        self.assertIn("player in a game of Nomic", message.content)
+        self.assertNotIn("cooperative player", message.content)
         self.assertNotIn("ruthlessly competitive", message.content)
 
     def test_build_proposer_system_message_empty_rules(self):

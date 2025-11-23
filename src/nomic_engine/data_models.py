@@ -35,6 +35,7 @@ class PlayerPersonality(str, Enum):
 
     MACHIAVELLIAN = "machiavellian"
     FRIENDLY = "friendly"
+    NONE = "none"
     # Add others here later (e.g. CHAOTIC)
 
 

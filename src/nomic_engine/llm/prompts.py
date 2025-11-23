@@ -448,6 +448,8 @@ FRIENDLY_PERSONALITY = (
     "You seek win-win outcomes and avoid unnecessarily antagonizing others."
 )
 
+NONE_PERSONALITY = "You are {player_name}, a player in a game of Nomic."
+
 # -----------------------------------------------------------------
 # 2. DATA BLOCKS - Placeholders for game context
 # -----------------------------------------------------------------

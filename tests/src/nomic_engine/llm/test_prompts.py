@@ -39,6 +39,27 @@ class TestPersonalityBlocks:
         """Test FRIENDLY_PERSONALITY contains 'consensus'."""
         assert "consensus" in prompts.FRIENDLY_PERSONALITY
 
+    def test_none_personality_exists(self):
+        """Test that NONE_PERSONALITY constant exists."""
+        assert hasattr(prompts, "NONE_PERSONALITY")
+
+    def test_none_personality_contains_player_name(self):
+        """Test NONE_PERSONALITY has player_name placeholder."""
+        assert "{player_name}" in prompts.NONE_PERSONALITY
+
+    def test_none_personality_contains_nomic(self):
+        """Test NONE_PERSONALITY contains 'Nomic'."""
+        assert "Nomic" in prompts.NONE_PERSONALITY
+
+    def test_none_personality_is_minimal(self):
+        """Test NONE_PERSONALITY is minimal (no strategy guidance)."""
+        # NONE personality should not contain strategy-related words
+        assert "ruthlessly" not in prompts.NONE_PERSONALITY
+        assert "competitive" not in prompts.NONE_PERSONALITY
+        assert "cooperative" not in prompts.NONE_PERSONALITY
+        assert "consensus" not in prompts.NONE_PERSONALITY
+        assert "alliance" not in prompts.NONE_PERSONALITY
+
 
 class TestDataBlocks:
     """Test cases for data block templates."""
