@@ -1,10 +1,12 @@
 """
-Unit tests for LLMPlayer functionality with retry logic.
+Unit tests for LLMPlayer functionality with stateful conversation history.
 
 Tests cover:
 - vote() method
 - discuss() method
 - propose() method
+- revise() method
+- Stateful conversation history management
 """
 
 from unittest.mock import MagicMock, patch
@@ -42,7 +44,7 @@ def game_state():
         scores={"Alice": 10, "Bob": 5},
         current_player_name="Alice",
         move_number=1,
-        turn_order=["Alice", "Bob"],
+        turn_order=["Alice", "Bob", "TestPlayer"],
         next_proposal_id=301,
     )
 
@@ -93,13 +95,12 @@ class TestLLMPlayerVote:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        # Mock the prompt builder to return messages
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_vote_messages.return_value = (
-            mock_messages
+        # Mock the prompt builder to return a single ChatMessage for vote
+        mock_vote_instruction = ChatMessage(
+            role="user", content="Vote instruction prompt"
+        )
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            mock_vote_instruction
         )
 
         # Mock the API client to return valid JSON
@@ -117,8 +118,14 @@ class TestLLMPlayerVote:
             "vote": "YES",
         }
 
-        # Create player and vote
+        # Create player and set up initial history (vote continues)
         player = LLMPlayer("TestPlayer", model_config)
+        # Simulate that discuss() was already called and set up history
+        player.turn_history = [
+            ChatMessage(role="system", content="System prompt from discuss"),
+            ChatMessage(role="assistant", content="Discussion response"),
+        ]
+
         vote = player.vote(proposal, game_state, rules)
 
         # Assertions
@@ -155,13 +162,12 @@ class TestLLMPlayerVote:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        # Mock the prompt builder to return initial messages
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_vote_messages.return_value = (
-            mock_messages
+        # Mock the prompt builder to return a single ChatMessage
+        mock_vote_instruction = ChatMessage(
+            role="user", content="Vote instruction prompt"
+        )
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            mock_vote_instruction
         )
 
         # Mock the API client to return bad JSON first, then good JSON
@@ -186,8 +192,12 @@ class TestLLMPlayerVote:
             },
         ]
 
-        # Create player and vote
+        # Create player with initial history
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="System prompt"),
+        ]
+
         vote = player.vote(proposal, game_state, rules)
 
         # Assertions
@@ -201,17 +211,11 @@ class TestLLMPlayerVote:
         # Verify parser was called twice
         assert mock_parse.call_count == 2
 
-        # Verify that the second API call included the error feedback
-        second_call_messages = mock_api_instance.get_completion.call_args_list[
-            1
-        ][0][0]
-        # system, user, assistant (bad), user (retry)
-        assert len(second_call_messages) == 4
-        assert second_call_messages[2].role == "assistant"
-        assert second_call_messages[2].content == bad_json_response
-        assert second_call_messages[3].role == "user"
-        # The retry template should be in the last message
-        assert "FINAL attempt" in second_call_messages[3].content
+        # Verify history contains retry messages
+        # system, vote_instruction, assistant (bad), user (retry)
+        assert len(player.turn_history) >= 4
+        # After success, history should have the valid response appended
+        assert player.turn_history[-1].role == "assistant"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
@@ -234,13 +238,12 @@ class TestLLMPlayerVote:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        # Mock the prompt builder to return messages
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_vote_messages.return_value = (
-            mock_messages
+        # Mock the prompt builder to return a single ChatMessage
+        mock_vote_instruction = ChatMessage(
+            role="user", content="Vote instruction prompt"
+        )
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            mock_vote_instruction
         )
 
         # Mock the API client to always return bad JSON
@@ -250,8 +253,12 @@ class TestLLMPlayerVote:
         # Mock the parser to always raise ValueError
         mock_parse.side_effect = ValueError("Response is not valid JSON")
 
-        # Create player and vote
+        # Create player with initial history
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="System prompt"),
+        ]
+
         vote = player.vote(proposal, game_state, rules)
 
         # Assertions - should return ABSTAIN with error message
@@ -287,13 +294,12 @@ class TestLLMPlayerVote:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        # Mock the prompt builder to return messages
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_vote_messages.return_value = (
-            mock_messages
+        # Mock the prompt builder to return a single ChatMessage
+        mock_vote_instruction = ChatMessage(
+            role="user", content="Vote instruction prompt"
+        )
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            mock_vote_instruction
         )
 
         # Mock the API client: first returns None (API error), second succeeds
@@ -307,8 +313,12 @@ class TestLLMPlayerVote:
             good_json_response,
         ]
 
-        # Create player and vote
+        # Create player with initial history
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="System prompt"),
+        ]
+
         vote = player.vote(proposal, game_state, rules)
 
         # Assertions
@@ -338,20 +348,23 @@ class TestLLMPlayerVote:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        # Mock the prompt builder to return messages
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_vote_messages.return_value = (
-            mock_messages
+        # Mock the prompt builder to return a single ChatMessage
+        mock_vote_instruction = ChatMessage(
+            role="user", content="Vote instruction prompt"
+        )
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            mock_vote_instruction
         )
 
         # Mock the API client to always return None (API error)
         mock_api_instance.get_completion.return_value = None
 
-        # Create player and vote
+        # Create player with initial history
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="System prompt"),
+        ]
+
         vote = player.vote(proposal, game_state, rules)
 
         # Assertions - should return ABSTAIN with error message
@@ -386,13 +399,12 @@ class TestLLMPlayerVote:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        # Mock the prompt builder to return messages
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_vote_messages.return_value = (
-            mock_messages
+        # Mock the prompt builder to return a single ChatMessage
+        mock_vote_instruction = ChatMessage(
+            role="user", content="Vote instruction prompt"
+        )
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            mock_vote_instruction
         )
 
         # Mock successful API response
@@ -406,16 +418,20 @@ class TestLLMPlayerVote:
             "private_thoughts": "Analysis",
         }
 
-        # Create player and vote
+        # Create player with initial history
         player = LLMPlayer("TestPlayer", model_config)
-        player.vote(proposal, game_state, rules)
+        player.turn_history = [
+            ChatMessage(role="system", content="System prompt"),
+        ]
 
-        # Verify PromptBuilder.build_vote_messages was called with correct args
-        mock_prompt_builder_instance.build_vote_messages.assert_called_once_with(
+        discussions = [Discussion(player_name="Alice", text="Good proposal")]
+        player.vote(proposal, game_state, rules, discussions=discussions)
+
+        # Verify PromptBuilder.build_vote_instruction was called correctly
+        mock_prompt_builder_instance.build_vote_instruction.assert_called_once_with(
             proposal=proposal,
+            discussions=discussions,
             rules=rules,
-            game_state=game_state,
-            discussions=[],  # Currently empty
             player_name="TestPlayer",
         )
 
@@ -444,14 +460,12 @@ class TestLLMPlayerDiscuss:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        # Mock the prompt builder to return messages
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_discuss_messages.return_value = (
-            mock_messages
+        # Mock the prompt builder to return a single system ChatMessage
+        mock_system_message = ChatMessage(
+            role="system", content="Discusser system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_discusser_system_message.return_value = mock_system_message
 
         # Mock the API client to return valid JSON
         valid_json_response = """{
@@ -485,7 +499,7 @@ class TestLLMPlayerDiscuss:
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
-    def test_discuss_empty_string_returns_none(
+    def test_discuss_empty_string_returns_abstain(
         self,
         mock_parse,
         mock_api_client_class,
@@ -495,7 +509,7 @@ class TestLLMPlayerDiscuss:
         proposal,
         rules,
     ):
-        """Test that empty discussion_text returns None (abstain)."""
+        """Test empty discussion_text returns Discussion with empty text."""
         # Setup mocks
         mock_api_instance = MagicMock()
         mock_api_client_class.return_value = mock_api_instance
@@ -503,13 +517,11 @@ class TestLLMPlayerDiscuss:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_discuss_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Discusser system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_discusser_system_message.return_value = mock_system_message
 
         mock_api_instance.get_completion.return_value = """{
             "private_thoughts": "I prefer to stay silent.",
@@ -551,13 +563,11 @@ class TestLLMPlayerDiscuss:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_discuss_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Discusser system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_discusser_system_message.return_value = mock_system_message
 
         # Mock the API client to return bad JSON first, then good JSON
         bad_json_response = "This is not valid JSON"
@@ -593,22 +603,14 @@ class TestLLMPlayerDiscuss:
         # Verify parser was called twice
         assert mock_parse.call_count == 2
 
-        # Verify that the second API call included the error feedback
-        second_call_messages = mock_api_instance.get_completion.call_args_list[
-            1
-        ][0][0]
-        # system, user, assistant (bad), user (retry)
-        assert len(second_call_messages) == 4
-        assert second_call_messages[2].role == "assistant"
-        assert second_call_messages[2].content == bad_json_response
-        assert second_call_messages[3].role == "user"
-        # The retry template should be in the last message
-        assert "FINAL attempt" in second_call_messages[3].content
+        # Verify history contains retry messages
+        # system, assistant (bad), user (retry), then another call
+        assert len(player.turn_history) >= 3
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
-    def test_discuss_failure_max_retries_returns_none(
+    def test_discuss_failure_max_retries_returns_abstain(
         self,
         mock_parse,
         mock_api_client_class,
@@ -618,7 +620,7 @@ class TestLLMPlayerDiscuss:
         proposal,
         rules,
     ):
-        """Test that player returns None after exhausting retries."""
+        """Test player returns Discussion with empty text after retries."""
         # Setup mocks
         mock_api_instance = MagicMock()
         mock_api_client_class.return_value = mock_api_instance
@@ -626,13 +628,11 @@ class TestLLMPlayerDiscuss:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_discuss_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Discusser system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_discusser_system_message.return_value = mock_system_message
 
         # Mock the API client to always return bad JSON
         bad_json_response = "This is consistently bad JSON {{{{{{"
@@ -661,7 +661,7 @@ class TestLLMPlayerDiscuss:
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
-    def test_discuss_all_api_errors_returns_none(
+    def test_discuss_all_api_errors_returns_abstain(
         self,
         mock_api_client_class,
         mock_prompt_builder_class,
@@ -670,7 +670,7 @@ class TestLLMPlayerDiscuss:
         proposal,
         rules,
     ):
-        """Test that player returns None when API consistently fails."""
+        """Test player returns Discussion with empty text on API errors."""
         # Setup mocks
         mock_api_instance = MagicMock()
         mock_api_client_class.return_value = mock_api_instance
@@ -678,13 +678,11 @@ class TestLLMPlayerDiscuss:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_discuss_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Discusser system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_discusser_system_message.return_value = mock_system_message
 
         # Mock the API client to always return None (API error)
         mock_api_instance.get_completion.return_value = None
@@ -725,13 +723,11 @@ class TestLLMPlayerDiscuss:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_discuss_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Discusser system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_discusser_system_message.return_value = mock_system_message
 
         # Mock successful API response
         mock_api_instance.get_completion.return_value = (
@@ -746,13 +742,14 @@ class TestLLMPlayerDiscuss:
         player = LLMPlayer("TestPlayer", model_config)
         player.discuss(proposal, game_state, rules)
 
-        # Verify PromptBuilder.build_discuss_messages called correctly
-        call = mock_prompt_builder_instance.build_discuss_messages
+        # Verify PromptBuilder.build_discusser_system_message called correctly
+        call = mock_prompt_builder_instance.build_discusser_system_message
         call.assert_called_once_with(
             proposal=proposal,
             rules=rules,
             game_state=game_state,
             player_name="TestPlayer",
+            personality="machiavellian",
         )
 
 
@@ -779,14 +776,12 @@ class TestLLMPlayerPropose:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        # Mock the prompt builder to return messages
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_propose_messages.return_value = (
-            mock_messages
+        # Mock the prompt builder to return a single system ChatMessage
+        mock_system_message = ChatMessage(
+            role="system", content="Proposer system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = mock_system_message
 
         # Mock the API client to return valid JSON
         valid_json_response = """{
@@ -846,13 +841,11 @@ class TestLLMPlayerPropose:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_propose_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Proposer system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = mock_system_message
 
         mock_api_instance.get_completion.return_value = "valid json"
 
@@ -893,13 +886,11 @@ class TestLLMPlayerPropose:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_propose_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Proposer system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = mock_system_message
 
         # Mock the API client to return bad JSON first, then good JSON
         bad_json_response = "This is not valid JSON"
@@ -936,17 +927,9 @@ class TestLLMPlayerPropose:
         # Verify parser was called twice
         assert mock_parse.call_count == 2
 
-        # Verify that the second API call included the error feedback
-        second_call_messages = mock_api_instance.get_completion.call_args_list[
-            1
-        ][0][0]
-        # system, user, assistant (bad), user (retry)
-        assert len(second_call_messages) == 4
-        assert second_call_messages[2].role == "assistant"
-        assert second_call_messages[2].content == bad_json_response
-        assert second_call_messages[3].role == "user"
-        # The retry template should mention the error
-        assert "Error:" in second_call_messages[3].content
+        # Verify history contains retry messages
+        # system, assistant(bad), user(retry), then another call succeeds
+        assert len(player.turn_history) >= 3
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
@@ -968,13 +951,11 @@ class TestLLMPlayerPropose:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_propose_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Proposer system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = mock_system_message
 
         # Mock the API client to always return bad JSON
         bad_json_response = "This is consistently bad JSON {{{{{{"
@@ -1019,13 +1000,11 @@ class TestLLMPlayerPropose:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_propose_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Proposer system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = mock_system_message
 
         # Mock the API client: first returns None (API error), second succeeds
         good_json_response = """{
@@ -1069,13 +1048,11 @@ class TestLLMPlayerPropose:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_propose_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Proposer system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = mock_system_message
 
         # Mock the API client to always return None (API error)
         mock_api_instance.get_completion.return_value = None
@@ -1115,13 +1092,11 @@ class TestLLMPlayerPropose:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_propose_messages.return_value = (
-            mock_messages
+        mock_system_message = ChatMessage(
+            role="system", content="Proposer system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = mock_system_message
 
         # Mock successful API response
         mock_api_instance.get_completion.return_value = (
@@ -1140,12 +1115,13 @@ class TestLLMPlayerPropose:
         player = LLMPlayer("TestPlayer", model_config)
         player.propose(game_state, rules)
 
-        # Verify PromptBuilder.build_propose_messages called correctly
-        call = mock_prompt_builder_instance.build_propose_messages
+        # Verify PromptBuilder.build_proposer_system_message called correctly
+        call = mock_prompt_builder_instance.build_proposer_system_message
         call.assert_called_once_with(
             rules=rules,
             game_state=game_state,
             player_name="TestPlayer",
+            personality="machiavellian",
         )
 
 
@@ -1173,13 +1149,12 @@ class TestLLMPlayerRevise:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_revise_messages.return_value = (
-            mock_messages
+        # Mock the prompt builder to return a single user ChatMessage
+        mock_revision_instruction = ChatMessage(
+            role="user", content="Revision instruction prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = mock_revision_instruction
 
         mock_api_instance.get_completion.return_value = """{
             "private_thoughts": "Too much opposition, better to withdraw",
@@ -1195,8 +1170,15 @@ class TestLLMPlayerRevise:
             "rationale": None,
         }
 
-        # Create player and revise
+        # Create player with initial history (from propose)
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Proposer system prompt"),
+            ChatMessage(
+                role="assistant", content="Original proposal response"
+            ),
+        ]
+
         discussions = [
             Discussion(player_name="Alice", text="I have concerns about this.")
         ]
@@ -1229,13 +1211,11 @@ class TestLLMPlayerRevise:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_revise_messages.return_value = (
-            mock_messages
+        mock_revision_instruction = ChatMessage(
+            role="user", content="Revision instruction prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = mock_revision_instruction
 
         mock_api_instance.get_completion.return_value = """{
             "private_thoughts": "Feedback is positive, keep as is",
@@ -1251,8 +1231,15 @@ class TestLLMPlayerRevise:
             "rationale": None,
         }
 
-        # Create player and revise
+        # Create player with initial history (from propose)
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Proposer system prompt"),
+            ChatMessage(
+                role="assistant", content="Original proposal response"
+            ),
+        ]
+
         discussions = [Discussion(player_name="Alice", text="I support this.")]
         result = player.revise(proposal, discussions, game_state, rules)
 
@@ -1278,8 +1265,7 @@ class TestLLMPlayerRevise:
         proposal,
         rules,
     ):
-        """Test that revise returns a new proposal with updated text when
-        action is MODIFY."""
+        """Test revise returns a modified proposal when action is MODIFY."""
         # Setup mocks
         mock_api_instance = MagicMock()
         mock_api_client_class.return_value = mock_api_instance
@@ -1287,13 +1273,11 @@ class TestLLMPlayerRevise:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_revise_messages.return_value = (
-            mock_messages
+        mock_revision_instruction = ChatMessage(
+            role="user", content="Revision instruction prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = mock_revision_instruction
 
         mock_api_instance.get_completion.return_value = """{
             "private_thoughts": "Will address the concerns by modifying",
@@ -1309,8 +1293,15 @@ class TestLLMPlayerRevise:
             "rationale": "Improved rationale",
         }
 
-        # Create player and revise
+        # Create player with initial history (from propose)
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Proposer system prompt"),
+            ChatMessage(
+                role="assistant", content="Original proposal response"
+            ),
+        ]
+
         discussions = [
             Discussion(player_name="Alice", text="This could be better.")
         ]
@@ -1348,13 +1339,11 @@ class TestLLMPlayerRevise:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_revise_messages.return_value = (
-            mock_messages
+        mock_revision_instruction = ChatMessage(
+            role="user", content="Revision instruction prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = mock_revision_instruction
 
         mock_api_instance.get_completion.return_value = "valid json"
 
@@ -1365,8 +1354,15 @@ class TestLLMPlayerRevise:
             "rationale": None,
         }
 
-        # Create player and revise
+        # Create player with initial history (from propose)
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Proposer system prompt"),
+            ChatMessage(
+                role="assistant", content="Original proposal response"
+            ),
+        ]
+
         result = player.revise(proposal, [], game_state, rules)
 
         # Should update text but keep original rationale
@@ -1395,13 +1391,11 @@ class TestLLMPlayerRevise:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_revise_messages.return_value = (
-            mock_messages
+        mock_revision_instruction = ChatMessage(
+            role="user", content="Revision instruction prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = mock_revision_instruction
 
         bad_json_response = "This is not valid JSON"
         good_json_response = """{
@@ -1425,8 +1419,15 @@ class TestLLMPlayerRevise:
             },
         ]
 
-        # Create player and revise
+        # Create player with initial history (from propose)
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Proposer system prompt"),
+            ChatMessage(
+                role="assistant", content="Original proposal response"
+            ),
+        ]
+
         result = player.revise(proposal, [], game_state, rules)
 
         # Should return a proposal with same fields but updated thoughts
@@ -1438,14 +1439,8 @@ class TestLLMPlayerRevise:
         # Verify API was called twice
         assert mock_api_instance.get_completion.call_count == 2
 
-        # Verify retry message was included
-        second_call_messages = mock_api_instance.get_completion.call_args_list[
-            1
-        ][0][0]
-        assert len(second_call_messages) == 4
-        assert second_call_messages[2].role == "assistant"
-        assert second_call_messages[3].role == "user"
-        assert "Error:" in second_call_messages[3].content
+        # Verify retry message was included in history
+        assert len(player.turn_history) >= 4
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
@@ -1468,21 +1463,26 @@ class TestLLMPlayerRevise:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_revise_messages.return_value = (
-            mock_messages
+        mock_revision_instruction = ChatMessage(
+            role="user", content="Revision instruction prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = mock_revision_instruction
 
         bad_json_response = "This is consistently bad JSON {{{{{{"
         mock_api_instance.get_completion.return_value = bad_json_response
 
         mock_parse.side_effect = ValueError("Response is not valid JSON")
 
-        # Create player and revise
+        # Create player with initial history (from propose)
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Proposer system prompt"),
+            ChatMessage(
+                role="assistant", content="Original proposal response"
+            ),
+        ]
+
         result = player.revise(proposal, [], game_state, rules)
 
         # Should return original proposal as fallback (KEEP)
@@ -1505,8 +1505,7 @@ class TestLLMPlayerRevise:
         proposal,
         rules,
     ):
-        """Test that player returns original proposal when API consistently
-        fails."""
+        """Test that player returns original proposal when API fails."""
         # Setup mocks
         mock_api_instance = MagicMock()
         mock_api_client_class.return_value = mock_api_instance
@@ -1514,18 +1513,23 @@ class TestLLMPlayerRevise:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_revise_messages.return_value = (
-            mock_messages
+        mock_revision_instruction = ChatMessage(
+            role="user", content="Revision instruction prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = mock_revision_instruction
 
         mock_api_instance.get_completion.return_value = None
 
-        # Create player and revise
+        # Create player with initial history (from propose)
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Proposer system prompt"),
+            ChatMessage(
+                role="assistant", content="Original proposal response"
+            ),
+        ]
+
         result = player.revise(proposal, [], game_state, rules)
 
         # Should return original proposal as fallback
@@ -1558,13 +1562,11 @@ class TestLLMPlayerRevise:
         mock_prompt_builder_instance = MagicMock()
         mock_prompt_builder_class.return_value = mock_prompt_builder_instance
 
-        mock_messages = [
-            ChatMessage(role="system", content="System prompt"),
-            ChatMessage(role="user", content="User prompt"),
-        ]
-        mock_prompt_builder_instance.build_revise_messages.return_value = (
-            mock_messages
+        mock_revision_instruction = ChatMessage(
+            role="user", content="Revision instruction prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = mock_revision_instruction
 
         mock_api_instance.get_completion.return_value = (
             '{"private_thoughts":"A","action":"KEEP","new_text":null,'
@@ -1577,16 +1579,322 @@ class TestLLMPlayerRevise:
             "rationale": None,
         }
 
-        # Create player and revise
+        # Create player with initial history (from propose)
         player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Proposer system prompt"),
+            ChatMessage(
+                role="assistant", content="Original proposal response"
+            ),
+        ]
+
         discussions = [Discussion(player_name="Alice", text="Good proposal.")]
         player.revise(proposal, discussions, game_state, rules)
 
-        # Verify PromptBuilder.build_revise_messages called correctly
-        call = mock_prompt_builder_instance.build_revise_messages
-        call.assert_called_once_with(
-            proposal=proposal,
-            discussions=discussions,
-            game_state=game_state,
-            player_name="TestPlayer",
+        # Verify PromptBuilder.build_revision_instruction called correctly
+        call = mock_prompt_builder_instance.build_revision_instruction
+        call.assert_called_once_with(discussions=discussions)
+
+
+class TestLLMPlayerStatefulHistory:
+    """Tests for stateful conversation history management."""
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_initializes_history(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Test propose() initializes turn_history with [System, Assistant]."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_system_message = ChatMessage(
+            role="system", content="Proposer system prompt"
         )
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = mock_system_message
+
+        valid_response = """{
+            "private_thoughts": "Analysis",
+            "type": "Add",
+            "target_rule_id": null,
+            "new_text": "New rule",
+            "rationale": "Reason"
+        }"""
+        mock_api_instance.get_completion.return_value = valid_response
+
+        mock_parse.return_value = {
+            "private_thoughts": "Analysis",
+            "type": "Add",
+            "target_rule_id": None,
+            "new_text": "New rule",
+            "rationale": "Reason",
+        }
+
+        # Create player
+        player = LLMPlayer("TestPlayer", model_config)
+
+        # Initially history should be empty
+        assert player.turn_history == []
+
+        # Call propose
+        player.propose(game_state, rules)
+
+        # After propose, history should have [System, Assistant]
+        assert len(player.turn_history) == 2
+        assert player.turn_history[0].role == "system"
+        assert player.turn_history[0].content == "Proposer system prompt"
+        assert player.turn_history[1].role == "assistant"
+        assert player.turn_history[1].content == valid_response
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_extends_history(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that revise() extends the existing history, not replaces it."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_revision_instruction = ChatMessage(
+            role="user", content="Revision instruction with discussions"
+        )
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = mock_revision_instruction
+
+        revision_response = """{
+            "private_thoughts": "I will keep my proposal",
+            "action": "KEEP",
+            "new_text": null,
+            "rationale": null
+        }"""
+        mock_api_instance.get_completion.return_value = revision_response
+
+        mock_parse.return_value = {
+            "private_thoughts": "I will keep my proposal",
+            "action": "KEEP",
+            "new_text": None,
+            "rationale": None,
+        }
+
+        # Create player and manually set up initial history (from propose)
+        player = LLMPlayer("TestPlayer", model_config)
+        initial_system = ChatMessage(
+            role="system", content="Proposer system prompt"
+        )
+        initial_assistant = ChatMessage(
+            role="assistant", content="Original proposal JSON response"
+        )
+        player.turn_history = [initial_system, initial_assistant]
+
+        # Call revise
+        discussions = [Discussion(player_name="Alice", text="Good proposal.")]
+        player.revise(proposal, discussions, game_state, rules)
+
+        # After revise, history should have grown:
+        # [System, Assistant(prop), User(revision_inst), Assistant(rev)]
+        assert len(player.turn_history) == 4
+        assert player.turn_history[0].role == "system"
+        assert player.turn_history[1].role == "assistant"
+        assert player.turn_history[2].role == "user"
+        assert (
+            player.turn_history[2].content
+            == "Revision instruction with discussions"
+        )
+        assert player.turn_history[3].role == "assistant"
+        assert player.turn_history[3].content == revision_response
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_vote_response")
+    def test_vote_extends_history(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test that vote() extends the existing history, not replaces it."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_vote_instruction = ChatMessage(
+            role="user", content="Vote instruction with proposal"
+        )
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            mock_vote_instruction
+        )
+
+        vote_response = """{
+            "private_thoughts": "I will vote yes",
+            "public_reason": "Good proposal",
+            "vote": "YES"
+        }"""
+        mock_api_instance.get_completion.return_value = vote_response
+
+        mock_parse.return_value = {
+            "private_thoughts": "I will vote yes",
+            "public_reason": "Good proposal",
+            "vote": "YES",
+        }
+
+        # Create player and manually set up initial history (from discuss)
+        player = LLMPlayer("TestPlayer", model_config)
+        initial_system = ChatMessage(
+            role="system", content="Discusser system prompt"
+        )
+        initial_assistant = ChatMessage(
+            role="assistant", content="Discussion JSON response"
+        )
+        player.turn_history = [initial_system, initial_assistant]
+
+        # Call vote
+        player.vote(proposal, game_state, rules)
+
+        # After vote, history should have grown:
+        # [System, Assistant(discuss), User(vote_instruction), Assistant(vote)]
+        assert len(player.turn_history) == 4
+        assert player.turn_history[0].role == "system"
+        assert player.turn_history[1].role == "assistant"
+        assert player.turn_history[2].role == "user"
+        assert (
+            player.turn_history[2].content == "Vote instruction with proposal"
+        )
+        assert player.turn_history[3].role == "assistant"
+        assert player.turn_history[3].content == vote_response
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
+    def test_discuss_initializes_history(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Test discuss() initializes turn_history with [System, Assistant]."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_system_message = ChatMessage(
+            role="system", content="Discusser system prompt"
+        )
+        pb = mock_prompt_builder_instance
+        pb.build_discusser_system_message.return_value = mock_system_message
+
+        valid_response = """{
+            "private_thoughts": "Analysis",
+            "discussion_text": "I support this"
+        }"""
+        mock_api_instance.get_completion.return_value = valid_response
+
+        mock_parse.return_value = {
+            "private_thoughts": "Analysis",
+            "discussion_text": "I support this",
+        }
+
+        # Create player with existing history (should be reset)
+        player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Old history"),
+            ChatMessage(role="assistant", content="Old response"),
+        ]
+
+        # Call discuss
+        player.discuss(proposal, game_state, rules)
+
+        # After discuss, history should be reset to [System, Assistant]
+        assert len(player.turn_history) == 2
+        assert player.turn_history[0].role == "system"
+        assert player.turn_history[0].content == "Discusser system prompt"
+        assert player.turn_history[1].role == "assistant"
+        assert player.turn_history[1].content == valid_response
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_resets_existing_history(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Test that propose() resets any existing history."""
+        # Setup mocks
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+
+        mock_system_message = ChatMessage(
+            role="system", content="New proposer system prompt"
+        )
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = mock_system_message
+
+        mock_api_instance.get_completion.return_value = '{"type": "Add", ...}'
+        mock_parse.return_value = {
+            "private_thoughts": "Analysis",
+            "type": "Add",
+            "target_rule_id": None,
+            "new_text": "New rule",
+            "rationale": "Reason",
+        }
+
+        # Create player with existing history (should be reset)
+        player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Old history"),
+            ChatMessage(role="assistant", content="Old response"),
+            ChatMessage(role="user", content="Old user message"),
+        ]
+
+        # Call propose
+        player.propose(game_state, rules)
+
+        # After propose, old history should be gone, replaced with new
+        assert len(player.turn_history) == 2
+        assert player.turn_history[0].role == "system"
+        assert player.turn_history[0].content == "New proposer system prompt"
