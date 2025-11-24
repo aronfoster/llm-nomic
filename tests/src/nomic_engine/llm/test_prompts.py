@@ -245,40 +245,28 @@ class TestInstructionBlocks:
 
 
 class TestExistingConstants:
-    """Test that existing constants still exist (backward compatibility)."""
+    """Test that core constants still exist."""
 
     def test_json_format_enforcement_exists(self):
         """Test that JSON_FORMAT_ENFORCEMENT still exists."""
         assert hasattr(prompts, "JSON_FORMAT_ENFORCEMENT")
 
-    def test_vote_system_prompt_exists(self):
-        """Test that old VOTE_SYSTEM_PROMPT still exists."""
-        assert hasattr(prompts, "VOTE_SYSTEM_PROMPT")
 
-    def test_vote_user_template_exists(self):
-        """Test that old VOTE_USER_TEMPLATE still exists."""
-        assert hasattr(prompts, "VOTE_USER_TEMPLATE")
+class TestRetryTemplates:
+    """Test that retry templates exist (still in use by LLMPlayer)."""
 
-    def test_discuss_system_prompt_exists(self):
-        """Test that old DISCUSS_SYSTEM_PROMPT still exists."""
-        assert hasattr(prompts, "DISCUSS_SYSTEM_PROMPT")
+    def test_vote_retry_template_exists(self):
+        """Test that VOTE_RETRY_TEMPLATE exists."""
+        assert hasattr(prompts, "VOTE_RETRY_TEMPLATE")
 
-    def test_discuss_user_template_exists(self):
-        """Test that old DISCUSS_USER_TEMPLATE still exists."""
-        assert hasattr(prompts, "DISCUSS_USER_TEMPLATE")
+    def test_discuss_retry_template_exists(self):
+        """Test that DISCUSS_RETRY_TEMPLATE exists."""
+        assert hasattr(prompts, "DISCUSS_RETRY_TEMPLATE")
 
-    def test_propose_system_prompt_exists(self):
-        """Test that old PROPOSE_SYSTEM_PROMPT still exists."""
-        assert hasattr(prompts, "PROPOSE_SYSTEM_PROMPT")
+    def test_propose_retry_template_exists(self):
+        """Test that PROPOSE_RETRY_TEMPLATE exists."""
+        assert hasattr(prompts, "PROPOSE_RETRY_TEMPLATE")
 
-    def test_propose_user_template_exists(self):
-        """Test that old PROPOSE_USER_TEMPLATE still exists."""
-        assert hasattr(prompts, "PROPOSE_USER_TEMPLATE")
-
-    def test_revise_system_prompt_exists(self):
-        """Test that old REVISE_SYSTEM_PROMPT still exists."""
-        assert hasattr(prompts, "REVISE_SYSTEM_PROMPT")
-
-    def test_revise_user_template_exists(self):
-        """Test that old REVISE_USER_TEMPLATE still exists."""
-        assert hasattr(prompts, "REVISE_USER_TEMPLATE")
+    def test_revise_retry_template_exists(self):
+        """Test that REVISE_RETRY_TEMPLATE exists."""
+        assert hasattr(prompts, "REVISE_RETRY_TEMPLATE")
