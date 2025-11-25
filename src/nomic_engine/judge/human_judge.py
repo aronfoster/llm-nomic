@@ -9,6 +9,7 @@ from .base_judge import BaseJudge
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
+    from ..data_models import Discussion, Proposal, Vote
     from ..players.base_player import BasePlayer
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,13 @@ logger = logging.getLogger(__name__)
 class HumanJudge(BaseJudge):
     """Human-driven judge that prompts for decisions via stdin."""
 
-    def get_veto(self) -> bool:
+    def get_veto(
+        self,
+        game_manager: "GameManager",
+        proposal: "Proposal",
+        votes: list["Vote"],
+        discussions: list["Discussion"],
+    ) -> bool:
         """Prompt the human judge (Arbiter) for a veto decision."""
 
         judge_response = (
@@ -29,7 +36,12 @@ class HumanJudge(BaseJudge):
         return judge_vetoed
 
     def assess_scores(
-        self, game_manager: "GameManager", players: list["BasePlayer"]
+        self,
+        game_manager: "GameManager",
+        players: list["BasePlayer"],
+        proposal: "Proposal",
+        votes: list["Vote"],
+        discussions: list["Discussion"],
     ) -> None:
         """Prompt the Judge to assign point changes for each player."""
 

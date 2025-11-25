@@ -7,6 +7,7 @@ particularly for the vote action which requires strict JSON format.
 
 import json
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -355,6 +356,117 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
                 "TRANSMUTE proposals must not have 'new_text'. "
                 "Set new_text to null for TRANSMUTE proposals."
             )
+
+    return data
+
+
+def parse_judge_veto_response(response_text: str) -> dict[str, str | bool]:
+    """Parse and validate a veto decision from the Judge LLM."""
+
+    cleaned_text = _extract_json_string(response_text)
+
+    try:
+        data = json.loads(cleaned_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            "Response is not valid JSON for judge veto. "
+            f"Error: {e}. Expected keys: private_thoughts, veto, reason."
+        )
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            "Judge veto response must be a JSON object with keys: "
+            "private_thoughts, veto, reason."
+        )
+
+    required_keys = ["private_thoughts", "veto", "reason"]
+    missing = [key for key in required_keys if key not in data]
+    if missing:
+        raise ValueError(
+            "Missing required key(s) in judge veto response: "
+            f"{', '.join(missing)}."
+        )
+
+    if not isinstance(data["private_thoughts"], str):
+        raise ValueError("private_thoughts must be a string.")
+
+    if not isinstance(data["reason"], str):
+        raise ValueError("reason must be a string.")
+
+    veto_value = data["veto"]
+    if not isinstance(veto_value, bool):
+        raise ValueError("veto must be a boolean (true or false).")
+
+    return data
+
+
+def parse_judge_score_response(
+    response_text: str,
+    valid_players: list[str],
+) -> dict[str, Any]:
+    """Parse and validate score adjustments from the Judge LLM."""
+
+    cleaned_text = _extract_json_string(response_text)
+
+    try:
+        data = json.loads(cleaned_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            "Response is not valid JSON for judge scoring. "
+            f"Error: {e}. Expected keys: private_thoughts, score_adjustments."
+        )
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            "Judge score response must be a JSON object with keys: "
+            "private_thoughts, score_adjustments."
+        )
+
+    required_keys = ["private_thoughts", "score_adjustments"]
+    missing = [key for key in required_keys if key not in data]
+    if missing:
+        raise ValueError(
+            "Missing required key(s) in judge score response: "
+            f"{', '.join(missing)}."
+        )
+
+    if not isinstance(data["private_thoughts"], str):
+        raise ValueError("private_thoughts must be a string.")
+
+    adjustments = data["score_adjustments"]
+    if not isinstance(adjustments, list):
+        raise ValueError("score_adjustments must be a list.")
+
+    for idx, adj in enumerate(adjustments):
+        if not isinstance(adj, dict):
+            raise ValueError(
+                f"Adjustment #{idx + 1} must be an object with player, "
+                "delta, reason."
+            )
+
+        for key in ["player", "delta", "reason"]:
+            if key not in adj:
+                raise ValueError(
+                    f"Adjustment #{idx + 1} is missing required key: {key}."
+                )
+
+        if not isinstance(adj["player"], str):
+            raise ValueError(f"Adjustment #{idx + 1} player must be a string.")
+
+        if adj["player"] not in valid_players:
+            raise ValueError(
+                f"Adjustment #{idx + 1} references unknown player "
+                f"'{adj['player']}'. Valid players: "
+                f"{', '.join(valid_players)}."
+            )
+
+        if not isinstance(adj["delta"], int):
+            raise ValueError(
+                f"Adjustment #{idx + 1} delta must be an integer."
+            )
+
+        if not isinstance(adj["reason"], str):
+            raise ValueError(f"Adjustment #{idx + 1} reason must be a string.")
 
     return data
 

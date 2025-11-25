@@ -6,6 +6,8 @@ import pytest
 
 from src.nomic_engine.llm.parsers import (
     parse_discussion_response,
+    parse_judge_score_response,
+    parse_judge_veto_response,
     parse_proposal_response,
     parse_vote_response,
 )
@@ -117,6 +119,122 @@ class TestParseVoteResponse:
         assert "Missing required key" in error_msg
         # Should mention both missing keys
         assert "public_reason" in error_msg or "private_thoughts" in error_msg
+
+
+class TestParseJudgeVetoResponse:
+    """Tests for the parse_judge_veto_response function."""
+
+    def test_valid_veto_response(self):
+        """Parses a well-formed veto payload."""
+
+        response = (
+            '{\n  "private_thoughts": "Analysis",\n'
+            '  "veto": true,\n  "reason": "Illegal change"\n}'
+        )
+
+        result = parse_judge_veto_response(response)
+
+        assert result["veto"] is True
+        assert result["reason"] == "Illegal change"
+        assert result["private_thoughts"] == "Analysis"
+
+    @pytest.mark.parametrize(
+        "response, expected_message",
+        [
+            ("not-json", "not valid JSON"),
+            ("{}", "Missing required key"),
+            (
+                '{"private_thoughts": 1, "veto": false, "reason":"x"}',
+                "private_thoughts must be a string",
+            ),
+            (
+                '{"private_thoughts":"x", "veto": "nope",' ' "reason":"x"}',
+                "veto must be a boolean",
+            ),
+            (
+                '{"private_thoughts":"x", "veto": false, "reason": 3}',
+                "reason must be a string",
+            ),
+        ],
+    )
+    def test_invalid_veto_response(self, response: str, expected_message: str):
+        """Raises ValueError for malformed payloads."""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_veto_response(response)
+
+        assert expected_message in str(exc_info.value)
+
+
+class TestParseJudgeScoreResponse:
+    """Tests for the parse_judge_score_response function."""
+
+    def test_valid_score_response(self):
+        """Parses adjustments and preserves order."""
+
+        response = (
+            "{"
+            '"private_thoughts":"ok",'
+            '"score_adjustments":[{'
+            '"player":"Alice","delta":2,"reason":"Bonus"},'
+            '{"player":"Bob","delta":-1,"reason":"Penalty"}]}'
+        )
+
+        result = parse_judge_score_response(response, ["Alice", "Bob"])
+
+        assert result["private_thoughts"] == "ok"
+        assert result["score_adjustments"][0]["player"] == "Alice"
+        assert result["score_adjustments"][0]["delta"] == 2
+        assert result["score_adjustments"][1]["delta"] == -1
+
+    @pytest.mark.parametrize(
+        "response, expected_message",
+        [
+            ("not-json", "not valid JSON"),
+            ("{}", "Missing required key"),
+            (
+                '{"private_thoughts":1,"score_adjustments":[]}',
+                "private_thoughts must be a string",
+            ),
+            (
+                '{"private_thoughts":"x","score_adjustments":{}}',
+                "score_adjustments must be a list",
+            ),
+            (
+                '{"private_thoughts":"x","score_adjustments":[1]}',
+                "must be an object",
+            ),
+            (
+                '{"private_thoughts":"x","score_adjustments":[{"player":"Alice","reason":"r"}]}',
+                "missing required key",
+            ),
+            (
+                '{"private_thoughts":"x","score_adjustments":[{"player":5,"delta":1,"reason":"r"}]}',
+                "player must be a string",
+            ),
+            (
+                '{"private_thoughts":"x","score_adjustments":[{"player":"Zoe","delta":1,"reason":"r"}]}',
+                "unknown player",
+            ),
+            (
+                '{"private_thoughts":"x","score_adjustments":[{"player":"Alice","delta":"one","reason":"r"}]}',
+                "delta must be an integer",
+            ),
+            (
+                '{"private_thoughts":"x","score_adjustments":[{"player":"Alice","delta":1,"reason":2}]}',
+                "reason must be a string",
+            ),
+        ],
+    )
+    def test_invalid_score_response(
+        self, response: str, expected_message: str
+    ):
+        """Raises ValueError for malformed scoring payloads."""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_score_response(response, ["Alice", "Bob"])
+
+        assert expected_message in str(exc_info.value)
 
     def test_invalid_vote_value(self):
         """Test that invalid vote values raise ValueError."""

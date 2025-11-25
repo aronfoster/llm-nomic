@@ -49,6 +49,50 @@ OUTPUT REQUIREMENTS:
 """
 
 # -----------------------------------------------------------------
+# JUDGE PROMPTS
+# -----------------------------------------------------------------
+
+JUDGE_SYSTEM_PROMPT = (
+    "You are the impartial Judge of Nomic. You enforce legality, resolve "
+    "ambiguities, and award points exactly as written in the current "
+    "ruleset. Always respond concisely and follow the required JSON "
+    "schemas."
+)
+
+JUDGE_VETO_TEMPLATE = """Review the proposal outcome for legality.
+
+Decide whether the proposal should be vetoed because it violates an
+immutable rule, conflicts with existing rules, or creates a paradox.
+
+Respond with EXACTLY one JSON object with these keys IN THIS ORDER:
+1. "private_thoughts" (your reasoning for internal logging)
+2. "veto" (true if you veto, false if the outcome stands)
+3. "reason" (brief public explanation)
+
+{json_format_enforcement}
+"""
+
+JUDGE_SCORE_TEMPLATE = """Assign score changes for this move.
+
+Base your decision strictly on the current rules and the provided turn
+context (proposal, votes, and discussions). If no points should change,
+return an empty list for score_adjustments.
+
+Respond with EXACTLY one JSON object with these keys IN THIS ORDER:
+1. "private_thoughts" (concise reasoning for the log)
+2. "score_adjustments" (list of objects with keys: player, delta, reason)
+
+Examples:
+{{"private_thoughts": "No scoring rule applies.", "score_adjustments": []}}
+{{"private_thoughts": "Awarding proposer.", "score_adjustments": [
+  {{"player": "Alice", "delta": 2, "reason": "Rule 202 bonus"}},
+  {{"player": "Bob", "delta": -1, "reason": "Rule 204 penalty"}}
+]}}
+
+{json_format_enforcement}
+"""
+
+# -----------------------------------------------------------------
 # RETRY TEMPLATES (still in use by LLMPlayer)
 # -----------------------------------------------------------------
 

@@ -9,7 +9,14 @@ Sprint 6 refactor: Methods now return single ChatMessage objects instead of
 full message lists, enabling persistent conversation history per player.
 """
 
-from ..data_models import ChatMessage, Discussion, GameState, Proposal, Rule
+from ..data_models import (
+    ChatMessage,
+    Discussion,
+    GameState,
+    Proposal,
+    Rule,
+    Vote,
+)
 from . import prompts
 
 
@@ -429,4 +436,65 @@ class PromptBuilder:
             ]
         )
 
+        return ChatMessage(role="user", content=content)
+
+    def build_judge_context_message(
+        self,
+        rules: list[Rule],
+        game_state: GameState,
+        proposal: Proposal,
+        votes: list[Vote],
+        discussions: list[Discussion],
+    ) -> ChatMessage:
+        """Assemble the full turn context for the Judge."""
+
+        rules_block = prompts.RULES_BLOCK.format(
+            rules_text=self._format_rules(rules)
+        )
+        proposal_block = self._format_proposal(
+            proposal, rules, proposal.proposer_name
+        )
+        discussions_block = prompts.DISCUSSION_BLOCK.format(
+            discussions_text=self._format_discussions(discussions)
+        )
+
+        if votes:
+            vote_lines = []
+            for vote in votes:
+                reason = vote.reason or "No public reason provided."
+                vote_lines.append(
+                    f"- {vote.player_name}: {vote.vote} | Reason: {reason}"
+                )
+            votes_block = "\n".join(vote_lines)
+        else:
+            votes_block = "No votes recorded."
+
+        scores_block = self._format_scores(game_state.scores)
+
+        content = "\n\n".join(
+            [
+                rules_block,
+                proposal_block,
+                discussions_block,
+                f"=== VOTES ===\n{votes_block}",
+                f"=== SCORES ===\n{scores_block}",
+            ]
+        )
+
+        return ChatMessage(role="user", content=content)
+
+    def build_judge_veto_prompt(self) -> ChatMessage:
+        """Build the instructions for the Judge veto decision."""
+
+        content = prompts.JUDGE_VETO_TEMPLATE.format(
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT
+        )
+        return ChatMessage(role="user", content=content)
+
+    def build_judge_score_prompt(self) -> ChatMessage:
+        """Build the instructions for Judge score assessment."""
+
+        content = prompts.JUDGE_SCORE_TEMPLATE.format(
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT
+        )
         return ChatMessage(role="user", content=content)

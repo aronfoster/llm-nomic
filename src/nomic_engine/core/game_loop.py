@@ -607,7 +607,9 @@ class GameLoop:
         print("=" * 60)
 
         # Consult judge for veto
-        judge_vetoed = self.judge.get_veto()
+        judge_vetoed = self.judge.get_veto(
+            self.game_manager, proposal, votes, discussions
+        )
 
         # Communicate outcome before scoring
         if proposal_passed and not judge_vetoed:
@@ -626,7 +628,9 @@ class GameLoop:
         # Score assessment must happen before applying any rule changes
         # so that the judge evaluates the turn against the pre-modification
         # ruleset (Rule 205 compliance).
-        self.judge.assess_scores(self.game_manager, self.players)
+        self.judge.assess_scores(
+            self.game_manager, self.players, proposal, votes, discussions
+        )
 
         # Apply proposal if passed and not vetoed
         if proposal_passed and not judge_vetoed:
