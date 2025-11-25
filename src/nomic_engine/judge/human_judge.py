@@ -5,7 +5,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from .base_judge import BaseJudge
+from .base_judge import (
+    BaseJudge,
+    JudgeScoreResponse,
+    JudgeVetoResponse,
+    ScoreAdjustment,
+)
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
@@ -24,7 +29,7 @@ class HumanJudge(BaseJudge):
         proposal: "Proposal",
         votes: list["Vote"],
         discussions: list["Discussion"],
-    ) -> bool:
+    ) -> JudgeVetoResponse:
         """Prompt the human judge (Arbiter) for a veto decision."""
 
         judge_response = (
@@ -38,7 +43,11 @@ class HumanJudge(BaseJudge):
             proposal.proposal_id,
             "VETO" if judge_vetoed else "ALLOW",
         )
-        return judge_vetoed
+        return {
+            "veto": judge_vetoed,
+            "reason": "Manual decision by human judge.",
+            "private_thoughts": None,
+        }
 
     def assess_scores(
         self,
@@ -47,7 +56,7 @@ class HumanJudge(BaseJudge):
         proposal: "Proposal",
         votes: list["Vote"],
         discussions: list["Discussion"],
-    ) -> None:
+    ) -> JudgeScoreResponse:
         """Prompt the Judge to assign point changes for each player."""
 
         assert game_manager.game_state is not None
@@ -71,6 +80,8 @@ class HumanJudge(BaseJudge):
 
         print()
 
+        adjustments: list[ScoreAdjustment] = []
+
         for player in players:
             while True:
                 try:
@@ -89,3 +100,15 @@ class HumanJudge(BaseJudge):
                 player.player_name,
                 points_change,
             )
+            adjustments.append(
+                {
+                    "player": player.player_name,
+                    "delta": points_change,
+                    "reason": "Manual score entry by human judge.",
+                }
+            )
+
+        return {
+            "private_thoughts": None,
+            "score_adjustments": adjustments,
+        }

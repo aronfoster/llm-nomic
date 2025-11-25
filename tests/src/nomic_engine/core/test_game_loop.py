@@ -1040,11 +1040,30 @@ def test_format_transcript_includes_all_details(
         ),
     ]
 
+    judge_veto_response = {
+        "veto": False,
+        "reason": "No conflicts with rules.",
+        "private_thoughts": "I think this is within scope.",
+    }
+
+    judge_score_response = {
+        "private_thoughts": "No adjustments necessary.",
+        "score_adjustments": [
+            {
+                "player": "Alice",
+                "delta": 2,
+                "reason": "Strong proposal and engagement.",
+            }
+        ],
+    }
+
     transcript = game_loop._format_transcript(
         proposal=proposal,
         votes=votes,
         proposal_passed=False,
         judge_approved=True,
+        judge_veto_response=judge_veto_response,
+        judge_score_response=judge_score_response,
         discussions=discussions,
         rules=mock_rules,
     )
@@ -1088,6 +1107,14 @@ def test_format_transcript_includes_all_details(
     assert "FAILED" in transcript
     assert "Judge Approval:**" in transcript or "Judge Approval:" in transcript
 
+    # Verify judge responses are logged
+    assert "Judge Veto Response" in transcript
+    assert "No conflicts with rules." in transcript
+    assert "I think this is within scope." in transcript
+    assert "Judge Score Response" in transcript
+    assert "Strong proposal and engagement." in transcript
+    assert "+2" in transcript
+
 
 def test_format_transcript_shows_abstentions(
     game_loop: GameLoop, mock_rules: list[Rule]
@@ -1125,6 +1152,15 @@ def test_format_transcript_shows_abstentions(
         votes=votes,
         proposal_passed=True,
         judge_approved=True,
+        judge_veto_response={
+            "veto": False,
+            "reason": None,
+            "private_thoughts": None,
+        },
+        judge_score_response={
+            "private_thoughts": None,
+            "score_adjustments": [],
+        },
         discussions=discussions,
         rules=mock_rules,
     )

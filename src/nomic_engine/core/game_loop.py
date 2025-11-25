@@ -9,6 +9,7 @@ import logging
 
 from ..data_models import Discussion, Proposal, ProposalType, Rule, Vote
 from ..judge import BaseJudge
+from ..judge.base_judge import JudgeScoreResponse, JudgeVetoResponse
 from ..judge.human_judge import HumanJudge
 from ..players.base_player import BasePlayer
 from ..validation.validator import validate_proposal
@@ -523,6 +524,8 @@ class GameLoop:
         discussions: list[Discussion],
         proposal_passed: bool,
         judge_approved: bool,
+        judge_veto_response: JudgeVetoResponse,
+        judge_score_response: JudgeScoreResponse,
     ) -> None:
         """
         Log the turn transcript and save game state.
@@ -533,6 +536,8 @@ class GameLoop:
             discussions: List of Discussion objects from all players
             proposal_passed: Whether the vote passed
             judge_approved: Whether the judge approved (not vetoed)
+            judge_veto_response: Data describing the judge's veto decision
+            judge_score_response: Data describing the judge's score assessment
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
@@ -543,6 +548,8 @@ class GameLoop:
             votes,
             proposal_passed,
             judge_approved,
+            judge_veto_response,
+            judge_score_response,
             discussions,
             self.game_manager.rules_manager.rules,
         )
@@ -607,9 +614,10 @@ class GameLoop:
         print("=" * 60)
 
         # Consult judge for veto
-        judge_vetoed = self.judge.get_veto(
+        judge_veto_response = self.judge.get_veto(
             self.game_manager, proposal, votes, discussions
         )
+        judge_vetoed = judge_veto_response["veto"]
 
         # Communicate outcome before scoring
         if proposal_passed and not judge_vetoed:
@@ -628,7 +636,7 @@ class GameLoop:
         # Score assessment must happen before applying any rule changes
         # so that the judge evaluates the turn against the pre-modification
         # ruleset (Rule 205 compliance).
-        self.judge.assess_scores(
+        judge_score_response = self.judge.assess_scores(
             self.game_manager, self.players, proposal, votes, discussions
         )
 
@@ -642,7 +650,13 @@ class GameLoop:
         # Log transcript and save state
         judge_approved = proposal_passed and not judge_vetoed
         self._log_and_save_turn(
-            proposal, votes, discussions, proposal_passed, judge_approved
+            proposal,
+            votes,
+            discussions,
+            proposal_passed,
+            judge_approved,
+            judge_veto_response,
+            judge_score_response,
         )
 
     def _format_transcript(
@@ -651,6 +665,8 @@ class GameLoop:
         votes: list[Vote],
         proposal_passed: bool,
         judge_approved: bool,
+        judge_veto_response: JudgeVetoResponse,
+        judge_score_response: JudgeScoreResponse,
         discussions: list[Discussion],
         rules: list[Rule],
     ) -> str:
@@ -662,6 +678,8 @@ class GameLoop:
             votes: List of votes
             proposal_passed: Whether the vote passed
             judge_approved: Whether the judge approved
+            judge_veto_response: Details from the judge's veto decision
+            judge_score_response: Details from the judge's score assessment
             discussions: List of Discussion objects from all players
             rules: List of all current rules
 
@@ -732,6 +750,28 @@ class GameLoop:
         lines.append(
             f"**Judge Approval:** {'YES' if judge_approved else 'NO'}"
         )
+
+        lines.append("\n### Judge Veto Response")
+        is_veto = judge_veto_response["veto"]
+        judge_veto_decision = "VETO" if is_veto else "ALLOW"
+        lines.append(f"- **Decision:** {judge_veto_decision}")
+        if judge_veto_response.get("reason"):
+            lines.append(f"- **Reason:** {judge_veto_response['reason']}")
+        if judge_veto_response.get("private_thoughts"):
+            private_thoughts = judge_veto_response["private_thoughts"]
+            lines.append(f"  - Private Thoughts: {private_thoughts}")
+
+        lines.append("\n### Judge Score Response")
+        if judge_score_response.get("private_thoughts"):
+            judge_private = judge_score_response["private_thoughts"]
+            lines.append(f"- Private Thoughts: {judge_private}")
+        adjustments = judge_score_response.get("score_adjustments", [])
+        if adjustments:
+            for adj in adjustments:
+                adj_text = f"- **{adj['player']}:** {adj['delta']:+d}"
+                lines.append(f"{adj_text} ({adj['reason']})")
+        else:
+            lines.append("- No score adjustments this turn.")
 
         lines.append("\n### Scores")
         for player_name, score in self.game_manager.game_state.scores.items():
