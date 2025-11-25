@@ -117,6 +117,23 @@ Available LLM models:
 Choose a model by number: 2
 ```
 
+### Running a Turn
+
+After creating a game, run one turn at a time with:
+
+```bash
+python -m src.nomic_engine.main --game_dir games/<game-name>
+```
+
+The command will:
+
+1. Load the specified game directory
+2. Instantiate each configured player
+3. Walk through the proposal, discussion, vote, judge, and scoring steps
+4. Save the updated game state and transcript back into the same directory
+
+Logging is written to the console and to `game_log.jsonl` inside the game directory so you can review detailed turn data.
+
 ### Game Files
 
 After creation, each game directory contains:
