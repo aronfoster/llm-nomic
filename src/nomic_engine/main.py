@@ -17,7 +17,8 @@ from .constants import GAME_LOG_FILE
 from .core.game_loop import GameLoop
 from .core.game_manager import GameManager
 from .data_models import JudgeType, ModelLibrary
-from .judge.judge import Judge
+from .judge import BaseJudge
+from .judge.human_judge import HumanJudge
 from .players.base_player import BasePlayer
 from .players.human_player import HumanPlayer
 from .players.llm_player import LLMPlayer
@@ -110,7 +111,7 @@ def instantiate_players(
     return players
 
 
-def instantiate_judge(game_manager: GameManager) -> Judge:
+def instantiate_judge(game_manager: GameManager) -> BaseJudge:
     """Instantiate a Judge based on the game configuration."""
 
     if game_manager.game_config is None:
@@ -124,9 +125,9 @@ def instantiate_judge(game_manager: GameManager) -> Judge:
             raise ValueError(
                 "Game config is missing judge_model for LLM judge type"
             )
-        return Judge(judge_type, judge_model)
+        raise NotImplementedError("LLM judge is not yet implemented")
 
-    return Judge(JudgeType.HUMAN)
+    return HumanJudge()
 
 
 def main() -> None:

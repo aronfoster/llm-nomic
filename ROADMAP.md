@@ -47,16 +47,9 @@ Our architecture is built on these principles:
     * **Delivered:** Added `JudgeType` to `GameConfig`, captured judge type/model during game creation, and threaded the selected judge into `GameLoop` via `main.py`.
     * **Notes:** Game creation now validates judge input and stores the LLM model definition when applicable.
 
-* **Task 3: Refactor Judge Architecture (Strategy Pattern)**
-    * **Create `src/nomic_engine/judge/base_judge.py`**:
-        * Define abstract base class `BaseJudge`.
-        * Methods: `get_veto(...)`, `assess_scores(...)`.
-    * **Refactor `src/nomic_engine/judge/human_judge.py`**:
-        * Convert standalone functions into `HumanJudge(BaseJudge)` class.
-    * **Update `src/nomic_engine/core/game_loop.py`**:
-        * Accept `judge: BaseJudge` in `__init__`.
-        * Replace direct function calls with `self.judge.get_veto(...)` etc.
-    * **Additional Detail:** Ensure `BaseJudge` is type-hinted in `GameLoop`, exported via `src/nomic_engine/judge/__init__.py`, and constructed in `main.py` using the stored judge configuration so LLM/human implementations are interchangeable.
+* **Task 3: Refactor Judge Architecture (Strategy Pattern)** ✅
+    * **Delivered:** Added `BaseJudge` interface with veto and scoring hooks, refactored human judge logic into a `HumanJudge` strategy, and updated `GameLoop` to depend on the strategy abstraction.
+    * **Additional Detail:** Game instantiation now constructs the appropriate judge strategy from the stored configuration, preparing the engine for interchangeable human/LLM judges.
 
 * **Task 4: Implement `LLMJudge`**
     * **Create `src/nomic_engine/judge/llm_judge.py`**:
