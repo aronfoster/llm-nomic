@@ -5,7 +5,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from .base_judge import BaseJudge, JudgeScoreResponse, JudgeVetoResponse, ScoreAdjustment
+from .base_judge import (
+    BaseJudge,
+    JudgeScoreResponse,
+    JudgeVetoResponse,
+    ScoreAdjustment,
+)
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager

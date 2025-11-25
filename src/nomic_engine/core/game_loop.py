@@ -536,8 +536,8 @@ class GameLoop:
             discussions: List of Discussion objects from all players
             proposal_passed: Whether the vote passed
             judge_approved: Whether the judge approved (not vetoed)
-            judge_veto_response: Structured data from the judge's veto decision
-            judge_score_response: Structured data from the judge's score assessment
+            judge_veto_response: Data describing the judge's veto decision
+            judge_score_response: Data describing the judge's score assessment
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
@@ -752,27 +752,24 @@ class GameLoop:
         )
 
         lines.append("\n### Judge Veto Response")
-        lines.append(
-            f"- **Decision:** {'VETO' if judge_veto_response['veto'] else 'ALLOW'}"
-        )
+        is_veto = judge_veto_response["veto"]
+        judge_veto_decision = "VETO" if is_veto else "ALLOW"
+        lines.append(f"- **Decision:** {judge_veto_decision}")
         if judge_veto_response.get("reason"):
             lines.append(f"- **Reason:** {judge_veto_response['reason']}")
         if judge_veto_response.get("private_thoughts"):
-            lines.append(
-                f"  - Private Thoughts: {judge_veto_response['private_thoughts']}"
-            )
+            private_thoughts = judge_veto_response["private_thoughts"]
+            lines.append(f"  - Private Thoughts: {private_thoughts}")
 
         lines.append("\n### Judge Score Response")
         if judge_score_response.get("private_thoughts"):
-            lines.append(
-                f"- Private Thoughts: {judge_score_response['private_thoughts']}"
-            )
+            judge_private = judge_score_response["private_thoughts"]
+            lines.append(f"- Private Thoughts: {judge_private}")
         adjustments = judge_score_response.get("score_adjustments", [])
         if adjustments:
             for adj in adjustments:
-                lines.append(
-                    f"- **{adj['player']}:** {adj['delta']:+d} ({adj['reason']})"
-                )
+                adj_text = f"- **{adj['player']}:** {adj['delta']:+d}"
+                lines.append(f"{adj_text} ({adj['reason']})")
         else:
             lines.append("- No score adjustments this turn.")
 
