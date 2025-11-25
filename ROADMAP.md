@@ -19,7 +19,6 @@ Our architecture is built on these principles:
 
 ### Low Priority
 
-* ~~Overdue for an update to README.md with instructions to launch the game~~ (Completed: added "Running a Turn" instructions)
 * I don't like the logging format. Can we simplify or clarify it? Log level should deftinitely be vertically aligned. It's appearing as
 
   ```
@@ -54,12 +53,6 @@ Our architecture is built on these principles:
 * **Task 4: Implement `LLMJudge`** ✅
     * **Delivered:** Added `LLMJudge` strategy wired to the configured judge model, with strict JSON prompts for veto and scoring.
     * **Details:** Judge now uses the shared `PromptBuilder`/`ApiClient`, validates schema rigorously, and applies score adjustments to game state.
-
-* **Task 5: Implement Victory Conditions**
-    * **Update `BaseJudge`**: Add `check_victory(game_state, rules) -> str | None`.
-    * **Update `GameLoop`**: Call `check_victory` at the end of `_resolve_turn`.
-    * **Logic**: Judge reads Rule 208 (or current winning condition) and checks if any player meets it.
-    * **Additional Detail:** Persist victory announcements to `game_log.jsonl` and halt further turn processing when a winner is returned.
 
 ## Future Work
 
