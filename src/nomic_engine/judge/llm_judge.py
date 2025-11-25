@@ -12,7 +12,7 @@ from ..llm.parsers import (
     parse_judge_score_response,
     parse_judge_veto_response,
 )
-from .base_judge import BaseJudge
+from .base_judge import BaseJudge, JudgeScoreResponse, JudgeVetoResponse
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
@@ -76,7 +76,7 @@ class LLMJudge(BaseJudge):
         proposal: "Proposal",
         votes: list["Vote"],
         discussions: list["Discussion"],
-    ) -> bool:
+    ) -> JudgeVetoResponse:
         messages = self._build_messages(
             game_manager, proposal, votes, discussions
         )
@@ -104,7 +104,11 @@ class LLMJudge(BaseJudge):
             "VETO" if data["veto"] else "ALLOW",
             data["reason"],
         )
-        return bool(data["veto"])
+        return {
+            "veto": bool(data["veto"]),
+            "reason": data.get("reason"),
+            "private_thoughts": data.get("private_thoughts"),
+        }
 
     def assess_scores(
         self,
@@ -113,7 +117,7 @@ class LLMJudge(BaseJudge):
         proposal: "Proposal",
         votes: list["Vote"],
         discussions: list["Discussion"],
-    ) -> None:
+    ) -> JudgeScoreResponse:
         assert game_manager.game_state is not None
         _ = players
 
@@ -145,7 +149,10 @@ class LLMJudge(BaseJudge):
         adjustments = data.get("score_adjustments", [])
         if not adjustments:
             logger.info("LLM Judge applied no score changes this turn.")
-            return
+            return {
+                "private_thoughts": data.get("private_thoughts"),
+                "score_adjustments": [],
+            }
 
         for adj in adjustments:
             player_name = adj["player"]
@@ -158,3 +165,7 @@ class LLMJudge(BaseJudge):
                 delta,
                 reason,
             )
+        return {
+            "private_thoughts": data.get("private_thoughts"),
+            "score_adjustments": adjustments,
+        }

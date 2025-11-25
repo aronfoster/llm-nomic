@@ -64,7 +64,7 @@ def test_get_veto_returns_bool(mock_game_manager):
 
     decision = judge.get_veto(mock_game_manager, Mock(), [], [])
 
-    assert decision is True
+    assert decision["veto"] is True
     prompt_builder.build_judge_context_message.assert_called_once()
     api_client.get_completion.assert_called_once()
 

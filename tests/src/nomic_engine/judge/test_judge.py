@@ -134,7 +134,7 @@ def test_get_veto_returns_true_when_y(
         mock_game_manager, mock_proposal, mock_votes, mock_discussions
     )
 
-    assert result is True
+    assert result["veto"] is True
     mock_input.assert_called_once()
 
 
@@ -152,7 +152,7 @@ def test_get_veto_returns_true_when_uppercase_y(
         mock_game_manager, mock_proposal, mock_votes, mock_discussions
     )
 
-    assert result is True
+    assert result["veto"] is True
     mock_input.assert_called_once()
 
 
@@ -170,7 +170,7 @@ def test_get_veto_returns_false_when_n(
         mock_game_manager, mock_proposal, mock_votes, mock_discussions
     )
 
-    assert result is False
+    assert result["veto"] is False
     mock_input.assert_called_once()
 
 
@@ -188,7 +188,7 @@ def test_get_veto_returns_false_when_uppercase_n(
         mock_game_manager, mock_proposal, mock_votes, mock_discussions
     )
 
-    assert result is False
+    assert result["veto"] is False
     mock_input.assert_called_once()
 
 
@@ -206,7 +206,7 @@ def test_get_veto_returns_false_when_not_y(
         mock_game_manager, mock_proposal, mock_votes, mock_discussions
     )
 
-    assert result is False
+    assert result["veto"] is False
     mock_input.assert_called_once()
 
 
@@ -224,7 +224,7 @@ def test_get_veto_strips_whitespace(
         mock_game_manager, mock_proposal, mock_votes, mock_discussions
     )
 
-    assert result is True
+    assert result["veto"] is True
     mock_input.assert_called_once()
 
 
