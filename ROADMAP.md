@@ -19,7 +19,7 @@ Our architecture is built on these principles:
 
 ### Low Priority
 
-* Overdue for an update to README.md with instructions to launch the game
+* ~~Overdue for an update to README.md with instructions to launch the game~~ (Completed: added "Running a Turn" instructions)
 * I don't like the logging format. Can we simplify or clarify it? Log level should deftinitely be vertically aligned. It's appearing as
 
   ```
@@ -38,7 +38,7 @@ Our architecture is built on these principles:
 
 **Goal:** Replace the hardcoded `human_judge` functions with a flexible `Judge` interface. This allows for an "LLM Judge" that can autonomously arbitrate legality and calculate scores based on the rules *as they existed at the time of the vote*.
 
-* **Task 1: Fix Scoring Order (Rule 205 Compliance)**
+* **Task 1: Fix Scoring Order (Rule 205 Compliance)** ✅
     * **Bug:** Currently, `_resolve_turn` applies the proposal *before* calculating scores. This violates Rule 205 ("rule-change takes full effect at the moment of the completion of the vote").
     * **Fix:** Refactor `_resolve_turn` in `src/nomic_engine/core/game_loop.py` to call `judge.calculate_scores()` **before** calling `_apply_passed_proposal()`.
     * **Requirement:** The Judge must evaluate the turn using the *pre-modification* ruleset.
