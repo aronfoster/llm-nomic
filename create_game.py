@@ -29,6 +29,8 @@ from src.nomic_engine.constants import (
 from src.nomic_engine.data_models import (
     GameConfig,
     GameState,
+    JudgeType,
+    ModelDefinition,
     ModelLibrary,
     PlayerConfig,
     PlayerPersonality,
@@ -239,10 +241,64 @@ def configure_players(model_library: ModelLibrary) -> list[PlayerConfig]:
     return players
 
 
+def choose_judge_type() -> JudgeType:
+    """Prompt the user to choose between a human or LLM judge."""
+
+    judge_types = list(JudgeType)
+    print("\nSelect judge type:")
+    for idx, judge_type in enumerate(judge_types, start=1):
+        print(f"  {idx}. {judge_type.value}")
+
+    while True:
+        try:
+            choice = input("Choose judge type by number: ").strip()
+            choice_idx = int(choice) - 1
+            if 0 <= choice_idx < len(judge_types):
+                return judge_types[choice_idx]
+            print(f"Please enter a number between 1 and {len(judge_types)}")
+        except ValueError:
+            print("Please enter a valid number.")
+
+
+def get_model_definition(
+    model_library: ModelLibrary, model_id: str
+) -> ModelDefinition:
+    """Return the model definition matching the provided model id."""
+
+    for model in model_library.models:
+        if model.id == model_id:
+            return model
+
+    available = ", ".join(model.id for model in model_library.models)
+    raise ValueError(
+        f"Model ID '{model_id}' not found in model library. "
+        f"Available models: {available}"
+    )
+
+
+def configure_judge(
+    model_library: ModelLibrary,
+) -> tuple[JudgeType, ModelDefinition | None]:
+    """Prompt the user to configure the judge for the game."""
+
+    judge_type = choose_judge_type()
+
+    if judge_type == JudgeType.LLM:
+        model_id = choose_llm_model(model_library)
+        judge_model = get_model_definition(model_library, model_id)
+        print(f"Selected LLM judge using model: {model_id}")
+        return judge_type, judge_model
+
+    print("Selected human judge")
+    return judge_type, None
+
+
 def create_game_files(
     game_dir: Path,
     players: list[PlayerConfig],
     initial_rules: list,
+    judge_type: JudgeType,
+    judge_model: ModelDefinition | None,
 ) -> None:
     """
     Generate all required game files in the game directory.
@@ -251,6 +307,8 @@ def create_game_files(
         game_dir: Path to the game directory
         players: List of PlayerConfig objects
         initial_rules: List of Rule objects
+        judge_type: Whether the judge is human or LLM
+        judge_model: Model definition for the judge (if LLM)
     """
     # Create the game directory
     logger.info(f"Creating game directory: {game_dir}")
@@ -259,7 +317,9 @@ def create_game_files(
     # 1. Create config.yml
     config_path = game_dir / CONFIG_FILE
     logger.info(f"Creating {config_path}")
-    game_config = GameConfig(players=players)
+    game_config = GameConfig(
+        players=players, judge_type=judge_type, judge_model=judge_model
+    )
     with config_path.open("w", encoding="utf-8") as f:
         # Convert to dict and then to YAML (mode='json' serializes enums to values)
         config_dict = game_config.model_dump(mode="json")
@@ -312,11 +372,12 @@ def main() -> None:
 
     # Get game configuration from user
     game_name, game_dir = get_game_name()
+    judge_type, judge_model = configure_judge(model_library)
     players = configure_players(model_library)
 
     # Create all game files
     print("\nCreating game files...")
-    create_game_files(game_dir, players, initial_rules)
+    create_game_files(game_dir, players, initial_rules, judge_type, judge_model)
 
     # Success message
     print()

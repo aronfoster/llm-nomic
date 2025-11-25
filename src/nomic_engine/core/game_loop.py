@@ -7,8 +7,9 @@ calculating state changes, and interfacing with the Human Judge.
 
 import logging
 
-from ..data_models import Discussion, Proposal, ProposalType, Rule, Vote
+from ..data_models import Discussion, JudgeType, Proposal, ProposalType, Rule, Vote
 from ..judge.human_judge import get_scores_from_judge, get_veto
+from ..judge.judge import Judge
 from ..players.base_player import BasePlayer
 from ..validation.validator import validate_proposal
 from .game_manager import GameManager
@@ -29,7 +30,10 @@ class GameLoop:
     """
 
     def __init__(
-        self, game_manager: GameManager, players: list[BasePlayer]
+        self,
+        game_manager: GameManager,
+        players: list[BasePlayer],
+        judge: Judge | None = None,
     ) -> None:
         """
         Initialize the GameLoop.
@@ -37,6 +41,7 @@ class GameLoop:
         Args:
             game_manager: The GameManager instance for this game
             players: List of all instantiated player objects
+            judge: Optional judge configuration object
 
         Raises:
             ValueError: If game_manager is not properly loaded
@@ -55,6 +60,7 @@ class GameLoop:
 
         self.game_manager = game_manager
         self.players = players
+        self.judge = judge if judge is not None else Judge(JudgeType.HUMAN)
 
     def run_turn(self) -> None:
         """
