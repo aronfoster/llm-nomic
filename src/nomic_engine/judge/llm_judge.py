@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from ..data_models import ChatMessage, ModelDefinition
 from ..llm import ApiClient, PromptBuilder
@@ -104,10 +104,12 @@ class LLMJudge(BaseJudge):
             "VETO" if data["veto"] else "ALLOW",
             data["reason"],
         )
+        reason = cast(str | None, data.get("reason"))
+        private_thoughts = cast(str | None, data.get("private_thoughts"))
         return {
             "veto": bool(data["veto"]),
-            "reason": data.get("reason"),
-            "private_thoughts": data.get("private_thoughts"),
+            "reason": reason,
+            "private_thoughts": private_thoughts,
         }
 
     def assess_scores(
