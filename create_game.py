@@ -8,7 +8,6 @@ This script creates a new Nomic game instance by:
 3. Generating all required game files in a new directory under games/
 """
 
-import json
 import logging
 import re
 import sys
@@ -19,13 +18,14 @@ import yaml
 from src.nomic_engine.constants import (
     CONFIG_FILE,
     GAME_LOG_FILE,
-    GAMES_DIR,
     GAME_STATE_FILE,
     GAME_TRANSCRIPT_FILE,
+    GAMES_DIR,
     INITIAL_RULES_FILE,
     RULES_JSONL_FILE,
     RULES_MD_FILE,
 )
+from src.nomic_engine.core.rules_manager import RulesManager
 from src.nomic_engine.data_models import (
     GameConfig,
     GameState,
@@ -35,7 +35,6 @@ from src.nomic_engine.data_models import (
     PlayerConfig,
     PlayerPersonality,
 )
-from src.nomic_engine.core.rules_manager import RulesManager
 from src.nomic_engine.utils.loaders import load_model_library
 from src.nomic_engine.utils.parsers import parse_rules_md
 
@@ -160,7 +159,10 @@ def choose_llm_model(model_library: ModelLibrary) -> str:
             if 0 <= choice_idx < len(model_library.models):
                 return model_library.models[choice_idx].id
             else:
-                print(f"Please enter a number between 1 and {len(model_library.models)}")
+                print(
+                    "Please enter a number between 1 and "
+                    f"{len(model_library.models)}"
+                )
         except ValueError:
             print("Please enter a valid number.")
 
@@ -184,7 +186,10 @@ def choose_personality() -> PlayerPersonality:
             if 0 <= choice_idx < len(personalities):
                 return personalities[choice_idx]
             else:
-                print(f"Please enter a number between 1 and {len(personalities)}")
+                print(
+                    "Please enter a number between 1 and "
+                    f"{len(personalities)}"
+                )
         except ValueError:
             print("Please enter a valid number.")
 
@@ -213,7 +218,11 @@ def configure_players(model_library: ModelLibrary) -> list[PlayerConfig]:
                 continue
             # Check for duplicate names
             if any(p.name == name for p in players):
-                print(f"A player named '{name}' already exists. Please choose a different name.")
+                print(
+                    "A player named '"
+                    f"{name}"
+                    "' already exists. Please choose a different name."
+                )
                 continue
             break
 
@@ -232,9 +241,18 @@ def configure_players(model_library: ModelLibrary) -> list[PlayerConfig]:
             model_id = "human"
             personality = PlayerPersonality.FRIENDLY  # Default for human
 
-        players.append(PlayerConfig(name=name, model_id=model_id, personality=personality))
+        players.append(
+            PlayerConfig(
+                name=name,
+                model_id=model_id,
+                personality=personality,
+            )
+        )
         if player_type == "llm":
-            print(f"Added {name} as {player_type} player using {model_id} with {personality.value} personality")
+            print(
+                f"Added {name} as {player_type} player using "
+                f"{model_id} with {personality.value} personality"
+            )
         else:
             print(f"Added {name} as {player_type} player")
 
@@ -321,9 +339,14 @@ def create_game_files(
         players=players, judge_type=judge_type, judge_model=judge_model
     )
     with config_path.open("w", encoding="utf-8") as f:
-        # Convert to dict and then to YAML (mode='json' serializes enums to values)
+        # Convert to dict and then to YAML (mode='json' serializes enums)
         config_dict = game_config.model_dump(mode="json")
-        yaml.safe_dump(config_dict, f, default_flow_style=False, sort_keys=False)
+        yaml.safe_dump(
+            config_dict,
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+        )
 
     # 2. Create game_state.json
     state_path = game_dir / GAME_STATE_FILE
@@ -377,7 +400,13 @@ def main() -> None:
 
     # Create all game files
     print("\nCreating game files...")
-    create_game_files(game_dir, players, initial_rules, judge_type, judge_model)
+    create_game_files(
+        game_dir,
+        players,
+        initial_rules,
+        judge_type,
+        judge_model,
+    )
 
     # Success message
     print()

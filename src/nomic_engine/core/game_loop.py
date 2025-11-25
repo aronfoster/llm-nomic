@@ -7,7 +7,14 @@ calculating state changes, and interfacing with the Human Judge.
 
 import logging
 
-from ..data_models import Discussion, JudgeType, Proposal, ProposalType, Rule, Vote
+from ..data_models import (
+    Discussion,
+    JudgeType,
+    Proposal,
+    ProposalType,
+    Rule,
+    Vote,
+)
 from ..judge.human_judge import get_scores_from_judge, get_veto
 from ..judge.judge import Judge
 from ..players.base_player import BasePlayer
