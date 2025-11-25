@@ -7,16 +7,9 @@ calculating state changes, and interfacing with the Human Judge.
 
 import logging
 
-from ..data_models import (
-    Discussion,
-    JudgeType,
-    Proposal,
-    ProposalType,
-    Rule,
-    Vote,
-)
-from ..judge.human_judge import get_scores_from_judge, get_veto
-from ..judge.judge import Judge
+from ..data_models import Discussion, Proposal, ProposalType, Rule, Vote
+from ..judge import BaseJudge
+from ..judge.human_judge import HumanJudge
 from ..players.base_player import BasePlayer
 from ..validation.validator import validate_proposal
 from .game_manager import GameManager
@@ -40,7 +33,7 @@ class GameLoop:
         self,
         game_manager: GameManager,
         players: list[BasePlayer],
-        judge: Judge | None = None,
+        judge: BaseJudge | None = None,
     ) -> None:
         """
         Initialize the GameLoop.
@@ -67,7 +60,7 @@ class GameLoop:
 
         self.game_manager = game_manager
         self.players = players
-        self.judge = judge if judge is not None else Judge(JudgeType.HUMAN)
+        self.judge = judge if judge is not None else HumanJudge()
 
     def run_turn(self) -> None:
         """
@@ -614,7 +607,7 @@ class GameLoop:
         print("=" * 60)
 
         # Consult judge for veto
-        judge_vetoed = get_veto()
+        judge_vetoed = self.judge.get_veto()
 
         # Communicate outcome before scoring
         if proposal_passed and not judge_vetoed:
@@ -633,7 +626,7 @@ class GameLoop:
         # Score assessment must happen before applying any rule changes
         # so that the judge evaluates the turn against the pre-modification
         # ruleset (Rule 205 compliance).
-        get_scores_from_judge(self.game_manager, self.players)
+        self.judge.assess_scores(self.game_manager, self.players)
 
         # Apply proposal if passed and not vetoed
         if proposal_passed and not judge_vetoed:

@@ -10,7 +10,7 @@ import pytest
 
 from src.nomic_engine.core.game_manager import GameManager
 from src.nomic_engine.data_models import GameState, Rule, RuleStatus
-from src.nomic_engine.judge.human_judge import get_scores_from_judge, get_veto
+from src.nomic_engine.judge.human_judge import HumanJudge
 from src.nomic_engine.players.base_player import BasePlayer
 
 
@@ -81,7 +81,8 @@ def mock_players() -> list[Mock]:
 @patch("builtins.input", return_value="y")
 def test_get_veto_returns_true_when_y(mock_input: Mock) -> None:
     """Test get_veto returns True when judge responds 'y'."""
-    result = get_veto()
+    judge = HumanJudge()
+    result = judge.get_veto()
 
     assert result is True
     mock_input.assert_called_once()
@@ -90,7 +91,8 @@ def test_get_veto_returns_true_when_y(mock_input: Mock) -> None:
 @patch("builtins.input", return_value="Y")
 def test_get_veto_returns_true_when_uppercase_y(mock_input: Mock) -> None:
     """Test get_veto returns True when judge responds 'Y'."""
-    result = get_veto()
+    judge = HumanJudge()
+    result = judge.get_veto()
 
     assert result is True
     mock_input.assert_called_once()
@@ -99,7 +101,8 @@ def test_get_veto_returns_true_when_uppercase_y(mock_input: Mock) -> None:
 @patch("builtins.input", return_value="n")
 def test_get_veto_returns_false_when_n(mock_input: Mock) -> None:
     """Test get_veto returns False when judge responds 'n'."""
-    result = get_veto()
+    judge = HumanJudge()
+    result = judge.get_veto()
 
     assert result is False
     mock_input.assert_called_once()
@@ -108,7 +111,8 @@ def test_get_veto_returns_false_when_n(mock_input: Mock) -> None:
 @patch("builtins.input", return_value="N")
 def test_get_veto_returns_false_when_uppercase_n(mock_input: Mock) -> None:
     """Test get_veto returns False when judge responds 'N'."""
-    result = get_veto()
+    judge = HumanJudge()
+    result = judge.get_veto()
 
     assert result is False
     mock_input.assert_called_once()
@@ -117,7 +121,8 @@ def test_get_veto_returns_false_when_uppercase_n(mock_input: Mock) -> None:
 @patch("builtins.input", return_value="yes")
 def test_get_veto_returns_false_when_not_y(mock_input: Mock) -> None:
     """Test get_veto returns False for any response other than 'y'."""
-    result = get_veto()
+    judge = HumanJudge()
+    result = judge.get_veto()
 
     assert result is False
     mock_input.assert_called_once()
@@ -126,7 +131,8 @@ def test_get_veto_returns_false_when_not_y(mock_input: Mock) -> None:
 @patch("builtins.input", return_value="  y  ")
 def test_get_veto_strips_whitespace(mock_input: Mock) -> None:
     """Test get_veto strips whitespace from input."""
-    result = get_veto()
+    judge = HumanJudge()
+    result = judge.get_veto()
 
     assert result is True
     mock_input.assert_called_once()
@@ -143,7 +149,8 @@ def test_get_scores_from_judge_applies_score_changes(
     mock_game_state: GameState,
 ) -> None:
     """Test get_scores_from_judge applies score changes correctly."""
-    get_scores_from_judge(mock_game_manager, mock_players)
+    judge = HumanJudge()
+    judge.assess_scores(mock_game_manager, mock_players)
 
     # Verify scores were updated
     assert mock_game_state.scores["Alice"] == 10
@@ -162,7 +169,8 @@ def test_get_scores_from_judge_handles_zero_scores(
     mock_game_state: GameState,
 ) -> None:
     """Test get_scores_from_judge handles zero score changes."""
-    get_scores_from_judge(mock_game_manager, mock_players)
+    judge = HumanJudge()
+    judge.assess_scores(mock_game_manager, mock_players)
 
     # Verify scores remain unchanged (all zeros)
     assert mock_game_state.scores["Alice"] == 0
@@ -180,7 +188,8 @@ def test_get_scores_from_judge_retries_on_invalid_input(
     mock_game_state: GameState,
 ) -> None:
     """Test get_scores_from_judge retries on non-integer input."""
-    get_scores_from_judge(mock_game_manager, mock_players)
+    judge = HumanJudge()
+    judge.assess_scores(mock_game_manager, mock_players)
 
     # Verify scores were updated (first invalid input was retried)
     assert mock_game_state.scores["Alice"] == 10
@@ -199,7 +208,8 @@ def test_get_scores_from_judge_handles_negative_scores(
     mock_game_state: GameState,
 ) -> None:
     """Test get_scores_from_judge handles negative scores."""
-    get_scores_from_judge(mock_game_manager, mock_players)
+    judge = HumanJudge()
+    judge.assess_scores(mock_game_manager, mock_players)
 
     # Verify scores were updated with negative values
     assert mock_game_state.scores["Alice"] == -10
@@ -222,7 +232,8 @@ def test_get_scores_from_judge_accumulates_scores(
     mock_game_state.scores["Bob"] = -5
     mock_game_state.scores["Charlie"] = 0
 
-    get_scores_from_judge(mock_game_manager, mock_players)
+    judge = HumanJudge()
+    judge.assess_scores(mock_game_manager, mock_players)
 
     # Verify scores were accumulated (added to existing scores)
     assert mock_game_state.scores["Alice"] == 15  # 10 + 5
@@ -240,7 +251,8 @@ def test_get_scores_from_judge_handles_large_score_changes(
     mock_game_state: GameState,
 ) -> None:
     """Test get_scores_from_judge handles large score changes."""
-    get_scores_from_judge(mock_game_manager, mock_players)
+    judge = HumanJudge()
+    judge.assess_scores(mock_game_manager, mock_players)
 
     assert mock_game_state.scores["Alice"] == 100
     assert mock_game_state.scores["Bob"] == -50
