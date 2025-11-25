@@ -33,6 +33,11 @@ class HumanJudge(BaseJudge):
             .lower()
         )
         judge_vetoed = judge_response == "y"
+        logger.info(
+            "Human judge veto decision for proposal %s: %s",
+            proposal.proposal_id,
+            "VETO" if judge_vetoed else "ALLOW",
+        )
         return judge_vetoed
 
     def assess_scores(
@@ -79,6 +84,8 @@ class HumanJudge(BaseJudge):
                     continue
 
             game_manager.game_state.scores[player.player_name] += points_change
-            logger.debug(
-                f"Applied {points_change} points to {player.player_name}"
+            logger.info(
+                "Human judge adjusted %s by %+d points",
+                player.player_name,
+                points_change,
             )

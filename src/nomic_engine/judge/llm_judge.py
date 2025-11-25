@@ -34,6 +34,11 @@ class LLMJudge(BaseJudge):
         self.model_config = model_config
         self.prompt_builder = prompt_builder or PromptBuilder()
         self.api_client = api_client or ApiClient(model_config)
+        logger.info(
+            "Initialized LLMJudge with model %s (provider: %s)",
+            model_config.api_model_id,
+            model_config.provider,
+        )
 
     def _build_messages(
         self,
@@ -44,6 +49,14 @@ class LLMJudge(BaseJudge):
     ) -> list[ChatMessage]:
         assert game_manager.rules_manager is not None
         assert game_manager.game_state is not None
+
+        logger.debug(
+            "Building judge context for proposal %s with %d votes and %d "
+            "discussions",
+            proposal.proposal_id,
+            len(votes),
+            len(discussions),
+        )
 
         system_message = ChatMessage(
             role="system", content=llm_prompts.JUDGE_SYSTEM_PROMPT
@@ -69,9 +82,16 @@ class LLMJudge(BaseJudge):
         )
         messages.append(self.prompt_builder.build_judge_veto_prompt())
 
+        logger.debug(
+            "Requesting veto decision from model %s",
+            self.model_config.api_model_id,
+        )
+
         response_text = self.api_client.get_completion(messages)
         if response_text is None:
             raise RuntimeError("LLM judge failed to return a veto decision.")
+
+        logger.info("Raw LLM judge veto response:\n%s", response_text)
 
         try:
             data = parse_judge_veto_response(response_text)
@@ -102,9 +122,16 @@ class LLMJudge(BaseJudge):
         )
         messages.append(self.prompt_builder.build_judge_score_prompt())
 
+        logger.debug(
+            "Requesting score assessment from model %s",
+            self.model_config.api_model_id,
+        )
+
         response_text = self.api_client.get_completion(messages)
         if response_text is None:
             raise RuntimeError("LLM judge failed to return score changes.")
+
+        logger.info("Raw LLM judge score response:\n%s", response_text)
 
         try:
             data = parse_judge_score_response(
