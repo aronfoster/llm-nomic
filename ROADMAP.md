@@ -43,15 +43,9 @@ Our architecture is built on these principles:
     * **Fix:** Refactor `_resolve_turn` in `src/nomic_engine/core/game_loop.py` to call `judge.calculate_scores()` **before** calling `_apply_passed_proposal()`.
     * **Requirement:** The Judge must evaluate the turn using the *pre-modification* ruleset.
 
-* **Task 2: Implement Judge Configuration**
-    * **Update `src/nomic_engine/data_models.py`**:
-        * Add `JudgeType` Enum (`HUMAN`, `LLM`).
-        * Update `GameConfig` to include `judge_type` and `judge_model` (optional `ModelDefinition`).
-    * **Update `create_game.py`**:
-        * Prompt user to select Judge Type.
-        * If LLM, prompt to select a model from `models.yml`.
-    * **Update `main.py`**:
-        * Instantiate the correct Judge class based on config and pass it to `GameLoop`.
+* **Task 2: Implement Judge Configuration** ✅
+    * **Delivered:** Added `JudgeType` to `GameConfig`, captured judge type/model during game creation, and threaded the selected judge into `GameLoop` via `main.py`.
+    * **Notes:** Game creation now validates judge input and stores the LLM model definition when applicable.
 
 * **Task 3: Refactor Judge Architecture (Strategy Pattern)**
     * **Create `src/nomic_engine/judge/base_judge.py`**:
@@ -62,6 +56,7 @@ Our architecture is built on these principles:
     * **Update `src/nomic_engine/core/game_loop.py`**:
         * Accept `judge: BaseJudge` in `__init__`.
         * Replace direct function calls with `self.judge.get_veto(...)` etc.
+    * **Additional Detail:** Ensure `BaseJudge` is type-hinted in `GameLoop`, exported via `src/nomic_engine/judge/__init__.py`, and constructed in `main.py` using the stored judge configuration so LLM/human implementations are interchangeable.
 
 * **Task 4: Implement `LLMJudge`**
     * **Create `src/nomic_engine/judge/llm_judge.py`**:
@@ -74,11 +69,13 @@ Our architecture is built on these principles:
     * **Logic**:
         * Use `ApiClient` to send the full turn context (Rules + Proposal + Votes + Transcript).
         * Parse structured JSON output for score adjustments and veto decisions.
+    * **Additional Detail:** Read judge model definition from `GameConfig.judge_model`, and ensure output schema validation with helpful error messages when the LLM response is malformed.
 
 * **Task 5: Implement Victory Conditions**
     * **Update `BaseJudge`**: Add `check_victory(game_state, rules) -> str | None`.
     * **Update `GameLoop`**: Call `check_victory` at the end of `_resolve_turn`.
     * **Logic**: Judge reads Rule 208 (or current winning condition) and checks if any player meets it.
+    * **Additional Detail:** Persist victory announcements to `game_log.jsonl` and halt further turn processing when a winner is returned.
 
 ## Future Work
 
@@ -96,6 +93,7 @@ This is the long-term backlog and TODO scratchpad.
     * Add a `target_score` to `GameState`.
     * Add a check for this score in the game loop.
     * Create a "change flags" step for the Judge to update `target_score` or other `GameState` flags (e.g., "unanimous vote" vs. "majority vote").
+    * Document how victory settings interact with `judge_type` (e.g., human judges can override, LLM judges must follow rule text) and ensure this is reflected in config templates.
 
 * **Game State & Rules:**
     * Rename `game_log.jsonl` to `game_history.jsonl` to avoid confusion with console logging.
