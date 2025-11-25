@@ -6,6 +6,8 @@ Core Pydantic models to enforce data types and structure for:
 - Internal data (Proposal, Vote)
 """
 
+from __future__ import annotations
+
 from enum import Enum
 from typing import Dict, List, Literal, Optional
 
@@ -37,6 +39,13 @@ class PlayerPersonality(str, Enum):
     FRIENDLY = "friendly"
     NONE = "none"
     # Add others here later (e.g. CHAOTIC)
+
+
+class JudgeType(str, Enum):
+    """Enum for judge selection."""
+
+    HUMAN = "human"
+    LLM = "llm"
 
 
 # --- Rule Data Model (for rules.jsonl) ---
@@ -79,6 +88,16 @@ class GameConfig(BaseModel):
 
     players: List[PlayerConfig] = Field(
         ..., description="A list of player configurations."
+    )
+    judge_type: JudgeType = Field(
+        default=JudgeType.HUMAN, description="Who will act as the judge."
+    )
+    judge_model: Optional[ModelDefinition] = Field(
+        default=None,
+        description=(
+            "LLM model definition to use when the judge is model-powered. "
+            "Required if judge_type is 'llm'."
+        ),
     )
 
 

@@ -16,7 +16,8 @@ from pythonjsonlogger.json import JsonFormatter
 from .constants import GAME_LOG_FILE
 from .core.game_loop import GameLoop
 from .core.game_manager import GameManager
-from .data_models import ModelLibrary
+from .data_models import JudgeType, ModelLibrary
+from .judge.judge import Judge
 from .players.base_player import BasePlayer
 from .players.human_player import HumanPlayer
 from .players.llm_player import LLMPlayer
@@ -109,6 +110,25 @@ def instantiate_players(
     return players
 
 
+def instantiate_judge(game_manager: GameManager) -> Judge:
+    """Instantiate a Judge based on the game configuration."""
+
+    if game_manager.game_config is None:
+        raise ValueError("GameManager must have game_config loaded")
+
+    judge_type = game_manager.game_config.judge_type
+    judge_model = game_manager.game_config.judge_model
+
+    if judge_type == JudgeType.LLM:
+        if judge_model is None:
+            raise ValueError(
+                "Game config is missing judge_model for LLM judge type"
+            )
+        return Judge(judge_type, judge_model)
+
+    return Judge(JudgeType.HUMAN)
+
+
 def main() -> None:
     """
     Main entrypoint for the Nomic game engine.
@@ -166,6 +186,13 @@ def main() -> None:
         logger.error(f"Error instantiating players: {e}")
         sys.exit(1)
 
+    # Instantiate judge
+    try:
+        judge = instantiate_judge(manager)
+    except ValueError as e:
+        logger.error(f"Error instantiating judge: {e}")
+        sys.exit(1)
+
     # Validate that we have at least one player
     if len(players) < 1:
         logger.error("No players configured.")
@@ -175,7 +202,7 @@ def main() -> None:
 
     # Initialize game loop
     try:
-        game_loop = GameLoop(manager, players)
+        game_loop = GameLoop(manager, players, judge)
     except ValueError as e:
         logger.error(f"Error initializing game loop: {e}")
         sys.exit(1)
