@@ -3,5 +3,6 @@
 from .base_judge import BaseJudge
 from .human_judge import HumanJudge
 from .judge import Judge
+from .llm_judge import LLMJudge
 
-__all__ = ["BaseJudge", "HumanJudge", "Judge"]
+__all__ = ["BaseJudge", "HumanJudge", "Judge", "LLMJudge"]

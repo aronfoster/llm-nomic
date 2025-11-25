@@ -51,18 +51,9 @@ Our architecture is built on these principles:
     * **Delivered:** Added `BaseJudge` interface with veto and scoring hooks, refactored human judge logic into a `HumanJudge` strategy, and updated `GameLoop` to depend on the strategy abstraction.
     * **Additional Detail:** Game instantiation now constructs the appropriate judge strategy from the stored configuration, preparing the engine for interchangeable human/LLM judges.
 
-* **Task 4: Implement `LLMJudge`**
-    * **Create `src/nomic_engine/judge/llm_judge.py`**:
-        * Implement `LLMJudge(BaseJudge)`.
-        * Inject `ApiClient` and `PromptBuilder` (reuse or extend existing ones).
-    * **New Prompts**:
-        * `JUDGE_SYSTEM_PROMPT`: "You are the impartial Judge of Nomic..."
-        * `JUDGE_SCORE_TEMPLATE`: "Review the transcript and these rules. Calculate score changes..."
-        * `JUDGE_VETO_TEMPLATE`: "Review this proposal result. Does it violate any immutable rules or create a paradox?"
-    * **Logic**:
-        * Use `ApiClient` to send the full turn context (Rules + Proposal + Votes + Transcript).
-        * Parse structured JSON output for score adjustments and veto decisions.
-    * **Additional Detail:** Read judge model definition from `GameConfig.judge_model`, and ensure output schema validation with helpful error messages when the LLM response is malformed.
+* **Task 4: Implement `LLMJudge`** ✅
+    * **Delivered:** Added `LLMJudge` strategy wired to the configured judge model, with strict JSON prompts for veto and scoring.
+    * **Details:** Judge now uses the shared `PromptBuilder`/`ApiClient`, validates schema rigorously, and applies score adjustments to game state.
 
 * **Task 5: Implement Victory Conditions**
     * **Update `BaseJudge`**: Add `check_victory(game_state, rules) -> str | None`.

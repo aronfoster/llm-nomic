@@ -18,6 +18,7 @@ from src.nomic_engine.data_models import (
     ProposalType,
     Rule,
     RuleStatus,
+    Vote,
 )
 from src.nomic_engine.llm.prompt_builder import PromptBuilder
 
@@ -75,6 +76,11 @@ class TestPromptBuilder(unittest.TestCase):
             ),
         ]
 
+        self.votes = [
+            Vote(player_name="Alice", vote="YES", reason="Great rule"),
+            Vote(player_name="Charlie", vote="NO", reason="Too strong"),
+        ]
+
     # =========================================================================
     # Tests for helper methods
     # =========================================================================
@@ -117,6 +123,50 @@ class TestPromptBuilder(unittest.TestCase):
         # Verify the format includes player names and messages
         self.assertIn("**Alice:** I think this is a good idea.", result)
         self.assertIn("**Charlie:** I'm not sure about this change.", result)
+
+    # =========================================================================
+    # Judge prompt helpers
+    # =========================================================================
+
+    def test_build_judge_context_message_includes_sections(self):
+        """Judge context message should include rules, votes, and scores."""
+
+        message = self.builder.build_judge_context_message(
+            rules=self.rules,
+            game_state=self.game_state,
+            proposal=self.proposal,
+            votes=self.votes,
+            discussions=self.discussions,
+        )
+
+        self.assertEqual(message.role, "user")
+        self.assertIn("=== ALL CURRENT RULES ===", message.content)
+        self.assertIn("=== DISCUSSIONS ===", message.content)
+        self.assertIn("=== VOTES ===", message.content)
+        self.assertIn("=== SCORES ===", message.content)
+        self.assertIn("Alice: YES", message.content)
+        self.assertIn("Charlie: NO", message.content)
+
+    def test_build_judge_veto_prompt_enforces_json(self):
+        """Veto prompt should include format enforcement instructions."""
+
+        message = self.builder.build_judge_veto_prompt()
+
+        self.assertEqual(message.role, "user")
+        self.assertIn(
+            "Review the proposal outcome for legality", message.content
+        )
+        self.assertIn("OUTPUT REQUIREMENTS", message.content)
+
+    def test_build_judge_score_prompt_enforces_json(self):
+        """Score prompt should include examples and JSON enforcement."""
+
+        message = self.builder.build_judge_score_prompt()
+
+        self.assertEqual(message.role, "user")
+        self.assertIn("Assign score changes for this move", message.content)
+        self.assertIn("score_adjustments", message.content)
+        self.assertIn("OUTPUT REQUIREMENTS", message.content)
 
     def test_format_discussions_empty(self):
         """Test that _format_discussions handles empty discussion lists."""
