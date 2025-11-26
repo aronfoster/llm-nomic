@@ -33,6 +33,8 @@ Focus on connecting a cheap, smart cloud model (Grok) and closing the game loop 
 
 **Goal:** Enable players to use Grok via the existing `ApiClient` abstraction.
 
+**Status:** Completed – ApiClient now initializes Grok models with the xAI endpoint and documented configuration.
+
 **Tasks:**
 - Update `src/nomic_engine/llm/api_clients.py` to support `provider: "xai"`.
 - Initialize an OpenAI-compatible client with:
