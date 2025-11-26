@@ -336,7 +336,9 @@ def create_game_files(
     config_path = game_dir / CONFIG_FILE
     logger.info(f"Creating {config_path}")
     game_config = GameConfig(
-        players=players, judge_type=judge_type, judge_model=judge_model
+        players=players,
+        judge_type=judge_type,
+        judge_model=judge_model,
     )
     with config_path.open("w", encoding="utf-8") as f:
         # Convert to dict and then to YAML (mode='json' serializes enums)
@@ -353,6 +355,7 @@ def create_game_files(
     logger.info(f"Creating {state_path}")
     game_state = GameState(
         scores={player.name: 0 for player in players},
+        target_score=game_config.target_score,
         turn_order=[player.name for player in players],
         current_player_name=players[0].name,
         move_number=1,

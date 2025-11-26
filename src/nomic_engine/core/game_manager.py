@@ -82,6 +82,8 @@ class GameManager:
             logger.debug(f"Loading game state from {self.game_state_path}")
             with self.game_state_path.open("r", encoding="utf-8") as f:
                 state_data = json.load(f)
+            if "target_score" not in state_data:
+                state_data["target_score"] = self.game_config.target_score
             self.game_state = GameState(**state_data)
             logger.info(
                 f"Loaded game state at move #{self.game_state.move_number}"

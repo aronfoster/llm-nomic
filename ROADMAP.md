@@ -59,6 +59,8 @@ Focus on connecting a cheap, smart cloud model (Grok) and closing the game loop 
 
 **Goal:** Turn the engine from an infinite turn simulator into a game that can end.
 
+**Status:** Completed – target score is configurable and the game stops when reached.
+
 **Tasks:**
 - Add a `target_score` field to `GameState` (default 100, overridable via config).
 - Implement a `check_victory` step in `src/nomic_engine/core/game_loop.py` that runs after turn resolution.

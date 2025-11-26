@@ -212,9 +212,13 @@ def main() -> None:
     # Run single turn
     try:
         logger.info("Starting turn execution")
-        game_loop.run_turn()
-        print("\n Turn complete. State saved.")
-        logger.info("Turn completed successfully")
+        game_over = game_loop.run_turn()
+        if game_over:
+            print("\n Game complete. Victory condition reached.")
+            logger.info("Game ended due to target score.")
+        else:
+            print("\n Turn complete. State saved.")
+            logger.info("Turn completed successfully")
     except KeyboardInterrupt:
         print("\n\nGame interrupted.")
         logger.info("Game interrupted by user")

@@ -165,6 +165,24 @@ After creation, each game directory contains:
 - `game_log.jsonl` - Game event log
 - `game_transcript.md` - Human-readable game transcript
 
+### Victory Condition
+
+Games now end automatically when a player reaches the `target_score`.
+
+- `target_score` defaults to `100` and is stored in both `config.yml` and
+  `game_state.json`.
+- You can customize it by editing `config.yml` before starting the game:
+
+  ```yaml
+  target_score: 150
+  players:
+    - name: "Alice"
+      model_id: "gpt-4o-mini"
+  ```
+
+When any player's score meets or exceeds `target_score`, the engine logs a
+"GAME OVER" event and halts further turns.
+
 ## Development Workflow
 
 Before committing code, always run:

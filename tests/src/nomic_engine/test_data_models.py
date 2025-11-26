@@ -125,6 +125,17 @@ def test_game_config_creation():
     )
     assert len(config.players) == 2
     assert config.players[0].name == "Alice"
+    assert config.target_score == 100
+
+
+def test_game_config_custom_target_score():
+    """Test that GameConfig allows overriding the target score."""
+    config = GameConfig(
+        players=[PlayerConfig(name="Alice", model_id="gpt-4o")],
+        target_score=50,
+    )
+
+    assert config.target_score == 50
 
 
 def test_game_state_creation():
@@ -140,6 +151,21 @@ def test_game_state_creation():
     assert state.move_number == 1
     assert len(state.scores) == 2
     assert state.next_proposal_id == 301
+    assert state.target_score == 100
+
+
+def test_game_state_custom_target_score():
+    """Test that GameState can store a non-default target score."""
+    state = GameState(
+        scores={"Alice": 0, "Bob": 0},
+        current_player_name="Alice",
+        move_number=1,
+        turn_order=["Alice", "Bob"],
+        next_proposal_id=301,
+        target_score=42,
+    )
+
+    assert state.target_score == 42
 
 
 def test_proposal_creation():
