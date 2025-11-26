@@ -14,6 +14,8 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
+* Judge on lower quality models isn't scoring appropriately. Improve prompt to show vote totals in addition to vote/discussion. Reduce rule list to only those with 'point' or 'score' in them.
+* Lower quality LLM players are interpreting turn order as rank in the game. Maybe add some smart text to say "It's a 3-way tie" or "You are in last place by 8 points" or some other set of plain -language descriptions of the score situation since LLMs don't do great at math.
 * pylance is giving type errors in vs code that aren't caught by `make ci`
 * Shouldn't need "discussion" from the proposer in addition to the proposal justification/discussion
 * Judges should not assess failed proposals since their veto won't change anything.
@@ -111,7 +113,7 @@ Focus on connecting a cheap, smart cloud model (Grok) and closing the game loop 
 This is the long-term backlog and TODO scratchpad.
   * **Implement Full `LLMPlayer`:**
     * Expand `api_clients.py` to handle cloud providers (Grok, Anthropic) and their respective API keys.
-    * Implement advanced token-saving strategies
+    * Implement advanced token-saving strategies, especially context caching
     * Implement async behavior
     * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
     * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
