@@ -6,7 +6,7 @@ This document tracks the high-level plan for the `llm-nomic` project.
 
 Our architecture is built on these principles:
 
-1.  **Security First:** API keys are loaded *only* from environment variables.
+1.  **Security, Structure First:** Having secure code 
 2.  **Engine vs. Instance:** The Game Engine is stateless and operates on "Game Instance" directories.
 3.  **Authoritative Data:** The Game Instance is the sole authority on game state. `rules.jsonl` and `game_state.json` are the sources of truth.
 
@@ -33,7 +33,8 @@ This is the long-term backlog and TODO scratchpad.
     * Implement async behavior
     * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
     * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
-    * need to handle "revision -> withdraw" logic to have them come up with a new proposal
+    * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
+    * Need to handle "revision -> withdraw" logic to have them come up with a new proposal
     * Explore https://openrouter.ai/ support for tokens/models
 
 * **Implement Victory Check and Game Flags:**
@@ -49,3 +50,4 @@ This is the long-term backlog and TODO scratchpad.
 
 * **Tooling & Features:**
     * Build a `build_site.py` script to convert the game history into a shareable HTML file.
+    * Need to shift to a dynamic turn structure where if rules change the turn steps (e.g an additional round of discussion after voting) it can be supported. Might need to ask the judge to define the steps and provide some guidance to the players.
