@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 def load_initial_rules() -> list:
     """
-    Load the initial ruleset from Nomic_Initial_Ruleset.md.
+    Load the initial ruleset from Nomic_Initial_Ruleset_v0.md.
 
     Returns:
         List of Rule objects

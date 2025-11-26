@@ -158,15 +158,15 @@ This ensures your code passes all quality checks (linting, type checking, and te
 ```
 llm-nomic/
 ├── src/                        # Source code
-│   └── nomic_engine/          # Core game engine
+│   └── nomic_engine/           # Core game engine
 ├── tests/                      # Test files
 ├── games/                      # Game instances (created by create_game.py)
-├── create_game.py             # Interactive game creation script
-├── models.yml                 # Available LLM model definitions
-├── Nomic_Initial_Ruleset.md   # Initial game rules
-├── requirements.txt           # Python dependencies
-├── Makefile                   # Development commands
-└── .env                       # API keys (not in git)
+├── create_game.py              # Interactive game creation script
+├── models.yml                  # Available LLM model definitions
+├── Nomic_Initial_Ruleset_v0.md # Initial game rules
+├── requirements.txt            # Python dependencies
+├── Makefile                    # Development commands
+└── .env                        # API keys (not in git)
 ```
 
 ## Getting Help
