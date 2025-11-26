@@ -16,9 +16,9 @@ from src.nomic_engine.utils.parsers import parse_rules_md
 
 
 def test_parse_nomic_initial_ruleset():
-    """Test that Nomic_Initial_Ruleset.md is parsed correctly."""
+    """Test that Nomic_Initial_Ruleset_v0.md is parsed correctly."""
     # Parse the actual initial ruleset file
-    rules = parse_rules_md("Nomic_Initial_Ruleset.md")
+    rules = parse_rules_md("Nomic_Initial_Ruleset_v0.md")
 
     # Validate we got the expected number of rules
     # There are 17 immutable rules (101-117) and 16 mutable rules (201-216)
