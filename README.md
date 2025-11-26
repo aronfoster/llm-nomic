@@ -134,6 +134,27 @@ The command will:
 
 Logging is written to the console and to `game_log.jsonl` inside the game directory so you can review detailed turn data.
 
+### Using Grok (xAI) Models
+
+Grok models are OpenAI-compatible and can be configured like any other player model. To enable them:
+
+1. Export your API key (or add it to a `.env` file loaded in your shell):
+
+   ```bash
+   export XAI_API_KEY="<your-xai-api-key>"
+   ```
+
+2. Reference one of the Grok entries in `models.yml` (e.g., `grok-4-1-fast-reasoning`) from your `config.yml` player block:
+
+   ```yaml
+   players:
+     - name: "Grok Strategist"
+      model_id: "grok-4-1-fast-reasoning"
+       personality: "friendly"
+   ```
+
+The engine will automatically route Grok requests to `https://api.x.ai/v1` using the `XAI_API_KEY` environment variable.
+
 ### Game Files
 
 After creation, each game directory contains:

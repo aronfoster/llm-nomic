@@ -34,8 +34,8 @@ def test_api_client_local_provider():
 
 
 def test_api_client_cloud_providers_raise_error():
-    """Test that cloud providers raise NotImplementedError."""
-    cloud_providers = ["openai", "xai", "anthropic", "google"]
+    """Test that unsupported cloud providers raise NotImplementedError."""
+    cloud_providers = ["openai", "anthropic", "google"]
 
     for provider in cloud_providers:
         mock_model_def = ModelDefinition(
@@ -51,6 +51,44 @@ def test_api_client_cloud_providers_raise_error():
         assert f"Provider {provider} not yet implemented" in str(
             exc_info.value
         )
+
+
+def test_api_client_xai_provider(monkeypatch):
+    """Test ApiClient initializes correctly for xai provider."""
+    monkeypatch.setenv("XAI_API_KEY", "secret-key")
+
+    mock_model_def = ModelDefinition(
+        id="grok-4-1-fast-reasoning",
+        provider="xai",
+        api_model_id="grok-4-1-fast-reasoning",
+        env_key_name="XAI_API_KEY",
+    )
+
+    with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
+        api_client = ApiClient(mock_model_def)
+
+        mock_openai.assert_called_once_with(
+            base_url="https://api.x.ai/v1", api_key="secret-key"
+        )
+        assert api_client.model_id_for_api == "grok-4-1-fast-reasoning"
+        assert api_client.model_config == mock_model_def
+
+
+def test_api_client_xai_provider_missing_key(monkeypatch):
+    """Test xai provider raises ValueError when API key is missing."""
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+
+    mock_model_def = ModelDefinition(
+        id="grok-4-1-fast-reasoning",
+        provider="xai",
+        api_model_id="grok-4-1-fast-reasoning",
+        env_key_name="XAI_API_KEY",
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        ApiClient(mock_model_def)
+
+    assert "API key for provider xai not found" in str(exc_info.value)
 
 
 def test_api_client_unknown_provider_raises_error():
@@ -112,6 +150,39 @@ def test_get_completion_success():
 
         # Assert the result is correct
         assert result == "This is a test response"
+
+
+def test_get_completion_success_xai(monkeypatch):
+    """Test successful completion uses the API model ID for xai provider."""
+    monkeypatch.setenv("XAI_API_KEY", "secret-key")
+
+    mock_model_def = ModelDefinition(
+        id="grok-friendly",
+        provider="xai",
+        api_model_id="grok-4-1-fast-reasoning",
+        env_key_name="XAI_API_KEY",
+    )
+
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "Grok says hello"
+
+    with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        api_client = ApiClient(mock_model_def)
+
+        result = api_client.get_completion(
+            [ChatMessage(role="user", content="Hello!")]
+        )
+
+        mock_client.chat.completions.create.assert_called_once_with(
+            model="grok-4-1-fast-reasoning",
+            messages=[{"role": "user", "content": "Hello!"}],
+        )
+        assert result == "Grok says hello"
 
 
 def test_get_completion_failure():
