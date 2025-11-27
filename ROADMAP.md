@@ -28,12 +28,15 @@ Our architecture is built on these principles:
 
 **Architecture:** The Judge acts as the "Compiler," interpreting the rule text after every passed proposal and synchronizing the `GameState` to match.
 
-### 1. Data Model Extensions
+### 1. Data Model Extensions ✅
 * **Task:** Update `GameState` in `src/nomic_engine/data_models.py`.
+* **Status:** COMPLETED
 * **Changes:**
-  * Add `flags: Dict[str, Any]` (default: `{"vote_mode": "unanimous"}`).
-  * Ensure `target_score` is editable via the Judge interface.
-  * Add `StateUpdates` TypedDict to handle batched updates.
+  * ✅ Added `VoteMode` enum with `UNANIMOUS` and `MAJORITY` values
+  * ✅ Added `flags: Dict[str, Any]` field with default `{"vote_mode": "unanimous"}`
+  * ✅ Confirmed `target_score` is present and allows `None`
+  * ✅ Added `StateUpdates` TypedDict to `src/nomic_engine/judge/base_judge.py`
+  * ✅ Added comprehensive unit tests in `tests/src/nomic_engine/test_data_models.py`
 
 ### 2. Engine: Dynamic Logic
 * **Task:** Refactor `GameLoop` logic to respect flags.

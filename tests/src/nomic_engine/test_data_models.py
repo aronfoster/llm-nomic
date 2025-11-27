@@ -17,6 +17,7 @@ from src.nomic_engine.data_models import (
     Rule,
     Vote,
 )
+from src.nomic_engine.judge.base_judge import StateUpdates
 
 
 def test_rule_creation():
@@ -308,3 +309,65 @@ def test_chat_message_creation():
         role="assistant", content="How can I help you?"
     )
     assert assistant_msg.role == "assistant"
+
+
+def test_game_state_default_flags():
+    """Test that GameState initializes with default flags."""
+    state = GameState(
+        scores={"Alice": 0, "Bob": 0},
+        current_player_name="Alice",
+        move_number=1,
+        turn_order=["Alice", "Bob"],
+        next_proposal_id=301,
+    )
+    assert state.flags == {"vote_mode": "unanimous"}
+
+
+def test_game_state_custom_flags():
+    """Test that GameState accepts custom flags during initialization."""
+    custom_flags = {"vote_mode": "majority", "custom_setting": "value"}
+    state = GameState(
+        scores={"Alice": 0, "Bob": 0},
+        current_player_name="Alice",
+        move_number=1,
+        turn_order=["Alice", "Bob"],
+        next_proposal_id=301,
+        flags=custom_flags,
+    )
+    assert state.flags == custom_flags
+    assert state.flags["vote_mode"] == "majority"
+    assert state.flags["custom_setting"] == "value"
+
+
+def test_state_updates_with_flags_only():
+    """Test that StateUpdates can be instantiated with just flags."""
+    updates: StateUpdates = {"flags": {"vote_mode": "majority"}}
+    assert "flags" in updates
+    assert updates["flags"]["vote_mode"] == "majority"
+    assert "target_score" not in updates
+
+
+def test_state_updates_with_target_score_only():
+    """Test that StateUpdates can be instantiated with just target_score."""
+    updates: StateUpdates = {"target_score": 100}
+    assert "target_score" in updates
+    assert updates["target_score"] == 100
+    assert "flags" not in updates
+
+
+def test_state_updates_with_both():
+    """Test that StateUpdates can be instantiated with both fields."""
+    updates: StateUpdates = {
+        "flags": {"vote_mode": "unanimous"},
+        "target_score": 50,
+    }
+    assert "flags" in updates
+    assert "target_score" in updates
+    assert updates["flags"]["vote_mode"] == "unanimous"
+    assert updates["target_score"] == 50
+
+
+def test_state_updates_empty():
+    """Test that StateUpdates can be empty (total=False)."""
+    updates: StateUpdates = {}
+    assert len(updates) == 0

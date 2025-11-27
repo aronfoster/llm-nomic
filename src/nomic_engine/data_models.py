@@ -9,7 +9,7 @@ Core Pydantic models to enforce data types and structure for:
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -46,6 +46,13 @@ class JudgeType(str, Enum):
 
     HUMAN = "human"
     LLM = "llm"
+
+
+class VoteMode(str, Enum):
+    """Enum for voting mode settings."""
+
+    UNANIMOUS = "unanimous"
+    MAJORITY = "majority"
 
 
 # --- Rule Data Model (for rules.jsonl) ---
@@ -119,6 +126,10 @@ class GameState(BaseModel):
     )
     target_score: Optional[int] = Field(
         default=None, description="Score required to win the game."
+    )
+    flags: Dict[str, Any] = Field(
+        default_factory=lambda: {"vote_mode": "unanimous"},
+        description="Rules-driven engine toggles.",
     )
     current_player_name: str = Field(
         ..., description="The name of the player whose turn it is."
