@@ -22,101 +22,20 @@ Our architecture is built on these principles:
 
 * None
 
-## Sprint 8: Grok & Game Loop
+## Epic: Game Flags & Dynamic Rules
 
-### Theme
-Focus on connecting a cheap, smart cloud model (Grok) and closing the game loop so games can actually finish.
-
----
-
-### ~P0 – Feat: xAI (Grok) Client Integration~ COMPLETED
-
-**Goal:** Enable players to use Grok via the existing `ApiClient` abstraction.
-
-**Status:** Completed – ApiClient now initializes Grok models with the xAI endpoint and documented configuration.
-
-**Tasks:**
-- Update `src/nomic_engine/llm/api_clients.py` to support `provider: "xai"`.
-- Initialize an OpenAI-compatible client with:
-  - `api_key` from the configured env var (e.g., `XAI_API_KEY`, via `model_config.env_key_name`).
-  - `base_url="https://api.x.ai/v1"`.
-- Ensure `get_completion`:
-  - Uses the correct model ID from `models.yml`.
-  - Sends/receives messages in the standard internal format.
-- Add or update documentation/config examples to show a Grok-based player configuration.
-
-**Acceptance Criteria:**
-- Initializing `ApiClient` with a Grok model no longer raises `NotImplementedError`.
-- A game run with a Grok-backed player completes at least one turn successfully.
-- Basic error handling/logging is present when the Grok call fails.
-- Unit tests cover all new code.
-
----
-
-### ~P1 – Feat: Victory Check (Rule 208 – First to 100 Points)~ COMPLETED
-
-**Goal:** Turn the engine from an infinite turn simulator into a game that can end.
-
-**Status:** Completed – target score is configurable and the game stops when reached.
-
-**Tasks:**
-- Add an optional `target_score` field to `GameState` (prompted during game creation).
-- Implement a `check_victory` step in `src/nomic_engine/core/game_loop.py` that runs after turn resolution.
-- When a player’s score `>= target_score`:
-  - Record a “GAME OVER” event in the log/history.
-  - Stop the main loop (or return a status indicating the game is over).
-- Document how `target_score` is configured (and its default suggestion) in the config/template docs.
-
-**Acceptance Criteria:**
-- A game with a player reaching `target_score` stops automatically.
-- The winner and end condition are clearly visible in logs/history.
-- Existing tests still pass; new tests cover at least one “win” scenario.
-
----
-
-### ~P2 – Bug: Fix Judge Logic on Failed Votes~ COMPLETED
-
-**Goal:** Avoid unnecessary judge work and clarify game semantics.
-
-**Status:** Completed – Judge veto is now only consulted when proposals pass.
-
-**Tasks:**
-- In `src/nomic_engine/core/game_loop.py` (e.g., `_resolve_turn`):
-  - Compute whether the proposal passed or failed based on player votes.
-  - Only call `self.judge.get_veto()` when the proposal has passed.
-  - If the proposal failed by vote, skip the veto step entirely.
-- Update or add tests to cover:
-  - Proposal failing by votes (judge is not consulted).
-  - Proposal passing by votes (judge is consulted and can veto).
-
-**Acceptance Criteria:**
-- Games where the proposal fails by vote do not call into the judge veto logic.
-- Tests assert correct behavior for both passed and failed proposals.
-
----
-
-### ~P3 – Bug: Remove Duplicate Discussion Requirement~ COMPLETED
-
-**Goal:** Simplify the proposal UX by avoiding redundant "discussion" fields.
-
-**Status:** Completed – Proposer's rationale now serves as their discussion contribution.
-
-**Tasks:**
-- Identify where proposals currently require both "discussion" and "justification/discussion".
-- Update schema, prompts, and any validation logic so only a single discussion/justification field is required.
-- Adjust any CLI/LLM prompts and docs to reflect the simplified structure.
-
-**Acceptance Criteria:**
-- Proposal creation only requires one discussion/justification field.
-- No validation errors or prompts refer to a second, redundant "discussion".
-- Tests and docs match the new behavior.
-
-**Implementation:**
-- Modified `_collect_discussions` in `game_loop.py` to skip prompting the proposer.
-- Auto-create Discussion object for proposer using their proposal rationale.
-- Updated all tests to verify proposer is not double-prompted.
-- All 332 tests pass.
-
+  * **[Feat] Data Model: Game Flags**
+      * Update `GameState` to include a `flags` dictionary.
+      * Initialize with default `{"vote_mode": "unanimous"}`.
+  * **[Feat] Engine: Dynamic Vote Tallying**
+      * Refactor `_tally_votes` in `GameLoop` to check `game_state.flags["vote_mode"]`.
+      * Implement logic for "majority" vs "unanimous".
+  * **[Feat] Judge: State Maintenance Interface**
+      * Add `maintain_state` method to BaseJudge, HumanJudge, and LLMJudge.
+      * **Human:** Simple CLI prompt to view/edit flags and target score.
+      * **LLM:** New prompt template asking it to synchronize flags with the provided Rules text.
+  * **[Feat] Loop: Integration**
+      * Call `judge.maintain_state()` in `_resolve_turn` immediately after `_apply_passed_proposal`.
 
 ## Future Work
 
