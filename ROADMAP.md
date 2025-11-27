@@ -62,12 +62,12 @@ Focus on connecting a cheap, smart cloud model (Grok) and closing the game loop 
 **Status:** Completed – target score is configurable and the game stops when reached.
 
 **Tasks:**
-- Add a `target_score` field to `GameState` (default 100, overridable via config).
+- Add an optional `target_score` field to `GameState` (prompted during game creation).
 - Implement a `check_victory` step in `src/nomic_engine/core/game_loop.py` that runs after turn resolution.
 - When a player’s score `>= target_score`:
   - Record a “GAME OVER” event in the log/history.
   - Stop the main loop (or return a status indicating the game is over).
-- Document how `target_score` is configured (and its default) in the config/template docs.
+- Document how `target_score` is configured (and its default suggestion) in the config/template docs.
 
 **Acceptance Criteria:**
 - A game with a player reaching `target_score` stops automatically.

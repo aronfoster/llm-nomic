@@ -574,6 +574,9 @@ class GameLoop:
         assert self.game_manager.game_state is not None
 
         target_score = self.game_manager.game_state.target_score
+        if target_score is None:
+            return False, [], 0
+
         scores = self.game_manager.game_state.scores
         winners = [
             name for name, score in scores.items() if score >= target_score

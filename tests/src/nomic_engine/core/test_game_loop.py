@@ -623,6 +623,49 @@ def test_step_5_resolve_triggers_game_over(
     assert payload["final_scores"]["Alice"] == 104
 
 
+def test_step_5_resolve_skips_game_over_without_target(
+    mock_game_manager: Mock,
+    mock_players: list[Mock],
+    mock_game_state: GameState,
+) -> None:
+    """Ensure no victory is detected when target_score is absent."""
+
+    mock_game_state.scores = {"Alice": 200, "Bob": 150, "Charlie": 120}
+    mock_game_state.target_score = None
+
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
+    ]
+
+    judge = Mock()
+    judge.get_veto.return_value = {
+        "veto": False,
+        "reason": None,
+        "private_thoughts": None,
+    }
+    judge.assess_scores.return_value = {
+        "private_thoughts": None,
+        "score_adjustments": [],
+    }
+
+    game_loop = GameLoop(mock_game_manager, mock_players, judge)
+
+    game_over = game_loop._resolve_turn(proposal, votes, [])
+
+    assert game_over is False
+    mock_game_manager.logger.log_event.assert_not_called()
+
+
 @patch("builtins.input", side_effect=["y", "0", "0", "0"])
 def test_step_5_resolve_judge_veto(
     mock_input: Mock,

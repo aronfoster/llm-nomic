@@ -89,10 +89,11 @@ class GameConfig(BaseModel):
     players: List[PlayerConfig] = Field(
         ..., description="A list of player configurations."
     )
-    target_score: int = Field(
-        default=100,
+    target_score: Optional[int] = Field(
+        default=None,
         description=(
-            "Score required to win the game. Can be overridden in config.yml."
+            "Score required to win the game. When omitted, the game has no "
+            "automatic end condition."
         ),
     )
     judge_type: JudgeType = Field(
@@ -116,8 +117,8 @@ class GameState(BaseModel):
     scores: Dict[str, int] = Field(
         ..., description="Mapping of player name to current score."
     )
-    target_score: int = Field(
-        default=100, description="Score required to win the game."
+    target_score: Optional[int] = Field(
+        default=None, description="Score required to win the game."
     )
     current_player_name: str = Field(
         ..., description="The name of the player whose turn it is."

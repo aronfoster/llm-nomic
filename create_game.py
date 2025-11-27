@@ -138,6 +138,28 @@ def get_player_count() -> int:
             print("Please enter a valid number.")
 
 
+def get_target_score(default: int = 100) -> int | None:
+    """Prompt the user for a target score or allow skipping."""
+
+    while True:
+        raw_value = input(f"Target score? [Default: {default}] ").strip()
+
+        if raw_value == "":
+            return default
+
+        if raw_value.lower() in {"none", "no", "skip"}:
+            return None
+
+        try:
+            value = int(raw_value)
+            if value <= 0:
+                print("Target score must be greater than 0 or 'none' to disable.")
+                continue
+            return value
+        except ValueError:
+            print("Please enter a whole number, or 'none' to disable.")
+
+
 def choose_llm_model(model_library: ModelLibrary) -> str:
     """
     Display available LLM models and let the user choose one.
@@ -317,6 +339,7 @@ def create_game_files(
     initial_rules: list,
     judge_type: JudgeType,
     judge_model: ModelDefinition | None,
+    target_score: int | None,
 ) -> None:
     """
     Generate all required game files in the game directory.
@@ -339,6 +362,7 @@ def create_game_files(
         players=players,
         judge_type=judge_type,
         judge_model=judge_model,
+        target_score=target_score,
     )
     with config_path.open("w", encoding="utf-8") as f:
         # Convert to dict and then to YAML (mode='json' serializes enums)
@@ -400,6 +424,7 @@ def main() -> None:
     game_name, game_dir = get_game_name()
     judge_type, judge_model = configure_judge(model_library)
     players = configure_players(model_library)
+    target_score = get_target_score()
 
     # Create all game files
     print("\nCreating game files...")
@@ -409,6 +434,7 @@ def main() -> None:
         initial_rules,
         judge_type,
         judge_model,
+        target_score,
     )
 
     # Success message

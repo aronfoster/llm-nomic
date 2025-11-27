@@ -125,7 +125,7 @@ def test_game_config_creation():
     )
     assert len(config.players) == 2
     assert config.players[0].name == "Alice"
-    assert config.target_score == 100
+    assert config.target_score is None
 
 
 def test_game_config_custom_target_score():
@@ -151,7 +151,7 @@ def test_game_state_creation():
     assert state.move_number == 1
     assert len(state.scores) == 2
     assert state.next_proposal_id == 301
-    assert state.target_score == 100
+    assert state.target_score is None
 
 
 def test_game_state_custom_target_score():
