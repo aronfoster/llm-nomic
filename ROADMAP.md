@@ -17,7 +17,6 @@ Our architecture is built on these principles:
 * Judge on lower quality models isn't scoring appropriately. Improve prompt to show vote totals in addition to vote/discussion. Reduce rule list to only those with 'point' or 'score' in them.
 * Lower quality LLM players are interpreting turn order as rank in the game. Maybe add some smart text to say "It's a 3-way tie" or "You are in last place by 8 points" or some other set of plain -language descriptions of the score situation since LLMs don't do great at math.
 * pylance is giving type errors in vs code that aren't caught by `make ci`
-* Shouldn't need "discussion" from the proposer in addition to the proposal justification/discussion
 
 ### Low Priority
 
@@ -96,19 +95,27 @@ Focus on connecting a cheap, smart cloud model (Grok) and closing the game loop 
 
 ---
 
-### P3 – Bug: Remove Duplicate Discussion Requirement
+### ~P3 – Bug: Remove Duplicate Discussion Requirement~ COMPLETED
 
-**Goal:** Simplify the proposal UX by avoiding redundant “discussion” fields.
+**Goal:** Simplify the proposal UX by avoiding redundant "discussion" fields.
+
+**Status:** Completed – Proposer's rationale now serves as their discussion contribution.
 
 **Tasks:**
-- Identify where proposals currently require both “discussion” and “justification/discussion”.
+- Identify where proposals currently require both "discussion" and "justification/discussion".
 - Update schema, prompts, and any validation logic so only a single discussion/justification field is required.
 - Adjust any CLI/LLM prompts and docs to reflect the simplified structure.
 
 **Acceptance Criteria:**
 - Proposal creation only requires one discussion/justification field.
-- No validation errors or prompts refer to a second, redundant “discussion”.
+- No validation errors or prompts refer to a second, redundant "discussion".
 - Tests and docs match the new behavior.
+
+**Implementation:**
+- Modified `_collect_discussions` in `game_loop.py` to skip prompting the proposer.
+- Auto-create Discussion object for proposer using their proposal rationale.
+- Updated all tests to verify proposer is not double-prompted.
+- All 332 tests pass.
 
 
 ## Future Work
