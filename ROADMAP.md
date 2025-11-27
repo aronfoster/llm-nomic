@@ -31,7 +31,7 @@ Focus on connecting a cheap, smart cloud model (Grok) and closing the game loop 
 
 ---
 
-### P0 – Feat: xAI (Grok) Client Integration
+### ~P0 – Feat: xAI (Grok) Client Integration~ COMPLETED
 
 **Goal:** Enable players to use Grok via the existing `ApiClient` abstraction.
 
@@ -55,7 +55,7 @@ Focus on connecting a cheap, smart cloud model (Grok) and closing the game loop 
 
 ---
 
-### P1 – Feat: Victory Check (Rule 208 – First to 100 Points)
+### ~P1 – Feat: Victory Check (Rule 208 – First to 100 Points)~ COMPLETED
 
 **Goal:** Turn the engine from an infinite turn simulator into a game that can end.
 
@@ -137,3 +137,19 @@ This is the long-term backlog and TODO scratchpad.
 * **Tooling & Features:**
     * Build a `build_site.py` script to convert the game history into a shareable HTML file.
     * Need to shift to a dynamic turn structure where if rules change the turn steps (e.g an additional round of discussion after voting) it can be supported. Might need to ask the judge to define the steps and provide some guidance to the players.
+
+* **Structured Metadata for Victory Rules**
+    * The current game creation flow sets `target_score` manually, which works well for now.  
+    * In a future iteration, the ruleset should become the authoritative source for victory conditions by allowing **structured metadata** inside `rules.jsonl`.
+    * Enable rules (e.g., Rule 208) to embed machine-readable metadata that defines the game’s victory condition.
+
+    **Example (proposed format):**
+    ```jsonl
+    {"id": 208,
+     "title": "Victory",
+     "text": "The winner is the first player to reach 100 points.",
+     "metadata": {
+       "victory_condition": "points",
+       "target_score": 100
+     }}
+
