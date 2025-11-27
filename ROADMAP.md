@@ -24,18 +24,33 @@ Our architecture is built on these principles:
 
 ## Epic: Game Flags & Dynamic Rules
 
-  * **[Feat] Data Model: Game Flags**
-      * Update `GameState` to include a `flags` dictionary.
-      * Initialize with default `{"vote_mode": "unanimous"}`.
-  * **[Feat] Engine: Dynamic Vote Tallying**
-      * Refactor `_tally_votes` in `GameLoop` to check `game_state.flags["vote_mode"]`.
-      * Implement logic for "majority" vs "unanimous".
-  * **[Feat] Judge: State Maintenance Interface**
-      * Add `maintain_state` method to BaseJudge, HumanJudge, and LLMJudge.
-      * **Human:** Simple CLI prompt to view/edit flags and target score.
-      * **LLM:** New prompt template asking it to synchronize flags with the provided Rules text.
-  * **[Feat] Loop: Integration**
-      * Call `judge.maintain_state()` in `_resolve_turn` immediately after `_apply_passed_proposal`.
+**Goal:** Allow rules to alter engine behavior (voting thresholds, victory scores) via Judge interpretation rather than code changes.
+
+**Architecture:** The Judge acts as the "Compiler," interpreting the rule text after every passed proposal and synchronizing the `GameState` to match.
+
+### 1. Data Model Extensions
+* **Task:** Update `GameState` in `src/nomic_engine/data_models.py`.
+* **Changes:**
+  * Add `flags: Dict[str, Any]` (default: `{"vote_mode": "unanimous"}`).
+  * Ensure `target_score` is editable via the Judge interface.
+  * Add `StateUpdates` TypedDict to handle batched updates.
+
+### 2. Engine: Dynamic Logic
+* **Task:** Refactor `GameLoop` logic to respect flags.
+* **Files:** `src/nomic_engine/core/game_loop.py`
+* **Logic:**
+  * `_tally_votes`: Switch between 100% (unanimous) and >50% (majority) based on `flags["vote_mode"]`.
+  * `_detect_victory`: Ensure it uses the current `target_score` from state.
+
+### 3. Judge: State Maintenance Interface
+* **Task:** Add `maintain_state(rules, game_state) -> StateUpdates` to `BaseJudge`.
+* **Trigger:** Call this in `GameLoop._resolve_turn` immediately after a proposal is applied.
+* **Implementations:**
+  * **HumanJudge:** Interactive CLI loop reviewing Flags and Target Score.
+  * **LLMJudge:** New prompt: *"Review the new rules. Return JSON updating 'flags' or 'target_score' ONLY if they conflict with the text."*
+
+### 4. Conflict Resolution
+* **Strategy:** Rely on the Judge to apply Rule 211 (numerical precedence) when deciding which flag value to enforce.
 
 ## Future Work
 
