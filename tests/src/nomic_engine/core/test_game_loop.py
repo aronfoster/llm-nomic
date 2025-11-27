@@ -285,29 +285,43 @@ def test_step_1_propose_rejects_mismatched_proposer_name(
 def test_step_2_discuss_collects_all_responses(
     game_loop: GameLoop, mock_players: list[Mock]
 ) -> None:
-    """Test _collect_discussions collects discussions from all players."""
+    """Test _collect_discussions collects discussions from all players.
+
+    The proposer's rationale serves as their discussion, so they are not
+    prompted again. Only N-1 players (excluding the proposer) are prompted.
+    """
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
         type=ProposalType.ADD,
         proposal_id="301",
         new_text="Test rule.",
+        rationale="This is a good idea.",
     )
 
     all_players = mock_players  # Alice, Bob, and Charlie
 
     discussions = game_loop._collect_discussions(proposal, all_players)
 
+    # All 3 players should have discussions (including the proposer)
     assert len(discussions) == 3
+
+    # Alice's discussion should come from her proposal rationale
     assert discussions[0].player_name == "Alice"
-    assert discussions[0].text == "Alice's discussion"
+    assert discussions[0].text == "This is a good idea."
+
+    # Bob and Charlie's discussions should come from their discuss() calls
     assert discussions[1].player_name == "Bob"
     assert discussions[1].text == "Bob's discussion"
     assert discussions[2].player_name == "Charlie"
     assert discussions[2].text == "Charlie's discussion"
 
-    for player in all_players:
-        player.discuss.assert_called_once()
+    # CRITICAL: Alice (the proposer) should NOT be prompted for discussion
+    mock_players[0].discuss.assert_not_called()
+
+    # But Bob and Charlie should be prompted
+    mock_players[1].discuss.assert_called_once()
+    mock_players[2].discuss.assert_called_once()
 
 
 def test_step_2_discuss_includes_abstentions(
@@ -320,6 +334,7 @@ def test_step_2_discuss_includes_abstentions(
         type=ProposalType.ADD,
         proposal_id="301",
         new_text="Test rule.",
+        rationale="",  # Alice provided no rationale
     )
 
     # Bob abstains (returns Discussion with empty text)
@@ -333,15 +348,27 @@ def test_step_2_discuss_includes_abstentions(
 
     discussions = game_loop._collect_discussions(proposal, all_players)
 
-    # All 3 players should be collected, including abstention
+    # All 3 players should be collected, including abstentions
     assert len(discussions) == 3
+
+    # Alice's discussion should be empty (no rationale provided)
     assert discussions[0].player_name == "Alice"
-    assert discussions[0].text == "Alice's discussion"
+    assert discussions[0].text == ""
+
+    # Bob abstained
     assert discussions[1].player_name == "Bob"
     assert discussions[1].text == ""  # Bob abstained
     assert discussions[1].private_thoughts == "Strategic silence"
+
+    # Charlie provided discussion
     assert discussions[2].player_name == "Charlie"
     assert discussions[2].text == "Charlie's discussion"
+
+    # Alice (proposer) should not be prompted
+    mock_players[0].discuss.assert_not_called()
+    # Bob and Charlie should be prompted
+    mock_players[1].discuss.assert_called_once()
+    mock_players[2].discuss.assert_called_once()
 
 
 # --- Tests for Step 3: Revise ---
@@ -1129,8 +1156,9 @@ def test_run_turn_full_integration_success(
     # Alice proposes
     alice.propose.assert_called_once()
 
-    # All players (Alice, Bob, and Charlie) discuss
-    alice.discuss.assert_called_once()
+    # CRITICAL: Alice (proposer) should NOT be prompted for discussion
+    # Only Bob and Charlie should be prompted
+    alice.discuss.assert_not_called()
     bob.discuss.assert_called_once()
     charlie.discuss.assert_called_once()
 
@@ -1220,8 +1248,10 @@ def test_run_turn_stops_if_proposal_withdrawn(
     # Alice proposed
     alice.propose.assert_called_once()
 
-    # All players discussed (discussion happens before revision)
-    alice.discuss.assert_called_once()
+    # CRITICAL: Alice (proposer) should NOT be prompted for discussion
+    # Only Bob and Charlie should be prompted (discussion happens before
+    # revision)
+    alice.discuss.assert_not_called()
     mock_players[1].discuss.assert_called_once()
     mock_players[2].discuss.assert_called_once()
 
@@ -1370,6 +1400,7 @@ def test_format_transcript_shows_abstentions(
         type=ProposalType.ADD,
         proposal_id="301",
         new_text="Test rule.",
+        rationale="I support my proposal.",
     )
 
     votes = [
@@ -1377,6 +1408,7 @@ def test_format_transcript_shows_abstentions(
         Vote(player_name="Bob", vote="YES"),
     ]
 
+    # Alice's discussion comes from rationale
     # Bob abstains (empty text)
     discussions = [
         Discussion(
@@ -1409,6 +1441,8 @@ def test_format_transcript_shows_abstentions(
         rules=mock_rules,
     )
 
+    # Verify Alice's rationale appears in discussion
+    assert "I support my proposal." in transcript
     # Verify abstention appears
     assert "*(Abstained)*" in transcript
     # Bob's private thoughts should still appear

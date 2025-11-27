@@ -296,7 +296,9 @@ class GameLoop:
         """
         Collect discussion from all players.
 
-        Per Rule 111, all players (including the proposer) may discuss.
+        Per Rule 111, all players may discuss. However, the proposer's
+        rationale from the proposal serves as their discussion contribution,
+        so they are not prompted again.
 
         Args:
             proposal: The proposal to discuss
@@ -312,7 +314,29 @@ class GameLoop:
 
         discussions: list[Discussion] = []
 
+        # Create Discussion object for the proposer using their rationale
+        proposer_discussion = Discussion(
+            player_name=proposal.proposer_name,
+            text=proposal.rationale or "",
+            private_thoughts=proposal.private_thoughts,
+        )
+        discussions.append(proposer_discussion)
+
+        if proposer_discussion.text:
+            logger.debug(
+                f"{proposal.proposer_name} (proposer) - "
+                "using rationale as discussion"
+            )
+        else:
+            logger.debug(
+                f"{proposal.proposer_name} (proposer) - no rationale provided"
+            )
+
+        # Collect discussion from all other players (excluding proposer)
         for player in players:
+            if player.player_name == proposal.proposer_name:
+                continue  # Skip the proposer
+
             discussion = player.discuss(
                 proposal=proposal,
                 game_state=self.game_manager.game_state,
