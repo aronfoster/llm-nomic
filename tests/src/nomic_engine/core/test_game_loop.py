@@ -75,6 +75,7 @@ def mock_game_manager(
     # Mock GameLogger
     logger = Mock()
     logger.log_transcript = Mock()
+    logger.log_event = Mock()
     manager.logger = logger
 
     # Mock save methods
@@ -559,6 +560,140 @@ def test_step_5_resolve_unanimous_pass_with_judge_approval(
 
     # CRITICAL: Verify next_proposal_id was incremented (proposal passed)
     assert mock_game_state.next_proposal_id == initial_proposal_id + 1
+
+
+def test_step_5_resolve_triggers_game_over(
+    mock_game_manager: Mock,
+    mock_players: list[Mock],
+    mock_game_state: GameState,
+) -> None:
+    """Ensure the game ends when a player reaches the target score."""
+
+    mock_game_state.scores = {"Alice": 99, "Bob": 50, "Charlie": 30}
+    mock_game_state.target_score = 100
+
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
+    ]
+
+    def assess_scores_side_effect(*_args, **_kwargs):
+        mock_game_state.scores["Alice"] += 5
+        return {
+            "private_thoughts": None,
+            "score_adjustments": [
+                {"player": "Alice", "delta": 5, "reason": "Reached target"}
+            ],
+        }
+
+    judge = Mock()
+    judge.get_veto.return_value = {
+        "veto": False,
+        "reason": None,
+        "private_thoughts": None,
+    }
+    judge.assess_scores.side_effect = assess_scores_side_effect
+
+    game_loop = GameLoop(mock_game_manager, mock_players, judge)
+
+    game_over = game_loop._resolve_turn(proposal, votes, [])
+
+    assert game_over is True
+    assert mock_game_state.current_player_name == "Alice"
+    assert mock_game_state.move_number == 1
+
+    mock_game_manager.save_game_state.assert_called_once()
+    assert mock_game_manager.logger.log_transcript.call_count == 2
+
+    event_call = mock_game_manager.logger.log_event.call_args
+    assert event_call[0][0] == "game_over"
+    payload = event_call[0][1]
+    assert payload["target_score"] == 100
+    assert payload["winners"] == ["Alice"]
+    assert payload["winning_score"] == 104
+    assert payload["final_scores"]["Alice"] == 104
+
+
+def test_detect_victory_skips_without_target(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """_detect_victory should return no victory when target_score is None."""
+
+    mock_game_state.scores = {"Alice": 15, "Bob": 20}
+    mock_game_state.target_score = None
+
+    victory, winners, score = game_loop._detect_victory()
+
+    assert victory is False
+    assert winners == []
+    assert score == 0
+
+
+def test_detect_victory_handles_ties(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """_detect_victory should return all top scorers that meet the target."""
+
+    mock_game_state.scores = {"Alice": 150, "Bob": 150, "Charlie": 120}
+    mock_game_state.target_score = 100
+
+    victory, winners, score = game_loop._detect_victory()
+
+    assert victory is True
+    assert set(winners) == {"Alice", "Bob"}
+    assert score == 150
+
+
+def test_step_5_resolve_skips_game_over_without_target(
+    mock_game_manager: Mock,
+    mock_players: list[Mock],
+    mock_game_state: GameState,
+) -> None:
+    """Ensure no victory is detected when target_score is absent."""
+
+    mock_game_state.scores = {"Alice": 200, "Bob": 150, "Charlie": 120}
+    mock_game_state.target_score = None
+
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
+    ]
+
+    judge = Mock()
+    judge.get_veto.return_value = {
+        "veto": False,
+        "reason": None,
+        "private_thoughts": None,
+    }
+    judge.assess_scores.return_value = {
+        "private_thoughts": None,
+        "score_adjustments": [],
+    }
+
+    game_loop = GameLoop(mock_game_manager, mock_players, judge)
+
+    game_over = game_loop._resolve_turn(proposal, votes, [])
+
+    assert game_over is False
+    mock_game_manager.logger.log_event.assert_not_called()
 
 
 @patch("builtins.input", side_effect=["y", "0", "0", "0"])

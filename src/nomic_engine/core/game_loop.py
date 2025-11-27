@@ -63,7 +63,7 @@ class GameLoop:
         self.players = players
         self.judge = judge if judge is not None else HumanJudge()
 
-    def run_turn(self) -> None:
+    def run_turn(self) -> bool:
         """
         Execute a complete game turn through all 5 steps.
 
@@ -73,6 +73,10 @@ class GameLoop:
         3. Allow revision (V1 stub - not implemented)
         4. Collect votes from all players (per Rule 105)
         5. Resolve the turn (tally, judge, apply changes, advance)
+
+        Returns:
+            bool: True if the game ended by reaching the target score,
+            False otherwise.
 
         Raises:
             Exception: Any unexpected errors during turn execution
@@ -93,7 +97,7 @@ class GameLoop:
             proposal = self._get_and_validate_proposal(current_player)
             if proposal is None:
                 logger.warning("Turn ended due to illegal proposal")
-                return
+                return False
 
             # Step 2: Discuss
             discussions: list[Discussion] = self._collect_discussions(
@@ -112,7 +116,7 @@ class GameLoop:
                     f"{current_player.player_name}"
                 )
                 # TODO: Log this withdrawal to the transcript
-                return  # End the turn
+                return False  # End the turn
 
             # If not withdrawn, use the revised proposal for voting
             proposal = revised_proposal
@@ -121,15 +125,19 @@ class GameLoop:
             votes = self._collect_votes(proposal, self.players)
 
             # Step 5: Resolve
-            self._resolve_turn(proposal, votes, discussions)
+            game_over = self._resolve_turn(proposal, votes, discussions)
 
             logger.info(
                 f"Completed turn {self.game_manager.game_state.move_number}"
             )
 
+            return game_over
+
         except Exception as e:
             logger.error(f"Error during turn execution: {e}", exc_info=True)
             raise
+
+        return False
 
     def _get_current_player(self) -> BasePlayer:
         """
@@ -560,12 +568,74 @@ class GameLoop:
         self.game_manager.save_game_state()
         logger.debug("Game state saved")
 
+    def _detect_victory(self) -> tuple[bool, list[str], int]:
+        """Determine whether any player has met the target score."""
+
+        assert self.game_manager.game_state is not None
+
+        target_score = self.game_manager.game_state.target_score
+        if target_score is None:
+            return False, [], 0
+
+        scores = self.game_manager.game_state.scores
+        winners = [
+            name for name, score in scores.items() if score >= target_score
+        ]
+
+        if not winners:
+            return False, [], 0
+
+        top_score = max(scores[name] for name in winners)
+        top_winners = [name for name in winners if scores[name] == top_score]
+
+        return True, top_winners, top_score
+
+    def _log_game_over(self, winners: list[str], winning_score: int) -> None:
+        """Log a GAME OVER event to the history and transcript."""
+
+        assert self.game_manager.game_state is not None
+
+        target_score = self.game_manager.game_state.target_score
+        scores = self.game_manager.game_state.scores
+        winners_text = ", ".join(winners)
+
+        self.game_manager.logger.log_event(
+            "game_over",
+            {
+                "target_score": target_score,
+                "winners": winners,
+                "winning_score": winning_score,
+                "final_scores": scores,
+            },
+        )
+
+        label = "Winners" if len(winners) > 1 else "Winner"
+        winner_line = f"{label}: {winners_text} (score: {winning_score})"
+
+        lines = [
+            "# GAME OVER",
+            f"Target score: {target_score}",
+            winner_line,
+            "",
+            "## Final Scores",
+        ]
+
+        for player_name, score in scores.items():
+            lines.append(f"- **{player_name}:** {score}")
+
+        self.game_manager.logger.log_transcript("\n".join(lines))
+
+        print(
+            "\n🏁 GAME OVER! "
+            f"{winners_text} reached the target score of {target_score}."
+        )
+
     def _resolve_turn(
         self,
         proposal: Proposal,
         votes: list[Vote],
         discussions: list[Discussion],
-    ) -> None:
+    ) -> bool:
         """
         Resolve the turn by tallying votes, consulting judge, applying changes.
 
@@ -581,6 +651,8 @@ class GameLoop:
             proposal: The proposal that was voted on
             votes: List of Vote objects from all players
             discussions: List of Discussion objects from discussion phase
+        Returns:
+            bool: True if the game ended by reaching the target score.
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
@@ -644,8 +716,11 @@ class GameLoop:
         if proposal_passed and not judge_vetoed:
             self._apply_passed_proposal(proposal)
 
-        # Advance turn state
-        self._advance_turn_state()
+        victory_reached, winners, winning_score = self._detect_victory()
+
+        # Advance turn state only if the game is not over
+        if not victory_reached:
+            self._advance_turn_state()
 
         # Log transcript and save state
         judge_approved = proposal_passed and not judge_vetoed
@@ -658,6 +733,11 @@ class GameLoop:
             judge_veto_response,
             judge_score_response,
         )
+
+        if victory_reached:
+            self._log_game_over(winners, winning_score)
+
+        return victory_reached
 
     def _format_transcript(
         self,
