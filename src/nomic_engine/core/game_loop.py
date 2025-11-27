@@ -685,11 +685,19 @@ class GameLoop:
         print(f"\nResult: {'PASSED' if proposal_passed else 'FAILED'}")
         print("=" * 60)
 
-        # Consult judge for veto
-        judge_veto_response = self.judge.get_veto(
-            self.game_manager, proposal, votes, discussions
-        )
-        judge_vetoed = judge_veto_response["veto"]
+        # Only consult judge for veto if proposal passed
+        if proposal_passed:
+            judge_veto_response = self.judge.get_veto(
+                self.game_manager, proposal, votes, discussions
+            )
+            judge_vetoed = judge_veto_response["veto"]
+        else:
+            judge_vetoed = False
+            judge_veto_response = {
+                "veto": False,
+                "reason": None,
+                "private_thoughts": None,
+            }
 
         # Communicate outcome before scoring
         if proposal_passed and not judge_vetoed:

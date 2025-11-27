@@ -18,7 +18,6 @@ Our architecture is built on these principles:
 * Lower quality LLM players are interpreting turn order as rank in the game. Maybe add some smart text to say "It's a 3-way tie" or "You are in last place by 8 points" or some other set of plain -language descriptions of the score situation since LLMs don't do great at math.
 * pylance is giving type errors in vs code that aren't caught by `make ci`
 * Shouldn't need "discussion" from the proposer in addition to the proposal justification/discussion
-* Judges should not assess failed proposals since their veto won't change anything.
 
 ### Low Priority
 
@@ -76,9 +75,11 @@ Focus on connecting a cheap, smart cloud model (Grok) and closing the game loop 
 
 ---
 
-### P2 – Bug: Fix Judge Logic on Failed Votes
+### ~P2 – Bug: Fix Judge Logic on Failed Votes~ COMPLETED
 
 **Goal:** Avoid unnecessary judge work and clarify game semantics.
+
+**Status:** Completed – Judge veto is now only consulted when proposals pass.
 
 **Tasks:**
 - In `src/nomic_engine/core/game_loop.py` (e.g., `_resolve_turn`):

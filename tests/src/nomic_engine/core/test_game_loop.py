@@ -749,14 +749,17 @@ def test_step_5_resolve_judge_veto(
     assert mock_game_state.next_proposal_id == initial_proposal_id
 
 
-@patch("builtins.input", side_effect=["n", "-10", "3", "3"])
+@patch("builtins.input", side_effect=["-10", "3", "3"])
 def test_step_5_resolve_failed_proposal_score_penalty(
     mock_input: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,
 ) -> None:
-    """Test _resolve_turn with failed proposal and manual scoring."""
+    """Test _resolve_turn with failed proposal and manual scoring.
+
+    When a proposal fails the vote, the judge should NOT be asked for veto.
+    """
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -779,6 +782,10 @@ def test_step_5_resolve_failed_proposal_score_penalty(
 
     game_loop._resolve_turn(proposal, votes, discussions)
 
+    # Verify judge was only consulted for scoring
+    # (3 score prompts, NO veto prompt)
+    assert mock_input.call_count == 3
+
     # Verify proposal was NOT applied (failed vote)
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()
 
@@ -796,13 +803,16 @@ def test_step_5_resolve_failed_proposal_score_penalty(
     assert mock_game_state.next_proposal_id == initial_proposal_id
 
 
-@patch("builtins.input", side_effect=["n", "8", "0", "10"])
+@patch("builtins.input", side_effect=["8", "0", "10"])
 def test_step_5_resolve_manual_score_entry(
     mock_input: Mock,
     game_loop: GameLoop,
     mock_game_state: GameState,
 ) -> None:
-    """Test manual score entry by judge with mixed votes."""
+    """Test manual score entry by judge with mixed votes.
+
+    When a proposal fails the vote, the judge should NOT be asked for veto.
+    """
     proposal = Proposal(
         proposer_name="Alice",
         move_number=1,
@@ -821,6 +831,10 @@ def test_step_5_resolve_manual_score_entry(
     discussions: list[Discussion] = []
 
     game_loop._resolve_turn(proposal, votes, discussions)
+
+    # Verify judge was only consulted for scoring
+    # (3 score prompts, NO veto prompt)
+    assert mock_input.call_count == 3
 
     # Verify manually entered scores
     # Judge manually entered: Alice=8, Bob=0, Charlie=10
@@ -997,6 +1011,101 @@ def test_step_5_resolve_veto_blocks_proposal_application(
     assert mock_game_state.scores["Alice"] == -5
     assert mock_game_state.scores["Bob"] == 0
     assert mock_game_state.scores["Charlie"] == 0
+
+
+def test_judge_veto_not_called_when_proposal_fails(
+    mock_game_manager: Mock,
+    mock_players: list[Mock],
+    mock_game_state: GameState,
+) -> None:
+    """Test that judge.get_veto is NOT called when proposal fails vote.
+
+    This is the key optimization from P2: don't ask the judge for veto
+    if the proposal already failed the player vote.
+    """
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    # Proposal fails (Charlie votes NO, not unanimous)
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="NO"),
+    ]
+
+    # Create a mock judge
+    judge = Mock()
+    judge.get_veto.return_value = {
+        "veto": False,
+        "reason": None,
+        "private_thoughts": None,
+    }
+    judge.assess_scores.return_value = {
+        "private_thoughts": None,
+        "score_adjustments": [],
+    }
+
+    game_loop = GameLoop(mock_game_manager, mock_players, judge)
+
+    game_loop._resolve_turn(proposal, votes, [])
+
+    # CRITICAL: Verify judge.get_veto was NOT called (proposal failed)
+    judge.get_veto.assert_not_called()
+
+    # Verify judge.assess_scores was still called (scoring always happens)
+    judge.assess_scores.assert_called_once()
+
+
+def test_judge_veto_called_when_proposal_passes(
+    mock_game_manager: Mock,
+    mock_players: list[Mock],
+    mock_game_state: GameState,
+) -> None:
+    """Test that judge.get_veto IS called when proposal passes vote.
+
+    When a proposal passes the vote, the judge must be consulted for veto.
+    """
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    # Proposal passes (unanimous YES votes)
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
+    ]
+
+    # Create a mock judge
+    judge = Mock()
+    judge.get_veto.return_value = {
+        "veto": False,
+        "reason": None,
+        "private_thoughts": None,
+    }
+    judge.assess_scores.return_value = {
+        "private_thoughts": None,
+        "score_adjustments": [],
+    }
+
+    game_loop = GameLoop(mock_game_manager, mock_players, judge)
+
+    game_loop._resolve_turn(proposal, votes, [])
+
+    # CRITICAL: Verify judge.get_veto WAS called (proposal passed)
+    judge.get_veto.assert_called_once()
+
+    # Verify judge.assess_scores was also called (scoring always happens)
+    judge.assess_scores.assert_called_once()
 
 
 # --- Tests for run_turn Integration ---
