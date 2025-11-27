@@ -623,6 +623,36 @@ def test_step_5_resolve_triggers_game_over(
     assert payload["final_scores"]["Alice"] == 104
 
 
+def test_detect_victory_skips_without_target(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """_detect_victory should return no victory when target_score is None."""
+
+    mock_game_state.scores = {"Alice": 15, "Bob": 20}
+    mock_game_state.target_score = None
+
+    victory, winners, score = game_loop._detect_victory()
+
+    assert victory is False
+    assert winners == []
+    assert score == 0
+
+
+def test_detect_victory_handles_ties(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """_detect_victory should return all top scorers that meet the target."""
+
+    mock_game_state.scores = {"Alice": 150, "Bob": 150, "Charlie": 120}
+    mock_game_state.target_score = 100
+
+    victory, winners, score = game_loop._detect_victory()
+
+    assert victory is True
+    assert set(winners) == {"Alice", "Bob"}
+    assert score == 150
+
+
 def test_step_5_resolve_skips_game_over_without_target(
     mock_game_manager: Mock,
     mock_players: list[Mock],
