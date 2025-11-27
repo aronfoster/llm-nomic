@@ -324,7 +324,8 @@ class GameLoop:
 
         if proposer_discussion.text:
             logger.debug(
-                f"{proposal.proposer_name} (proposer) - using rationale as discussion"
+                f"{proposal.proposer_name} (proposer) - "
+                "using rationale as discussion"
             )
         else:
             logger.debug(

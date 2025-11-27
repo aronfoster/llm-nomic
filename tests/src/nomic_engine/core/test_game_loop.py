@@ -1249,7 +1249,8 @@ def test_run_turn_stops_if_proposal_withdrawn(
     alice.propose.assert_called_once()
 
     # CRITICAL: Alice (proposer) should NOT be prompted for discussion
-    # Only Bob and Charlie should be prompted (discussion happens before revision)
+    # Only Bob and Charlie should be prompted (discussion happens before
+    # revision)
     alice.discuss.assert_not_called()
     mock_players[1].discuss.assert_called_once()
     mock_players[2].discuss.assert_called_once()
