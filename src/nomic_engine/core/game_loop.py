@@ -609,14 +609,13 @@ class GameLoop:
             },
         )
 
+        label = "Winners" if len(winners) > 1 else "Winner"
+        winner_line = f"{label}: {winners_text} (score: {winning_score})"
+
         lines = [
             "# GAME OVER",
             f"Target score: {target_score}",
-            (
-                f"Winners: {winners_text} (score: {winning_score})"
-                if len(winners) > 1
-                else f"Winner: {winners_text} (score: {winning_score})"
-            ),
+            winner_line,
             "",
             "## Final Scores",
         ]
