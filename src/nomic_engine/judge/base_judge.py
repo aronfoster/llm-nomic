@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
@@ -32,6 +32,13 @@ class JudgeScoreResponse(TypedDict):
 
     private_thoughts: str | None
     score_adjustments: list[ScoreAdjustment]
+
+
+class StateUpdates(TypedDict, total=False):
+    """Container for updates the Judge wants to apply to GameState."""
+
+    flags: dict[str, Any]
+    target_score: int | None
 
 
 class BaseJudge(ABC):
