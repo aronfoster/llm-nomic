@@ -22,23 +22,21 @@ Our architecture is built on these principles:
 
 * None
 
-## Epic: Game Flags & Dynamic Rules
+## **Sprint 26-1: Multi-Model Expansion & Dynamic Resolution**
 
-**Goal:** Allow rules to alter engine behavior (voting thresholds, victory scores) via Judge interpretation rather than code changes.
+**Goal:** Finalize core engine flexibility and expand LLM connectivity to include major cloud providers.
 
-**Architecture:** The Judge acts as the "Compiler," interpreting the rule text after every passed proposal and synchronizing the `GameState` to match.
+### **1. Cloud LLM Integration (High Priority)**
 
-### 1. Data Model Extensions ✅
-* **Task:** Update `GameState` in `src/nomic_engine/data_models.py`.
-* **Status:** COMPLETED
-* **Changes:**
-  * ✅ Added `VoteMode` enum with `UNANIMOUS` and `MAJORITY` values
-  * ✅ Added `flags: Dict[str, Any]` field with default `{"vote_mode": "unanimous"}`
-  * ✅ Confirmed `target_score` is present and allows `None`
-  * ✅ Added `StateUpdates` TypedDict to `src/nomic_engine/judge/base_judge.py`
-  * ✅ Added comprehensive unit tests in `tests/src/nomic_engine/test_data_models.py`
+* **Task:** Build out `ApiClient` support in `src/nomic_engine/llm/api_clients.py`.
+* **Status:** IN PROGRESS
+* **Sub-tasks:**
+* Implement **OpenAI** client (using existing `openai` library).
+* Implement **Anthropic** client (requires `anthropic` library).
+* Implement **Google Gemini** client (using OpenAI-compatible endpoint or Gemini SDK).
+* Update `models.yml` to reflect verified working models.
 
-### 2. Engine: Dynamic Logic
+### 2. Engine: Dynamic Voting Logic
 * **Task:** Refactor `GameLoop` logic to respect flags.
 * **Files:** `src/nomic_engine/core/game_loop.py`
 * **Logic:**
@@ -52,14 +50,17 @@ Our architecture is built on these principles:
   * **HumanJudge:** Interactive CLI loop reviewing Flags and Target Score.
   * **LLMJudge:** New prompt: *"Review the new rules. Return JSON updating 'flags' or 'target_score' ONLY if they conflict with the text."*
 
-### 4. Conflict Resolution
-* **Strategy:** Rely on the Judge to apply Rule 211 (numerical precedence) when deciding which flag value to enforce.
+### 4. Smart Player Context (Bug Mitigation)
+
+* **Task:** Add plain-language score/rank descriptions to mitigate LLM math errors.
+* **Status:** PLANNED
+* **Logic:**
+* Modify `PromptBuilder._format_game_state_block` in `src/nomic_engine/llm/prompt_builder.py` to include a "Leaderboard Context" line (e.g., "You are in 2nd place, 5 points behind the leader").
 
 ## Future Work
 
 This is the long-term backlog and TODO scratchpad.
   * **Implement Full `LLMPlayer`:**
-    * Expand `api_clients.py` to handle cloud providers (Grok, Anthropic) and their respective API keys.
     * Implement advanced token-saving strategies, especially context caching
     * Implement async behavior
     * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
@@ -67,12 +68,6 @@ This is the long-term backlog and TODO scratchpad.
     * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
     * Need to handle "revision -> withdraw" logic to have them come up with a new proposal
     * Explore https://openrouter.ai/ support for tokens/models
-
-* **Implement Victory Check and Game Flags:**
-    * Add a `target_score` to `GameState`.
-    * Add a check for this score in the game loop.
-    * Create a "change flags" step for the Judge to update `target_score` or other `GameState` flags (e.g., "unanimous vote" vs. "majority vote").
-    * Document how victory settings interact with `judge_type` (e.g., human judges can override, LLM judges must follow rule text) and ensure this is reflected in config templates.
 
 * **Game State & Rules:**
     * Allow `create_game.py` to select from multiple initial ruleset files.
@@ -98,3 +93,5 @@ This is the long-term backlog and TODO scratchpad.
        "target_score": 100
      }}
 
+* **Dynamic Game Structure**
+   * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by concensus?). This allows extra steps to be created, or order of steps to be changed.
