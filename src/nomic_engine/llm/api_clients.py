@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, Iterable, cast
 
 import anthropic
+import anthropic.types
 import google.generativeai as genai
 from openai import OpenAI, OpenAIError
+from openai.types.chat import ChatCompletionMessageParam
 
 from ..data_models import ChatMessage, ModelDefinition
 
@@ -113,12 +115,14 @@ class ApiClient:
                     )
                 )
 
-            # google-generativeai module doesn't export these in type stubs
-            genai.configure(api_key=api_key)  # type: ignore[attr-defined]
-            self._google_client: Any = genai.GenerativeModel(  # type: ignore[attr-defined]
-                self.model_config.api_model_id
+            # google-generativeai module has incomplete type stubs
+            # Configure and create client using cast for missing types
+            cast(Any, genai).configure(api_key=api_key)
+            model_id = self.model_config.api_model_id
+            self._google_client = cast(
+                Any, cast(Any, genai).GenerativeModel(model_id)
             )
-            self.model_id_for_api = self.model_config.api_model_id
+            self.model_id_for_api = model_id
         else:
             raise ValueError(f"Unknown provider: {self.model_config.provider}")
 
@@ -134,13 +138,13 @@ class ApiClient:
         try:
             if self.model_config.provider in ["local", "xai", "openai"]:
                 # OpenAI-compatible providers
-                message_dicts: list[dict[str, Any]] = [
-                    msg.model_dump() for msg in messages
-                ]
-                # OpenAI SDK expects ChatCompletionMessageParam TypedDict, but
-                # our Pydantic models serialize to compatible dicts
+                # Convert ChatMessage to OpenAI's ChatCompletionMessageParam
+                openai_messages = cast(
+                    Iterable[ChatCompletionMessageParam],
+                    [msg.model_dump() for msg in messages],
+                )
                 openai_response = self._openai_client.chat.completions.create(
-                    model=self.model_id_for_api, messages=message_dicts  # type: ignore[arg-type]
+                    model=self.model_id_for_api, messages=openai_messages
                 )
                 return openai_response.choices[0].message.content
 
@@ -153,30 +157,34 @@ class ApiClient:
                     "\n\n".join(system_messages) if system_messages else None
                 )
 
-                # Convert non-system messages to Anthropic format
-                anthropic_messages = [
-                    {"role": msg.role, "content": msg.content}
-                    for msg in messages
-                    if msg.role != "system"
-                ]
+                # Convert non-system messages to Anthropic's MessageParam type
+                # Filter out system and cast to proper TypedDict
+                anthropic_messages: list[anthropic.types.MessageParam] = []
+                for msg in messages:
+                    if msg.role != "system":
+                        # Role is "user" or "assistant" here, cast dict
+                        anthropic_messages.append(
+                            cast(
+                                anthropic.types.MessageParam,
+                                {"role": msg.role, "content": msg.content},
+                            )
+                        )
 
                 # Create message with Anthropic client
                 client = self._anthropic_client
                 anthropic_response: anthropic.types.Message
-                # Anthropic SDK expects MessageParam TypedDict, but our dicts
-                # are compatible with the required structure
                 if system_prompt:
                     anthropic_response = client.messages.create(
                         model=self.model_id_for_api,
                         max_tokens=8192,
                         system=system_prompt,
-                        messages=anthropic_messages,  # type: ignore[arg-type]
+                        messages=anthropic_messages,
                     )
                 else:
                     anthropic_response = client.messages.create(
                         model=self.model_id_for_api,
                         max_tokens=8192,
-                        messages=anthropic_messages,  # type: ignore[arg-type]
+                        messages=anthropic_messages,
                     )
 
                 # Extract text from the response
@@ -187,7 +195,7 @@ class ApiClient:
 
             elif self.model_config.provider == "google":
                 # Google Gemini requires converting to their format
-                gemini_messages = []
+                gemini_messages: list[dict[str, Any]] = []
                 for msg in messages:
                     # Map roles: 'assistant' -> 'model', keep 'user'
                     # System messages prepended to first user message
@@ -205,11 +213,12 @@ class ApiClient:
                             {"role": "user", "parts": [msg.content]}
                         )
 
-                # Generate content
-                google_response = self._google_client.generate_content(
-                    gemini_messages
-                )
-                return str(google_response.text)
+                # Generate content using cast since google-generativeai
+                # doesn't provide complete type stubs
+                google_response = cast(
+                    Any, self._google_client
+                ).generate_content(gemini_messages)
+                return str(cast(Any, google_response).text)
 
             else:
                 logger.error(
