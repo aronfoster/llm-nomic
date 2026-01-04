@@ -113,6 +113,7 @@ class ApiClient:
                     )
                 )
 
+            # google-generativeai module doesn't export these in type stubs
             genai.configure(api_key=api_key)  # type: ignore[attr-defined]
             self._google_client: Any = genai.GenerativeModel(  # type: ignore[attr-defined]
                 self.model_config.api_model_id
@@ -136,6 +137,8 @@ class ApiClient:
                 message_dicts: list[dict[str, Any]] = [
                     msg.model_dump() for msg in messages
                 ]
+                # OpenAI SDK expects ChatCompletionMessageParam TypedDict, but
+                # our Pydantic models serialize to compatible dicts
                 openai_response = self._openai_client.chat.completions.create(
                     model=self.model_id_for_api, messages=message_dicts  # type: ignore[arg-type]
                 )
@@ -160,6 +163,8 @@ class ApiClient:
                 # Create message with Anthropic client
                 client = self._anthropic_client
                 anthropic_response: anthropic.types.Message
+                # Anthropic SDK expects MessageParam TypedDict, but our dicts
+                # are compatible with the required structure
                 if system_prompt:
                     anthropic_response = client.messages.create(
                         model=self.model_id_for_api,
