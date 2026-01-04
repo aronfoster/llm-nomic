@@ -33,8 +33,75 @@ def test_api_client_local_provider():
         assert api_client.model_config == mock_model_def
 
 
-def test_api_client_cloud_providers_raise_error():
-    """Test that unsupported cloud providers raise NotImplementedError."""
+def test_api_client_openai_provider(monkeypatch):
+    """Test ApiClient initializes correctly for openai provider."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    mock_model_def = ModelDefinition(
+        id="gpt-5.1",
+        provider="openai",
+        api_model_id="gpt-5.1",
+        env_key_name="OPENAI_API_KEY",
+    )
+
+    with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
+        api_client = ApiClient(mock_model_def)
+
+        mock_openai.assert_called_once_with(api_key="test-openai-key")
+        assert api_client.model_id_for_api == "gpt-5.1"
+        assert api_client.model_config == mock_model_def
+
+
+def test_api_client_anthropic_provider(monkeypatch):
+    """Test ApiClient initializes correctly for anthropic provider."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
+
+    mock_model_def = ModelDefinition(
+        id="claude-sonnet-4-5",
+        provider="anthropic",
+        api_model_id="claude-sonnet-4-5",
+        env_key_name="ANTHROPIC_API_KEY",
+    )
+
+    with patch(
+        "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
+    ) as mock_anthropic:
+        api_client = ApiClient(mock_model_def)
+
+        mock_anthropic.assert_called_once_with(api_key="test-anthropic-key")
+        assert api_client.model_id_for_api == "claude-sonnet-4-5"
+        assert api_client.model_config == mock_model_def
+
+
+def test_api_client_google_provider(monkeypatch):
+    """Test ApiClient initializes correctly for google provider."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
+
+    mock_model_def = ModelDefinition(
+        id="gemini-2.5-pro",
+        provider="google",
+        api_model_id="gemini-2.5-pro",
+        env_key_name="GOOGLE_API_KEY",
+    )
+
+    with (
+        patch(
+            "src.nomic_engine.llm.api_clients.genai.configure"
+        ) as mock_configure,
+        patch(
+            "src.nomic_engine.llm.api_clients.genai.GenerativeModel"
+        ) as mock_model,
+    ):
+        api_client = ApiClient(mock_model_def)
+
+        mock_configure.assert_called_once_with(api_key="test-google-key")
+        mock_model.assert_called_once_with("gemini-2.5-pro")
+        assert api_client.model_id_for_api == "gemini-2.5-pro"
+        assert api_client.model_config == mock_model_def
+
+
+def test_api_client_cloud_providers_missing_key():
+    """Test that cloud providers raise ValueError when API key is missing."""
     cloud_providers = ["openai", "anthropic", "google"]
 
     for provider in cloud_providers:
@@ -45,10 +112,10 @@ def test_api_client_cloud_providers_raise_error():
             env_key_name=f"{provider.upper()}_API_KEY",
         )
 
-        with pytest.raises(NotImplementedError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             ApiClient(mock_model_def)
 
-        assert f"Provider {provider} not yet implemented" in str(
+        assert f"API key for provider {provider} not found" in str(
             exc_info.value
         )
 
