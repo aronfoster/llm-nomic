@@ -1,10 +1,16 @@
 """API clients for LLM providers."""
 
+from __future__ import annotations
+
 import logging
 import os
-from typing import Any
+from typing import Any, Iterable, cast
 
+import anthropic
+import anthropic.types
+import google.generativeai as genai
 from openai import OpenAI, OpenAIError
+from openai.types.chat import ChatCompletionMessageParam
 
 from ..data_models import ChatMessage, ModelDefinition
 
@@ -14,6 +20,9 @@ logger = logging.getLogger(__name__)
 class ApiClient:
     """Extensible API client that configures based on ModelDefinition."""
 
+    model_config: ModelDefinition
+    model_id_for_api: str
+
     def __init__(self, model_config: ModelDefinition):
         """Initialize the API client based on the provider.
 
@@ -21,8 +30,7 @@ class ApiClient:
             model_config: The ModelDefinition containing provider and API info.
 
         Raises:
-            NotImplementedError: If the provider is not yet implemented.
-            ValueError: If the provider is unknown.
+            ValueError: If the provider is unknown or API key is missing.
         """
         self.model_config = model_config
         self.model_id_for_api = model_config.id
@@ -30,7 +38,7 @@ class ApiClient:
         # TODO: change local to ollama
         if model_config.provider == "local":
             # For local (Ollama) provider
-            self.client = OpenAI(
+            self._openai_client: OpenAI = OpenAI(
                 base_url=self.model_config.api_model_id,
                 api_key="local",  # Ollama doesn't check the API key
             )
@@ -49,15 +57,72 @@ class ApiClient:
                     )
                 )
 
-            self.client = OpenAI(
+            self._openai_client = OpenAI(
                 base_url="https://api.x.ai/v1", api_key=api_key
             )
             self.model_id_for_api = self.model_config.api_model_id
-        elif model_config.provider in ["openai", "anthropic", "google"]:
-            # Cloud providers - to be implemented later
-            raise NotImplementedError(
-                f"Provider {self.model_config.provider} not yet implemented."
+        elif model_config.provider == "openai":
+            api_key_name = self.model_config.env_key_name
+            if api_key_name is None:
+                raise ValueError(
+                    "env_key_name must be set for openai provider"
+                )
+
+            api_key = os.getenv(api_key_name)
+            if not api_key:
+                raise ValueError(
+                    (
+                        "API key for provider openai not found in environment "
+                        f"variable {api_key_name}"
+                    )
+                )
+
+            self._openai_client = OpenAI(api_key=api_key)
+            self.model_id_for_api = self.model_config.api_model_id
+        elif model_config.provider == "anthropic":
+            api_key_name = self.model_config.env_key_name
+            if api_key_name is None:
+                raise ValueError(
+                    "env_key_name must be set for anthropic provider"
+                )
+
+            api_key = os.getenv(api_key_name)
+            if not api_key:
+                raise ValueError(
+                    (
+                        "API key for provider anthropic not found in "
+                        f"environment variable {api_key_name}"
+                    )
+                )
+
+            self._anthropic_client: anthropic.Anthropic = anthropic.Anthropic(
+                api_key=api_key
             )
+            self.model_id_for_api = self.model_config.api_model_id
+        elif model_config.provider == "google":
+            api_key_name = self.model_config.env_key_name
+            if api_key_name is None:
+                raise ValueError(
+                    "env_key_name must be set for google provider"
+                )
+
+            api_key = os.getenv(api_key_name)
+            if not api_key:
+                raise ValueError(
+                    (
+                        "API key for provider google not found in environment "
+                        f"variable {api_key_name}"
+                    )
+                )
+
+            # google-generativeai module has incomplete type stubs
+            # Configure and create client using cast for missing types
+            cast(Any, genai).configure(api_key=api_key)
+            model_id = self.model_config.api_model_id
+            self._google_client = cast(
+                Any, cast(Any, genai).GenerativeModel(model_id)
+            )
+            self.model_id_for_api = model_id
         else:
             raise ValueError(f"Unknown provider: {self.model_config.provider}")
 
@@ -70,17 +135,125 @@ class ApiClient:
         Returns:
             The completion text from the LLM, or None if an error occurred.
         """
-        # Convert Pydantic models to dicts
-        message_dicts: list[dict[str, Any]] = [
-            msg.model_dump() for msg in messages
-        ]
-
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_id_for_api, messages=message_dicts  # type: ignore[arg-type]
-            )
-            return response.choices[0].message.content
+            if self.model_config.provider in ["local", "xai", "openai"]:
+                # OpenAI-compatible providers
+                # Convert ChatMessage to OpenAI's ChatCompletionMessageParam
+                openai_messages = cast(
+                    Iterable[ChatCompletionMessageParam],
+                    [msg.model_dump() for msg in messages],
+                )
+                openai_response = self._openai_client.chat.completions.create(
+                    model=self.model_id_for_api, messages=openai_messages
+                )
+                return openai_response.choices[0].message.content
+
+            elif self.model_config.provider == "anthropic":
+                # Anthropic requires separating system messages from the rest
+                system_messages = [
+                    msg.content for msg in messages if msg.role == "system"
+                ]
+                system_prompt = (
+                    "\n\n".join(system_messages) if system_messages else None
+                )
+
+                # Convert non-system messages to Anthropic's MessageParam type
+                # Filter out system and cast to proper TypedDict
+                anthropic_messages: list[anthropic.types.MessageParam] = []
+                for msg in messages:
+                    if msg.role == "system":
+                        # System messages already extracted above
+                        continue
+                    elif msg.role in ("user", "assistant"):
+                        anthropic_messages.append(
+                            cast(
+                                anthropic.types.MessageParam,
+                                {"role": msg.role, "content": msg.content},
+                            )
+                        )
+                    else:
+                        # Unexpected role - log warning and skip
+                        logger.warning(
+                            "Unexpected role '%s' for Anthropic, skipping",
+                            msg.role,
+                        )
+
+                # Create message with Anthropic client
+                client = self._anthropic_client
+                anthropic_response: anthropic.types.Message
+                if system_prompt:
+                    anthropic_response = client.messages.create(
+                        model=self.model_id_for_api,
+                        max_tokens=8192,
+                        system=system_prompt,
+                        messages=anthropic_messages,
+                    )
+                else:
+                    anthropic_response = client.messages.create(
+                        model=self.model_id_for_api,
+                        max_tokens=8192,
+                        messages=anthropic_messages,
+                    )
+
+                # Extract text from the response
+                first_block = anthropic_response.content[0]
+                if hasattr(first_block, "text"):
+                    return str(first_block.text)
+                return None
+
+            elif self.model_config.provider == "google":
+                # Google Gemini requires converting to their format
+                gemini_messages: list[dict[str, Any]] = []
+                for msg in messages:
+                    # Map roles: 'assistant' -> 'model', keep 'user'
+                    # System messages prepended to first user message
+                    if msg.role == "system":
+                        # Prepend system message to the conversation
+                        gemini_messages.append(
+                            {"role": "user", "parts": [msg.content]}
+                        )
+                    elif msg.role == "assistant":
+                        gemini_messages.append(
+                            {"role": "model", "parts": [msg.content]}
+                        )
+                    elif msg.role == "user":
+                        gemini_messages.append(
+                            {"role": "user", "parts": [msg.content]}
+                        )
+                    else:
+                        # Unexpected role - log warning and skip
+                        logger.warning(
+                            "Unexpected role '%s' for Google, skipping",
+                            msg.role,
+                        )
+
+                # Generate content using cast since google-generativeai
+                # doesn't provide complete type stubs
+                google_response = cast(
+                    Any, self._google_client
+                ).generate_content(gemini_messages)
+                return str(cast(Any, google_response).text)
+
+            else:
+                logger.error(
+                    "Unknown provider: %s", self.model_config.provider
+                )
+                return None
+
         except OpenAIError as e:
+            logger.error(
+                "OpenAI API error for provider %s: %s",
+                self.model_config.provider,
+                e,
+            )
+            return None
+        except anthropic.APIError as e:
+            logger.error(
+                "Anthropic API error: %s",
+                e,
+            )
+            return None
+        except Exception as e:
             logger.error(
                 "Error getting completion for provider %s: %s",
                 self.model_config.provider,

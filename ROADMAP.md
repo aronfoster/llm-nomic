@@ -29,12 +29,12 @@ Our architecture is built on these principles:
 ### **1. Cloud LLM Integration (High Priority)**
 
 * **Task:** Build out `ApiClient` support in `src/nomic_engine/llm/api_clients.py`.
-* **Status:** IN PROGRESS
+* **Status:** ✅ COMPLETED
 * **Sub-tasks:**
-* Implement **OpenAI** client (using existing `openai` library).
-* Implement **Anthropic** client (requires `anthropic` library).
-* Implement **Google Gemini** client (using OpenAI-compatible endpoint or Gemini SDK).
-* Update `models.yml` to reflect verified working models.
+* ✅ Implement **OpenAI** client (using existing `openai` library).
+* ✅ Implement **Anthropic** client (using `anthropic` library).
+* ✅ Implement **Google Gemini** client (using `google-generativeai` library).
+* ✅ All models in `models.yml` are now fully supported.
 
 ### 2. Engine: Dynamic Voting Logic
 * **Task:** Refactor `GameLoop` logic to respect flags.

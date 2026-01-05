@@ -33,8 +33,75 @@ def test_api_client_local_provider():
         assert api_client.model_config == mock_model_def
 
 
-def test_api_client_cloud_providers_raise_error():
-    """Test that unsupported cloud providers raise NotImplementedError."""
+def test_api_client_openai_provider(monkeypatch):
+    """Test ApiClient initializes correctly for openai provider."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    mock_model_def = ModelDefinition(
+        id="gpt-5.1",
+        provider="openai",
+        api_model_id="gpt-5.1",
+        env_key_name="OPENAI_API_KEY",
+    )
+
+    with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
+        api_client = ApiClient(mock_model_def)
+
+        mock_openai.assert_called_once_with(api_key="test-openai-key")
+        assert api_client.model_id_for_api == "gpt-5.1"
+        assert api_client.model_config == mock_model_def
+
+
+def test_api_client_anthropic_provider(monkeypatch):
+    """Test ApiClient initializes correctly for anthropic provider."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
+
+    mock_model_def = ModelDefinition(
+        id="claude-sonnet-4-5",
+        provider="anthropic",
+        api_model_id="claude-sonnet-4-5",
+        env_key_name="ANTHROPIC_API_KEY",
+    )
+
+    with patch(
+        "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
+    ) as mock_anthropic:
+        api_client = ApiClient(mock_model_def)
+
+        mock_anthropic.assert_called_once_with(api_key="test-anthropic-key")
+        assert api_client.model_id_for_api == "claude-sonnet-4-5"
+        assert api_client.model_config == mock_model_def
+
+
+def test_api_client_google_provider(monkeypatch):
+    """Test ApiClient initializes correctly for google provider."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
+
+    mock_model_def = ModelDefinition(
+        id="gemini-2.5-pro",
+        provider="google",
+        api_model_id="gemini-2.5-pro",
+        env_key_name="GOOGLE_API_KEY",
+    )
+
+    with (
+        patch(
+            "src.nomic_engine.llm.api_clients.genai.configure"
+        ) as mock_configure,
+        patch(
+            "src.nomic_engine.llm.api_clients.genai.GenerativeModel"
+        ) as mock_model,
+    ):
+        api_client = ApiClient(mock_model_def)
+
+        mock_configure.assert_called_once_with(api_key="test-google-key")
+        mock_model.assert_called_once_with("gemini-2.5-pro")
+        assert api_client.model_id_for_api == "gemini-2.5-pro"
+        assert api_client.model_config == mock_model_def
+
+
+def test_api_client_cloud_providers_missing_key():
+    """Test that cloud providers raise ValueError when API key is missing."""
     cloud_providers = ["openai", "anthropic", "google"]
 
     for provider in cloud_providers:
@@ -45,10 +112,10 @@ def test_api_client_cloud_providers_raise_error():
             env_key_name=f"{provider.upper()}_API_KEY",
         )
 
-        with pytest.raises(NotImplementedError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             ApiClient(mock_model_def)
 
-        assert f"Provider {provider} not yet implemented" in str(
+        assert f"API key for provider {provider} not found" in str(
             exc_info.value
         )
 
@@ -210,5 +277,255 @@ def test_get_completion_failure():
         messages = [ChatMessage(role="user", content="Hello!")]
 
         # Call get_completion and assert it returns None
+        result = api_client.get_completion(messages)
+        assert result is None
+
+
+def test_get_completion_openai_success(monkeypatch):
+    """Test successful completion from OpenAI provider."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="gpt-5.1",
+        provider="openai",
+        api_model_id="gpt-5.1",
+        env_key_name="OPENAI_API_KEY",
+    )
+
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "OpenAI response"
+
+    with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        api_client = ApiClient(mock_model_def)
+
+        messages = [
+            ChatMessage(role="system", content="You are helpful."),
+            ChatMessage(role="user", content="Hello!"),
+        ]
+
+        result = api_client.get_completion(messages)
+
+        mock_client.chat.completions.create.assert_called_once_with(
+            model="gpt-5.1",
+            messages=[
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "Hello!"},
+            ],
+        )
+        assert result == "OpenAI response"
+
+
+def test_get_completion_openai_error(monkeypatch):
+    """Test that OpenAI provider handles errors gracefully."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="gpt-5.1",
+        provider="openai",
+        api_model_id="gpt-5.1",
+        env_key_name="OPENAI_API_KEY",
+    )
+
+    with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = OpenAIError(
+            "API error"
+        )
+        mock_openai.return_value = mock_client
+
+        api_client = ApiClient(mock_model_def)
+        messages = [ChatMessage(role="user", content="Hello!")]
+
+        result = api_client.get_completion(messages)
+        assert result is None
+
+
+def test_get_completion_anthropic_success(monkeypatch):
+    """Test successful completion from Anthropic provider."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="claude-sonnet-4-5",
+        provider="anthropic",
+        api_model_id="claude-sonnet-4-5",
+        env_key_name="ANTHROPIC_API_KEY",
+    )
+
+    # Mock Anthropic response
+    mock_text_block = MagicMock()
+    mock_text_block.text = "Anthropic response"
+    mock_response = MagicMock()
+    mock_response.content = [mock_text_block]
+
+    with patch(
+        "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
+    ) as mock_anthropic_class:
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        mock_anthropic_class.return_value = mock_client
+
+        api_client = ApiClient(mock_model_def)
+
+        messages = [
+            ChatMessage(role="system", content="You are helpful."),
+            ChatMessage(role="user", content="Hello!"),
+            ChatMessage(role="assistant", content="Hi there!"),
+            ChatMessage(role="user", content="How are you?"),
+        ]
+
+        result = api_client.get_completion(messages)
+
+        # Verify system message was extracted and non-system messages passed
+        call_args = mock_client.messages.create.call_args
+        assert call_args.kwargs["model"] == "claude-sonnet-4-5"
+        assert call_args.kwargs["max_tokens"] == 8192
+        assert call_args.kwargs["system"] == "You are helpful."
+        assert call_args.kwargs["messages"] == [
+            {"role": "user", "content": "Hello!"},
+            {"role": "assistant", "content": "Hi there!"},
+            {"role": "user", "content": "How are you?"},
+        ]
+        assert result == "Anthropic response"
+
+
+def test_get_completion_anthropic_no_system(monkeypatch):
+    """Test Anthropic completion without system message."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="claude-sonnet-4-5",
+        provider="anthropic",
+        api_model_id="claude-sonnet-4-5",
+        env_key_name="ANTHROPIC_API_KEY",
+    )
+
+    mock_text_block = MagicMock()
+    mock_text_block.text = "Response"
+    mock_response = MagicMock()
+    mock_response.content = [mock_text_block]
+
+    with patch(
+        "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
+    ) as mock_anthropic_class:
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        mock_anthropic_class.return_value = mock_client
+
+        api_client = ApiClient(mock_model_def)
+
+        messages = [ChatMessage(role="user", content="Hello!")]
+
+        result = api_client.get_completion(messages)
+
+        # Verify no system parameter when no system messages
+        call_args = mock_client.messages.create.call_args
+        assert "system" not in call_args.kwargs
+        assert result == "Response"
+
+
+def test_get_completion_anthropic_error(monkeypatch):
+    """Test that Anthropic provider handles errors gracefully."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="claude-sonnet-4-5",
+        provider="anthropic",
+        api_model_id="claude-sonnet-4-5",
+        env_key_name="ANTHROPIC_API_KEY",
+    )
+
+    with patch(
+        "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
+    ) as mock_anthropic_class:
+        mock_client = MagicMock()
+        # Use generic Exception for testing error handling
+        mock_client.messages.create.side_effect = Exception(
+            "Anthropic API error"
+        )
+        mock_anthropic_class.return_value = mock_client
+
+        api_client = ApiClient(mock_model_def)
+        messages = [ChatMessage(role="user", content="Hello!")]
+
+        result = api_client.get_completion(messages)
+        assert result is None
+
+
+def test_get_completion_google_success(monkeypatch):
+    """Test successful completion from Google provider."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="gemini-2.5-pro",
+        provider="google",
+        api_model_id="gemini-2.5-pro",
+        env_key_name="GOOGLE_API_KEY",
+    )
+
+    mock_response = MagicMock()
+    mock_response.text = "Google response"
+
+    with (
+        patch("src.nomic_engine.llm.api_clients.genai.configure"),
+        patch(
+            "src.nomic_engine.llm.api_clients.genai.GenerativeModel"
+        ) as mock_model_class,
+    ):
+        mock_client = MagicMock()
+        mock_client.generate_content.return_value = mock_response
+        mock_model_class.return_value = mock_client
+
+        api_client = ApiClient(mock_model_def)
+
+        messages = [
+            ChatMessage(role="system", content="You are helpful."),
+            ChatMessage(role="user", content="Hello!"),
+            ChatMessage(role="assistant", content="Hi there!"),
+            ChatMessage(role="user", content="How are you?"),
+        ]
+
+        result = api_client.get_completion(messages)
+
+        # Verify message format conversion
+        call_args = mock_client.generate_content.call_args
+        expected_messages = [
+            {"role": "user", "parts": ["You are helpful."]},
+            {"role": "user", "parts": ["Hello!"]},
+            {"role": "model", "parts": ["Hi there!"]},
+            {"role": "user", "parts": ["How are you?"]},
+        ]
+        assert call_args.args[0] == expected_messages
+        assert result == "Google response"
+
+
+def test_get_completion_google_error(monkeypatch):
+    """Test that Google provider handles errors gracefully."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="gemini-2.5-pro",
+        provider="google",
+        api_model_id="gemini-2.5-pro",
+        env_key_name="GOOGLE_API_KEY",
+    )
+
+    with (
+        patch("src.nomic_engine.llm.api_clients.genai.configure"),
+        patch(
+            "src.nomic_engine.llm.api_clients.genai.GenerativeModel"
+        ) as mock_model_class,
+    ):
+        mock_client = MagicMock()
+        mock_client.generate_content.side_effect = Exception("API error")
+        mock_model_class.return_value = mock_client
+
+        api_client = ApiClient(mock_model_def)
+        messages = [ChatMessage(role="user", content="Hello!")]
+
         result = api_client.get_completion(messages)
         assert result is None
