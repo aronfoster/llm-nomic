@@ -6,9 +6,10 @@ This document tracks the high-level plan for the `llm-nomic` project.
 
 Our architecture is built on these principles:
 
-1.  **Security, Structure First:** Having secure code 
+1.  **Security, Structure First:** Having secure, clean (Uncle Bob) code 
 2.  **Engine vs. Instance:** The Game Engine is stateless and operates on "Game Instance" directories.
 3.  **Authoritative Data:** The Game Instance is the sole authority on game state. `rules.jsonl` and `game_state.json` are the sources of truth.
+4.  **Stand alone PRs:** All PRs are small enough to understand, `make ci` passes, and contain unit tests that cover new code
 
 ## Bug List
 
@@ -22,36 +23,38 @@ Our architecture is built on these principles:
 
 * None
 
-## **Sprint 26-1: Multi-Model Expansion & Dynamic Resolution**
+## Sprint 26-1: Modular Resolution & State Compilation
 
-**Goal:** Finalize core engine flexibility and expand LLM connectivity to include major cloud providers.
+**Goal:** Refactor the unweildy resolution logic and implement a multi-step "State Compiler" to bridge the gap between natural language rules and engine behavior.
 
-### **1. Cloud LLM Integration (High Priority)**
+### 1. Core Refactor: Clean Resolution Loop
 
-* **Task:** Build out `ApiClient` support in `src/nomic_engine/llm/api_clients.py`.
-* **Status:** ✅ COMPLETED
+* **Task:** Decompose `GameLoop._resolve_turn` into discrete, side-effect-free logical steps.
 * **Sub-tasks:**
-* ✅ Implement **OpenAI** client (using existing `openai` library).
-* ✅ Implement **Anthropic** client (using `anthropic` library).
-* ✅ Implement **Google Gemini** client (using `google-generativeai` library).
-* ✅ All models in `models.yml` are now fully supported.
+  * Implement `_tally_vote_results(votes)`: Returns a pure data object with counts and pass/fail status.
+  * Implement `_get_judge_decisions(...)`: Consolidates all Judge-specific output (veto, scores, state updates).
+  * Implement `_apply_turn_mutations(results, judge_data)`: A single transactional method for updating files (`game_state.json`, `rules.jsonl`) and incrementing counters.
+* **Logging Requirement:** Increase `logging.debug` coverage across all sub-functions to ensure high-visibility execution tracking without useless duplication.
+* **Testing:** Unit tests must pass with `make ci`. Run `pip install -r requirements.txt` to ensure environment consistency.
 
-### 2. Engine: Dynamic Voting Logic
-* **Task:** Refactor `GameLoop` logic to respect flags.
-* **Status:** ✅ COMPLETED
-* **Files:** `src/nomic_engine/core/game_loop.py`
-* **Logic:**
-  * ✅ `_tally_votes`: Switch between 100% (unanimous) and >50% (majority) based on `flags["vote_mode"]`.
-  * ✅ `_detect_victory`: Ensure it uses the current `target_score` from state.
+### 2. Judge Step 1: State Maintenance Interface
 
-### 3. Judge: State Maintenance Interface
-* **Task:** Add `maintain_state(rules, game_state) -> StateUpdates` to `BaseJudge`.
-* **Trigger:** Call this in `GameLoop._resolve_turn` immediately after a proposal is applied.
+* **Task:** Add `maintain_state(rules, game_state, proposal) -> StateUpdates` to `BaseJudge`.
+* **Trigger:** Call this in the new `_get_judge_decisions` step immediately after a proposal passes.
+* **Logic:** The Judge should return a **delta only**—returning a `StateUpdates` object only if a rule change necessitates an engine change.
 * **Implementations:**
-  * **HumanJudge:** Interactive CLI loop reviewing Flags and Target Score.
-  * **LLMJudge:** New prompt: *"Review the new rules. Return JSON updating 'flags' or 'target_score' ONLY if they conflict with the text."*
+   * **HumanJudge:** Interactive CLI loop displaying current flags/target score and prompting for specific overrides.
+   * **LLMJudge:** Prepare the factory to accept the "Game State Compiler" prompt logic.
 
-### 4. Smart Player Context (Bug Mitigation)
+### 3. Judge Step 2: Game State Compiler (LLM)
+
+* **Task:** Implement the "Compiler" prompt for the `LLMJudge`.
+* **Sub-tasks:**
+* Define a **Supported Feature Registry** in the prompt (limiting updates to valid flags).
+* Implement **Conflict Resolution logic**: Instruct the LLM to use Rule 211 (numerical precedence) for value conflicts - if that rule still exists. Send off the full rule list to the judge if not?
+* Add an `error_log` field to `StateUpdates`: Allows the Judge to report rules that are "Impossible to Implement" with current engine flags.
+
+### 5. Smart Player Context (Bug Mitigation)
 
 * **Task:** Add plain-language score/rank descriptions to mitigate LLM math errors.
 * **Status:** PLANNED
