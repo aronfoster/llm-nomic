@@ -38,10 +38,11 @@ Our architecture is built on these principles:
 
 ### 2. Engine: Dynamic Voting Logic
 * **Task:** Refactor `GameLoop` logic to respect flags.
+* **Status:** ✅ COMPLETED
 * **Files:** `src/nomic_engine/core/game_loop.py`
 * **Logic:**
-  * `_tally_votes`: Switch between 100% (unanimous) and >50% (majority) based on `flags["vote_mode"]`.
-  * `_detect_victory`: Ensure it uses the current `target_score` from state.
+  * ✅ `_tally_votes`: Switch between 100% (unanimous) and >50% (majority) based on `flags["vote_mode"]`.
+  * ✅ `_detect_victory`: Ensure it uses the current `target_score` from state.
 
 ### 3. Judge: State Maintenance Interface
 * **Task:** Add `maintain_state(rules, game_state) -> StateUpdates` to `BaseJudge`.

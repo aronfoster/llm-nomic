@@ -465,7 +465,11 @@ class GameLoop:
         """
         Tally votes to determine if proposal passed.
 
-        Per Rule 203, proposals require unanimous YES votes to pass.
+        The voting mode is determined by the 'vote_mode' flag in GameState:
+        - 'unanimous': Proposal passes only if all votes are "YES"
+        - 'majority': Proposal passes if YES votes > 50% of total votes cast
+
+        Abstentions are counted in the total for majority calculations.
         Special case: zero voters (empty votes list) results in automatic pass.
 
         Args:
@@ -474,23 +478,55 @@ class GameLoop:
         Returns:
             True if proposal passed, False otherwise
         """
+        assert self.game_manager.game_state is not None
+
         yes_votes = sum(1 for v in votes if v.vote == "YES")
         no_votes = sum(1 for v in votes if v.vote == "NO")
         abstain_votes = sum(1 for v in votes if v.vote == "ABSTAIN")
         total_voters = len(votes)
 
-        # Rule 203: Unanimous pass requirement
         # Special case: If there are zero voters, proposal automatically passes
         if total_voters == 0:
             proposal_passed = True
-        else:
-            # Proposal must receive unanimous YES votes to pass
-            proposal_passed = yes_votes == total_voters
+            logger.info(
+                "Vote tally: Zero voters, proposal automatically passes"
+            )
+            return proposal_passed
 
-        logger.info(
-            f"Vote tally: YES={yes_votes}, NO={no_votes}, "
-            f"ABSTAIN={abstain_votes}, Passed={proposal_passed}"
-        )
+        # Get vote_mode from flags with type safety
+        flags = self.game_manager.game_state.flags
+        vote_mode = flags.get("vote_mode", "unanimous")
+
+        # Validate vote_mode is a string
+        if not isinstance(vote_mode, str):
+            logger.warning(
+                f"Invalid vote_mode type in flags: {type(vote_mode)}. "
+                "Defaulting to 'unanimous'"
+            )
+            vote_mode = "unanimous"
+
+        # Determine if proposal passed based on vote_mode
+        if vote_mode == "majority":
+            # Majority mode: YES votes must be > 50% of total votes
+            proposal_passed = yes_votes > (total_voters / 2)
+            logger.info(
+                f"Vote tally (majority mode): YES={yes_votes}, "
+                f"NO={no_votes}, ABSTAIN={abstain_votes}, "
+                f"Total={total_voters}, Passed={proposal_passed}"
+            )
+        else:
+            # Unanimous mode (default): All votes must be YES
+            if vote_mode != "unanimous":
+                logger.warning(
+                    f"Unknown vote_mode '{vote_mode}' in flags. "
+                    "Defaulting to 'unanimous'"
+                )
+            proposal_passed = yes_votes == total_voters
+            logger.info(
+                f"Vote tally (unanimous mode): YES={yes_votes}, "
+                f"NO={no_votes}, ABSTAIN={abstain_votes}, "
+                f"Passed={proposal_passed}"
+            )
 
         return proposal_passed
 
