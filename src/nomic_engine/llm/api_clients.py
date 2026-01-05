@@ -161,13 +161,21 @@ class ApiClient:
                 # Filter out system and cast to proper TypedDict
                 anthropic_messages: list[anthropic.types.MessageParam] = []
                 for msg in messages:
-                    if msg.role != "system":
-                        # Role is "user" or "assistant" here, cast dict
+                    if msg.role == "system":
+                        # System messages already extracted above
+                        continue
+                    elif msg.role in ("user", "assistant"):
                         anthropic_messages.append(
                             cast(
                                 anthropic.types.MessageParam,
                                 {"role": msg.role, "content": msg.content},
                             )
+                        )
+                    else:
+                        # Unexpected role - log warning and skip
+                        logger.warning(
+                            "Unexpected role '%s' for Anthropic, skipping",
+                            msg.role,
                         )
 
                 # Create message with Anthropic client
@@ -208,9 +216,15 @@ class ApiClient:
                         gemini_messages.append(
                             {"role": "model", "parts": [msg.content]}
                         )
-                    else:  # user
+                    elif msg.role == "user":
                         gemini_messages.append(
                             {"role": "user", "parts": [msg.content]}
+                        )
+                    else:
+                        # Unexpected role - log warning and skip
+                        logger.warning(
+                            "Unexpected role '%s' for Google, skipping",
+                            msg.role,
                         )
 
                 # Generate content using cast since google-generativeai
