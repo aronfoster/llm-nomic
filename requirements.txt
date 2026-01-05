@@ -3,6 +3,7 @@ python-dotenv
 pydantic
 pyyaml
 python-json-logger
+cffi
 
 # API Clients
 openai
