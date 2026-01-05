@@ -71,6 +71,11 @@ This is the long-term backlog and TODO scratchpad.
     * Explore https://openrouter.ai/ support for tokens/models
 
 * **Game State & Rules:**
+    * Enhanced Voting Architecture**
+        * **Task:** Replace binary vote logic with named "Abstention-Aware" modes.
+        * **Data Model:** Expand `VoteMode` enum in `data_models.py` to include `UNANIMOUS_STRICT`, `CONSENSUS`, `MAJORITY_TOTAL`, and `MAJORITY_VOTING`.
+        * **Engine Logic:** Update `GameLoop._tally_votes` to implement the specific denominator logic for each named mode.
+        * **LLM Awareness:** Update `PromptBuilder` to dynamically inject a plain-language explanation of the current `vote_mode` into player prompts, ensuring players understand the tactical weight of an "ABSTAIN" vote.
     * Allow `create_game.py` to select from multiple initial ruleset files.
     * Allow custom model config per game (e.g., for new/local models not in `models.yml`).
     * Query provider APIs to get a list of available models.
