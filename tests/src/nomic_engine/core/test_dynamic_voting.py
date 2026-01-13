@@ -74,10 +74,10 @@ def game_loop(mock_game_manager: Mock) -> GameLoop:
     return GameLoop(game_manager=mock_game_manager, players=[])
 
 
-# --- Tests for _tally_votes with Unanimous Mode ---
+# --- Tests for _tally_vote_results with Unanimous Mode ---
 
 
-def test_tally_votes_unanimous_all_yes_passes(
+def test_tally_vote_results_unanimous_all_yes_passes(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test unanimous mode: all YES votes should pass."""
@@ -89,11 +89,11 @@ def test_tally_votes_unanimous_all_yes_passes(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    result = game_loop._tally_votes(votes)
-    assert result is True
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is True
 
 
-def test_tally_votes_unanimous_one_no_fails(
+def test_tally_vote_results_unanimous_one_no_fails(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test unanimous mode: any NO vote should fail."""
@@ -105,11 +105,11 @@ def test_tally_votes_unanimous_one_no_fails(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    result = game_loop._tally_votes(votes)
-    assert result is False
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is False
 
 
-def test_tally_votes_unanimous_one_abstain_fails(
+def test_tally_vote_results_unanimous_one_abstain_fails(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test unanimous mode: any ABSTAIN vote should fail."""
@@ -121,11 +121,11 @@ def test_tally_votes_unanimous_one_abstain_fails(
         Vote(player_name="Charlie", vote="YES"),
     ]
 
-    result = game_loop._tally_votes(votes)
-    assert result is False
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is False
 
 
-def test_tally_votes_unanimous_all_no_fails(
+def test_tally_vote_results_unanimous_all_no_fails(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test unanimous mode: all NO votes should fail."""
@@ -137,14 +137,14 @@ def test_tally_votes_unanimous_all_no_fails(
         Vote(player_name="Charlie", vote="NO"),
     ]
 
-    result = game_loop._tally_votes(votes)
-    assert result is False
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is False
 
 
-# --- Tests for _tally_votes with Majority Mode ---
+# --- Tests for _tally_vote_results with Majority Mode ---
 
 
-def test_tally_votes_majority_over_50_percent_passes(
+def test_tally_vote_results_majority_over_50_percent_passes(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test majority mode: > 50% YES votes should pass."""
@@ -157,11 +157,11 @@ def test_tally_votes_majority_over_50_percent_passes(
     ]
 
     # 2 YES out of 3 total = 66.67% > 50%
-    result = game_loop._tally_votes(votes)
-    assert result is True
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is True
 
 
-def test_tally_votes_majority_exactly_50_percent_fails(
+def test_tally_vote_results_majority_exactly_50_percent_fails(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test majority mode: exactly 50% YES votes should fail."""
@@ -175,11 +175,11 @@ def test_tally_votes_majority_exactly_50_percent_fails(
     ]
 
     # 2 YES out of 4 total = 50% (not > 50%)
-    result = game_loop._tally_votes(votes)
-    assert result is False
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is False
 
 
-def test_tally_votes_majority_under_50_percent_fails(
+def test_tally_vote_results_majority_under_50_percent_fails(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test majority mode: < 50% YES votes should fail."""
@@ -192,11 +192,11 @@ def test_tally_votes_majority_under_50_percent_fails(
     ]
 
     # 1 YES out of 3 total = 33.33% < 50%
-    result = game_loop._tally_votes(votes)
-    assert result is False
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is False
 
 
-def test_tally_votes_majority_all_yes_passes(
+def test_tally_vote_results_majority_all_yes_passes(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test majority mode: all YES votes should pass."""
@@ -209,11 +209,11 @@ def test_tally_votes_majority_all_yes_passes(
     ]
 
     # 3 YES out of 3 total = 100% > 50%
-    result = game_loop._tally_votes(votes)
-    assert result is True
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is True
 
 
-def test_tally_votes_majority_abstentions_count_in_total(
+def test_tally_vote_results_majority_abstentions_count_in_total(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test majority mode: abstentions count in total vote count."""
@@ -227,11 +227,11 @@ def test_tally_votes_majority_abstentions_count_in_total(
     ]
 
     # 2 YES out of 4 total = 50% (not > 50%)
-    result = game_loop._tally_votes(votes)
-    assert result is False
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is False
 
 
-def test_tally_votes_majority_abstentions_still_allows_pass(
+def test_tally_vote_results_majority_abstentions_still_allows_pass(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test majority mode: can still pass with abstentions if > 50%."""
@@ -246,14 +246,14 @@ def test_tally_votes_majority_abstentions_still_allows_pass(
     ]
 
     # 3 YES out of 5 total = 60% > 50%
-    result = game_loop._tally_votes(votes)
-    assert result is True
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is True
 
 
 # --- Tests for Invalid/Missing vote_mode ---
 
 
-def test_tally_votes_missing_vote_mode_defaults_to_unanimous(
+def test_tally_vote_results_missing_vote_mode_defaults_to_unanimous(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test missing vote_mode defaults to unanimous."""
@@ -266,11 +266,11 @@ def test_tally_votes_missing_vote_mode_defaults_to_unanimous(
     ]
 
     # Should use unanimous mode (requires all YES)
-    result = game_loop._tally_votes(votes)
-    assert result is False
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is False
 
 
-def test_tally_votes_invalid_vote_mode_defaults_to_unanimous(
+def test_tally_vote_results_invalid_vote_mode_defaults_to_unanimous(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test invalid vote_mode string defaults to unanimous."""
@@ -283,11 +283,11 @@ def test_tally_votes_invalid_vote_mode_defaults_to_unanimous(
     ]
 
     # Should default to unanimous mode (requires all YES)
-    result = game_loop._tally_votes(votes)
-    assert result is False
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is False
 
 
-def test_tally_votes_non_string_vote_mode_defaults_to_unanimous(
+def test_tally_vote_results_non_string_vote_mode_defaults_to_unanimous(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test non-string vote_mode type defaults to unanimous."""
@@ -300,14 +300,14 @@ def test_tally_votes_non_string_vote_mode_defaults_to_unanimous(
     ]
 
     # Should default to unanimous mode (requires all YES)
-    result = game_loop._tally_votes(votes)
-    assert result is False
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is False
 
 
 # --- Tests for Zero Voters Edge Case ---
 
 
-def test_tally_votes_zero_voters_passes(
+def test_tally_vote_results_zero_voters_passes(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test zero voters (empty votes list) automatically passes."""
@@ -315,11 +315,11 @@ def test_tally_votes_zero_voters_passes(
 
     votes: list[Vote] = []
 
-    result = game_loop._tally_votes(votes)
-    assert result is True
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is True
 
 
-def test_tally_votes_zero_voters_passes_in_majority_mode(
+def test_tally_vote_results_zero_voters_passes_in_majority_mode(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
     """Test zero voters passes in majority mode too."""
@@ -327,8 +327,8 @@ def test_tally_votes_zero_voters_passes_in_majority_mode(
 
     votes: list[Vote] = []
 
-    result = game_loop._tally_votes(votes)
-    assert result is True
+    result = game_loop._tally_vote_results(votes)
+    assert result.passed is True
 
 
 # --- Tests for _detect_victory ---

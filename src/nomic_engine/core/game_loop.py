@@ -7,7 +7,15 @@ calculating state changes, and interfacing with the Human Judge.
 
 import logging
 
-from ..data_models import Discussion, Proposal, ProposalType, Rule, Vote
+from ..data_models import (
+    Discussion,
+    JudgeDecisions,
+    Proposal,
+    ProposalType,
+    Rule,
+    Vote,
+    VoteResult,
+)
 from ..judge import BaseJudge
 from ..judge.base_judge import JudgeScoreResponse, JudgeVetoResponse
 from ..judge.human_judge import HumanJudge
@@ -461,9 +469,12 @@ class GameLoop:
         logger.info(f"Collected {len(votes)} votes")
         return votes
 
-    def _tally_votes(self, votes: list[Vote]) -> bool:
+    def _tally_vote_results(self, votes: list[Vote]) -> VoteResult:
         """
-        Tally votes to determine if proposal passed.
+        Calculate the outcome of the vote (side-effect-free).
+
+        This is a pure function that analyzes votes and returns a structured
+        VoteResult object containing counts and the pass/fail determination.
 
         The voting mode is determined by the 'vote_mode' flag in GameState:
         - 'unanimous': Proposal passes only if all votes are "YES"
@@ -476,22 +487,18 @@ class GameLoop:
             votes: List of Vote objects from all players
 
         Returns:
-            True if proposal passed, False otherwise
+            VoteResult: Structured data containing vote counts and
+                pass/fail status
         """
         assert self.game_manager.game_state is not None
 
-        yes_votes = sum(1 for v in votes if v.vote == "YES")
-        no_votes = sum(1 for v in votes if v.vote == "NO")
-        abstain_votes = sum(1 for v in votes if v.vote == "ABSTAIN")
-        total_voters = len(votes)
+        logger.debug(f"Entering _tally_vote_results with {len(votes)} votes")
 
-        # Special case: If there are zero voters, proposal automatically passes
-        if total_voters == 0:
-            proposal_passed = True
-            logger.info(
-                "Vote tally: Zero voters, proposal automatically passes"
-            )
-            return proposal_passed
+        # Count votes by type
+        yes_count = sum(1 for v in votes if v.vote == "YES")
+        no_count = sum(1 for v in votes if v.vote == "NO")
+        abstain_count = sum(1 for v in votes if v.vote == "ABSTAIN")
+        total_voters = len(votes)
 
         # Get vote_mode from flags with type safety
         flags = self.game_manager.game_state.flags
@@ -505,14 +512,19 @@ class GameLoop:
             )
             vote_mode = "unanimous"
 
-        # Determine if proposal passed based on vote_mode
-        if vote_mode == "majority":
+        # Special case: If there are zero voters, proposal automatically passes
+        if total_voters == 0:
+            passed = True
+            logger.debug(
+                "Vote tally: Zero voters, proposal automatically passes"
+            )
+        elif vote_mode == "majority":
             # Majority mode: YES votes must be > 50% of total votes
-            proposal_passed = yes_votes > (total_voters / 2)
-            logger.info(
-                f"Vote tally (majority mode): YES={yes_votes}, "
-                f"NO={no_votes}, ABSTAIN={abstain_votes}, "
-                f"Total={total_voters}, Passed={proposal_passed}"
+            passed = yes_count > (total_voters / 2)
+            logger.debug(
+                f"Vote tally (majority mode): YES={yes_count}, "
+                f"NO={no_count}, ABSTAIN={abstain_count}, "
+                f"Total={total_voters}, Passed={passed}"
             )
         else:
             # Unanimous mode (default): All votes must be YES
@@ -521,43 +533,242 @@ class GameLoop:
                     f"Unknown vote_mode '{vote_mode}' in flags. "
                     "Defaulting to 'unanimous'"
                 )
-            proposal_passed = yes_votes == total_voters
-            logger.info(
-                f"Vote tally (unanimous mode): YES={yes_votes}, "
-                f"NO={no_votes}, ABSTAIN={abstain_votes}, "
-                f"Passed={proposal_passed}"
+                vote_mode = "unanimous"
+            passed = yes_count == total_voters
+            logger.debug(
+                f"Vote tally (unanimous mode): YES={yes_count}, "
+                f"NO={no_count}, ABSTAIN={abstain_count}, "
+                f"Passed={passed}"
             )
 
-        return proposal_passed
+        result = VoteResult(
+            yes_count=yes_count,
+            no_count=no_count,
+            abstain_count=abstain_count,
+            total_voters=total_voters,
+            passed=passed,
+            vote_mode=vote_mode,
+        )
 
-    def _apply_passed_proposal(self, proposal: Proposal) -> None:
+        logger.debug(f"Exiting _tally_vote_results: passed={result.passed}")
+        return result
+
+    def _get_judge_decisions(
+        self,
+        proposal: Proposal,
+        votes: list[Vote],
+        discussions: list[Discussion],
+        vote_result: VoteResult,
+    ) -> JudgeDecisions:
         """
-        Apply a passed proposal to the rules.
+        Consolidate interpretive data from the Judge.
 
-        This method:
-        - Applies the proposal to the rules manager
-        - Saves the updated rules
-        - Increments the next_proposal_id counter
+        This method encapsulates all Judge interactions for the current turn:
+        - Veto decision (only if proposal passed)
+        - Score assessments (always)
 
         Args:
-            proposal: The proposal to apply
+            proposal: The proposal being judged
+            votes: List of votes cast
+            discussions: List of discussions
+            vote_result: The vote tallying result
+
+        Returns:
+            JudgeDecisions: Consolidated judge responses and approval status
+        """
+        logger.debug(
+            f"Entering _get_judge_decisions "
+            f"(proposal_passed={vote_result.passed})"
+        )
+
+        # Only consult judge for veto if proposal passed
+        if vote_result.passed:
+            logger.debug("Consulting judge for veto decision")
+            veto_response = self.judge.get_veto(
+                self.game_manager, proposal, votes, discussions
+            )
+            judge_vetoed = veto_response["veto"]
+            logger.debug(f"Judge veto decision: vetoed={judge_vetoed}")
+        else:
+            # Proposal failed vote, no veto needed
+            logger.debug("Proposal failed vote, skipping veto consultation")
+            veto_response = {
+                "veto": False,
+                "reason": None,
+                "private_thoughts": None,
+            }
+            judge_vetoed = False
+
+        # Score assessment always happens
+        logger.debug("Consulting judge for score assessment")
+        score_response = self.judge.assess_scores(
+            self.game_manager, self.players, proposal, votes, discussions
+        )
+        logger.debug(
+            f"Judge score assessment complete: "
+            f"{len(score_response.get('score_adjustments', []))} adjustments"
+        )
+
+        # Calculate approval status
+        judge_approved = vote_result.passed and not judge_vetoed
+
+        decisions = JudgeDecisions(
+            veto_response=veto_response,
+            score_response=score_response,
+            judge_approved=judge_approved,
+        )
+
+        logger.debug(
+            f"Exiting _get_judge_decisions: "
+            f"judge_approved={decisions.judge_approved}"
+        )
+        return decisions
+
+    def _apply_turn_mutations(
+        self,
+        proposal: Proposal,
+        votes: list[Vote],
+        discussions: list[Discussion],
+        vote_result: VoteResult,
+        judge_decisions: JudgeDecisions,
+    ) -> bool:
+        """
+        Authoritative state and file persistence.
+
+        This is the ONLY method with side effects.
+
+        This method:
+        - Applies passed proposals to rules
+        - Increments proposal counters
+        - Detects victory conditions
+        - Advances turn state
+        - Saves game state and rules
+        - Logs transcript
+
+        Args:
+            proposal: The proposal being resolved
+            votes: List of votes cast
+            discussions: List of discussions
+            vote_result: Vote tallying result
+            judge_decisions: Consolidated judge decisions
+
+        Returns:
+            bool: True if game ended by victory, False otherwise
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
 
-        logger.info("Proposal PASSED and was not vetoed.")
-        print("\n⚖️  JUDGE: Outcome stands. Applying PASSED proposal.")
+        logger.debug("Entering _apply_turn_mutations")
 
-        # Apply rules
-        self.game_manager.rules_manager.apply_proposal(proposal)
-        self.game_manager.save_rules()
+        # Apply proposal if passed and approved
+        if judge_decisions.judge_approved:
+            logger.debug(
+                f"Applying passed proposal {proposal.proposal_id} to rules"
+            )
+            self.game_manager.rules_manager.apply_proposal(proposal)
+            self.game_manager.save_rules()
+            logger.debug("Proposal applied and rules saved")
 
-        # Increment proposal ID counter (only when proposal passes)
-        self.game_manager.game_state.next_proposal_id += 1
-        logger.debug(
-            f"Proposal ID incremented to "
-            f"{self.game_manager.game_state.next_proposal_id}"
+            # Increment proposal ID counter (only when proposal passes)
+            self.game_manager.game_state.next_proposal_id += 1
+            logger.debug(
+                f"Proposal ID incremented to "
+                f"{self.game_manager.game_state.next_proposal_id}"
+            )
+        else:
+            logger.debug(
+                "Proposal not applied (failed vote or vetoed), "
+                "skipping rule modifications"
+            )
+
+        # Detect victory
+        victory_reached, winners, winning_score = self._detect_victory()
+        logger.debug(f"Victory detection: victory_reached={victory_reached}")
+
+        # Advance turn state only if the game is not over
+        if not victory_reached:
+            logger.debug("No victory, advancing turn state")
+            self._advance_turn_state()
+        else:
+            logger.debug(
+                f"Victory detected for {winners} with score {winning_score}, "
+                "not advancing turn"
+            )
+
+        # Log transcript and save state
+        logger.debug("Logging transcript and saving game state")
+        self._log_and_save_turn(
+            proposal,
+            votes,
+            discussions,
+            vote_result.passed,
+            judge_decisions.judge_approved,
+            judge_decisions.veto_response,
+            judge_decisions.score_response,
         )
+
+        # Log game over if victory reached
+        if victory_reached:
+            logger.debug("Logging game over event")
+            self._log_game_over(winners, winning_score)
+
+        logger.debug(
+            f"Exiting _apply_turn_mutations: game_over={victory_reached}"
+        )
+        return victory_reached
+
+    def _print_proposal_summary(
+        self, proposal: Proposal, vote_result: VoteResult
+    ) -> None:
+        """
+        Print proposal details and voting results to console.
+
+        Args:
+            proposal: The proposal being voted on
+            vote_result: The vote tallying result
+        """
+        assert self.game_manager.game_state is not None
+
+        print("\n" + "=" * 60)
+        print(f"PROPOSAL #{self.game_manager.game_state.move_number}")
+        print(f"Proposal ID: {proposal.proposal_id}")
+        print(f"Proposer: {proposal.proposer_name}")
+        print(f"Type: {proposal.type}")
+        if proposal.target_rule_id:
+            print(f"Target Rule ID: {proposal.target_rule_id}")
+        if proposal.new_text:
+            print(f"New Text: {proposal.new_text}")
+        if proposal.rationale:
+            print(f"Rationale: {proposal.rationale}")
+        print("\nVOTING RESULTS:")
+        print(f"  YES: {vote_result.yes_count}")
+        print(f"  NO: {vote_result.no_count}")
+        print(f"  ABSTAIN: {vote_result.abstain_count}")
+        print(f"\nResult: {'PASSED' if vote_result.passed else 'FAILED'}")
+        print("=" * 60)
+
+    def _print_outcome_summary(
+        self, vote_result: VoteResult, judge_decisions: JudgeDecisions
+    ) -> None:
+        """
+        Print judge decision outcome to console.
+
+        Args:
+            vote_result: The vote tallying result
+            judge_decisions: The consolidated judge decisions
+        """
+        if judge_decisions.judge_approved:
+            logger.info("Proposal PASSED and was not vetoed.")
+            print("\n⚖️  JUDGE: Outcome stands. Applying PASSED proposal.")
+        else:
+            # Proposal failed or was vetoed
+            if not vote_result.passed:
+                logger.info("Proposal FAILED by vote.")
+                print("\n⚖️  JUDGE: Outcome stands. Proposal FAILED.")
+            else:
+                # Proposal passed but was vetoed
+                logger.warning("Judge VETOED passed proposal")
+                print("\n⚖️  JUDGE VETO: Proposal has been VETOED and FAILED.")
 
     def _advance_turn_state(self) -> None:
         """
@@ -697,20 +908,19 @@ class GameLoop:
         discussions: list[Discussion],
     ) -> bool:
         """
-        Resolve the turn by tallying votes, consulting judge, applying changes.
+        Resolve the turn by tallying, judging, and applying changes.
 
-        This method orchestrates the resolution phase by:
-        - Tallying votes to determine pass/fail
-        - Consulting the human judge for veto decision
-        - Prompting judge to manually assign scores
-        - Applying proposal to rules if passed and not vetoed
-        - Advancing to next turn
-        - Saving state and logging transcript
+        This method orchestrates the resolution phase using three discrete
+        steps:
+        1. Tallying: Calculate vote results (side-effect-free)
+        2. Judging: Consolidate judge decisions (veto + scoring)
+        3. Application: Apply mutations (the ONLY phase with side effects)
 
         Args:
             proposal: The proposal that was voted on
             votes: List of Vote objects from all players
             discussions: List of Discussion objects from discussion phase
+
         Returns:
             bool: True if the game ended by reaching the target score.
         """
@@ -719,93 +929,30 @@ class GameLoop:
 
         logger.info("Step 5: Resolution phase")
 
-        # Tally votes
-        proposal_passed = self._tally_votes(votes)
+        # Phase 1: Tally votes (side-effect-free)
+        logger.info("Phase 1: Tallying votes")
+        vote_result = self._tally_vote_results(votes)
 
         # Print proposal and voting results to console
-        yes_votes = sum(1 for v in votes if v.vote == "YES")
-        no_votes = sum(1 for v in votes if v.vote == "NO")
-        abstain_votes = sum(1 for v in votes if v.vote == "ABSTAIN")
+        self._print_proposal_summary(proposal, vote_result)
 
-        print("\n" + "=" * 60)
-        print(f"PROPOSAL #{self.game_manager.game_state.move_number}")
-        print(f"Proposal ID: {proposal.proposal_id}")
-        print(f"Proposer: {proposal.proposer_name}")
-        print(f"Type: {proposal.type}")
-        if proposal.target_rule_id:
-            print(f"Target Rule ID: {proposal.target_rule_id}")
-        if proposal.new_text:
-            print(f"New Text: {proposal.new_text}")
-        if proposal.rationale:
-            print(f"Rationale: {proposal.rationale}")
-        print("\nVOTING RESULTS:")
-        print(f"  YES: {yes_votes}")
-        print(f"  NO: {no_votes}")
-        print(f"  ABSTAIN: {abstain_votes}")
-        print(f"\nResult: {'PASSED' if proposal_passed else 'FAILED'}")
-        print("=" * 60)
-
-        # Only consult judge for veto if proposal passed
-        if proposal_passed:
-            judge_veto_response = self.judge.get_veto(
-                self.game_manager, proposal, votes, discussions
-            )
-            judge_vetoed = judge_veto_response["veto"]
-        else:
-            judge_vetoed = False
-            judge_veto_response = {
-                "veto": False,
-                "reason": None,
-                "private_thoughts": None,
-            }
-
-        # Communicate outcome before scoring
-        if proposal_passed and not judge_vetoed:
-            logger.info("Proposal PASSED and was not vetoed.")
-        else:
-            # Proposal failed or was vetoed
-            if not proposal_passed:
-                logger.info("Proposal FAILED by vote.")
-                print("\n⚖️  JUDGE: Outcome stands. Proposal FAILED.")
-            elif judge_vetoed:
-                logger.warning(
-                    f"Judge VETOED passed proposal {proposal.proposal_id}"
-                )
-                print("\n⚖️  JUDGE VETO: Proposal has been VETOED and FAILED.")
-
-        # Score assessment must happen before applying any rule changes
-        # so that the judge evaluates the turn against the pre-modification
-        # ruleset (Rule 205 compliance).
-        judge_score_response = self.judge.assess_scores(
-            self.game_manager, self.players, proposal, votes, discussions
+        # Phase 2: Get judge decisions (veto and scoring)
+        logger.info("Phase 2: Consulting judge")
+        judge_decisions = self._get_judge_decisions(
+            proposal, votes, discussions, vote_result
         )
 
-        # Apply proposal if passed and not vetoed
-        if proposal_passed and not judge_vetoed:
-            self._apply_passed_proposal(proposal)
+        # Communicate outcome before application
+        self._print_outcome_summary(vote_result, judge_decisions)
 
-        victory_reached, winners, winning_score = self._detect_victory()
-
-        # Advance turn state only if the game is not over
-        if not victory_reached:
-            self._advance_turn_state()
-
-        # Log transcript and save state
-        judge_approved = proposal_passed and not judge_vetoed
-        self._log_and_save_turn(
-            proposal,
-            votes,
-            discussions,
-            proposal_passed,
-            judge_approved,
-            judge_veto_response,
-            judge_score_response,
+        # Phase 3: Apply mutations (the ONLY phase with side effects)
+        logger.info("Phase 3: Applying turn mutations")
+        game_over = self._apply_turn_mutations(
+            proposal, votes, discussions, vote_result, judge_decisions
         )
 
-        if victory_reached:
-            self._log_game_over(winners, winning_score)
-
-        return victory_reached
+        logger.info(f"Resolution phase complete: game_over={game_over}")
+        return game_over
 
     def _format_transcript(
         self,
