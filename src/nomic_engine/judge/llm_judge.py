@@ -31,6 +31,16 @@ class LLMJudge(BaseJudge):
         prompt_builder: PromptBuilder | None = None,
         api_client: ApiClient | None = None,
     ) -> None:
+        """Initialize the LLMJudge.
+
+        Args:
+            model_config (ModelDefinition): Configuration for the LLM model
+                used for judging.
+            prompt_builder (PromptBuilder, optional): Prompt builder instance.
+                If None, a new PromptBuilder() is created.
+            api_client (ApiClient, optional): API client instance for LLM calls
+                If None, a new ApiClient(model_config) is created.
+        """
         self.model_config = model_config
         self.prompt_builder = prompt_builder or PromptBuilder()
         self.api_client = api_client or ApiClient(model_config)
