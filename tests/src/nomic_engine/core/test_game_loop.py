@@ -18,11 +18,13 @@ from src.nomic_engine.core.game_manager import GameManager
 from src.nomic_engine.data_models import (
     Discussion,
     GameState,
+    JudgeDecisions,
     Proposal,
     ProposalType,
     Rule,
     RuleStatus,
     Vote,
+    VoteResult,
 )
 from src.nomic_engine.players.base_player import BasePlayer
 
@@ -1447,3 +1449,495 @@ def test_format_transcript_shows_abstentions(
     assert "*(Abstained)*" in transcript
     # Bob's private thoughts should still appear
     assert "Nothing useful to say" in transcript
+
+
+# --- Tests for Modular Turn Resolution Methods ---
+
+
+def test_tally_vote_results_unanimous_pass(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test _tally_vote_results with unanimous YES votes."""
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
+    ]
+
+    result = game_loop._tally_vote_results(votes)
+
+    assert isinstance(result, VoteResult)
+    assert result.yes_count == 3
+    assert result.no_count == 0
+    assert result.abstain_count == 0
+    assert result.total_voters == 3
+    assert result.passed is True
+    assert result.vote_mode == "unanimous"
+
+
+def test_tally_vote_results_unanimous_fail(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test _tally_vote_results with non-unanimous votes."""
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="NO"),
+    ]
+
+    result = game_loop._tally_vote_results(votes)
+
+    assert isinstance(result, VoteResult)
+    assert result.yes_count == 2
+    assert result.no_count == 1
+    assert result.abstain_count == 0
+    assert result.total_voters == 3
+    assert result.passed is False
+    assert result.vote_mode == "unanimous"
+
+
+def test_tally_vote_results_majority_pass(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test _tally_vote_results with majority mode (pass)."""
+    # Set vote_mode to majority
+    mock_game_state.flags["vote_mode"] = "majority"
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="NO"),
+    ]
+
+    result = game_loop._tally_vote_results(votes)
+
+    assert isinstance(result, VoteResult)
+    assert result.yes_count == 2
+    assert result.no_count == 1
+    assert result.abstain_count == 0
+    assert result.total_voters == 3
+    assert result.passed is True  # 2 > 1.5 (majority)
+    assert result.vote_mode == "majority"
+
+
+def test_tally_vote_results_majority_fail(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test _tally_vote_results with majority mode (fail)."""
+    # Set vote_mode to majority
+    mock_game_state.flags["vote_mode"] = "majority"
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="NO"),
+        Vote(player_name="Charlie", vote="NO"),
+    ]
+
+    result = game_loop._tally_vote_results(votes)
+
+    assert isinstance(result, VoteResult)
+    assert result.yes_count == 1
+    assert result.no_count == 2
+    assert result.abstain_count == 0
+    assert result.total_voters == 3
+    assert result.passed is False  # 1 not > 1.5
+    assert result.vote_mode == "majority"
+
+
+def test_tally_vote_results_zero_voters(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test _tally_vote_results with zero voters (automatic pass)."""
+    votes: list[Vote] = []
+
+    result = game_loop._tally_vote_results(votes)
+
+    assert isinstance(result, VoteResult)
+    assert result.yes_count == 0
+    assert result.no_count == 0
+    assert result.abstain_count == 0
+    assert result.total_voters == 0
+    assert result.passed is True  # Automatic pass with 0 voters
+    assert result.vote_mode == "unanimous"
+
+
+def test_tally_vote_results_with_abstentions(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test _tally_vote_results counts abstentions correctly."""
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="ABSTAIN"),
+        Vote(player_name="Charlie", vote="NO"),
+    ]
+
+    result = game_loop._tally_vote_results(votes)
+
+    assert isinstance(result, VoteResult)
+    assert result.yes_count == 1
+    assert result.no_count == 1
+    assert result.abstain_count == 1
+    assert result.total_voters == 3
+    assert result.passed is False  # Not unanimous
+    assert result.vote_mode == "unanimous"
+
+
+def test_get_judge_decisions_proposal_passed(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test _get_judge_decisions when proposal passes vote."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
+    ]
+
+    discussions: list[Discussion] = []
+
+    vote_result = VoteResult(
+        yes_count=3,
+        no_count=0,
+        abstain_count=0,
+        total_voters=3,
+        passed=True,
+        vote_mode="unanimous",
+    )
+
+    # Mock judge
+    judge = Mock()
+    judge.get_veto.return_value = {
+        "veto": False,
+        "reason": None,
+        "private_thoughts": None,
+    }
+    judge.assess_scores.return_value = {
+        "private_thoughts": None,
+        "score_adjustments": [],
+    }
+
+    game_loop.judge = judge
+
+    decisions = game_loop._get_judge_decisions(
+        proposal, votes, discussions, vote_result
+    )
+
+    assert isinstance(decisions, JudgeDecisions)
+    assert decisions.judge_approved is True
+    assert decisions.veto_response["veto"] is False
+
+    # Verify judge.get_veto was called (proposal passed)
+    judge.get_veto.assert_called_once()
+    # Verify judge.assess_scores was called
+    judge.assess_scores.assert_called_once()
+
+
+def test_get_judge_decisions_proposal_failed(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test _get_judge_decisions when proposal fails vote."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="NO"),
+        Vote(player_name="Charlie", vote="NO"),
+    ]
+
+    discussions: list[Discussion] = []
+
+    vote_result = VoteResult(
+        yes_count=1,
+        no_count=2,
+        abstain_count=0,
+        total_voters=3,
+        passed=False,
+        vote_mode="unanimous",
+    )
+
+    # Mock judge
+    judge = Mock()
+    judge.get_veto.return_value = {
+        "veto": False,
+        "reason": None,
+        "private_thoughts": None,
+    }
+    judge.assess_scores.return_value = {
+        "private_thoughts": None,
+        "score_adjustments": [],
+    }
+
+    game_loop.judge = judge
+
+    decisions = game_loop._get_judge_decisions(
+        proposal, votes, discussions, vote_result
+    )
+
+    assert isinstance(decisions, JudgeDecisions)
+    assert decisions.judge_approved is False
+    assert decisions.veto_response["veto"] is False
+
+    # Verify judge.get_veto was NOT called (proposal failed)
+    judge.get_veto.assert_not_called()
+    # Verify judge.assess_scores was still called
+    judge.assess_scores.assert_called_once()
+
+
+def test_get_judge_decisions_with_veto(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test _get_judge_decisions when judge vetoes passed proposal."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
+    ]
+
+    discussions: list[Discussion] = []
+
+    vote_result = VoteResult(
+        yes_count=3,
+        no_count=0,
+        abstain_count=0,
+        total_voters=3,
+        passed=True,
+        vote_mode="unanimous",
+    )
+
+    # Mock judge that vetoes
+    judge = Mock()
+    judge.get_veto.return_value = {
+        "veto": True,
+        "reason": "Violates spirit of the game",
+        "private_thoughts": "This is too meta",
+    }
+    judge.assess_scores.return_value = {
+        "private_thoughts": None,
+        "score_adjustments": [],
+    }
+
+    game_loop.judge = judge
+
+    decisions = game_loop._get_judge_decisions(
+        proposal, votes, discussions, vote_result
+    )
+
+    assert isinstance(decisions, JudgeDecisions)
+    assert decisions.judge_approved is False  # Vetoed
+    assert decisions.veto_response["veto"] is True
+    assert decisions.veto_response["reason"] == "Violates spirit of the game"
+
+    # Verify both judge methods were called
+    judge.get_veto.assert_called_once()
+    judge.assess_scores.assert_called_once()
+
+
+def test_apply_turn_mutations_passed_proposal(
+    game_loop: GameLoop,
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
+) -> None:
+    """Test _apply_turn_mutations applies passed proposals correctly."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
+    ]
+
+    discussions: list[Discussion] = []
+
+    vote_result = VoteResult(
+        yes_count=3,
+        no_count=0,
+        abstain_count=0,
+        total_voters=3,
+        passed=True,
+        vote_mode="unanimous",
+    )
+
+    judge_decisions = JudgeDecisions(
+        veto_response={
+            "veto": False,
+            "reason": None,
+            "private_thoughts": None,
+        },
+        score_response={"private_thoughts": None, "score_adjustments": []},
+        judge_approved=True,
+    )
+
+    initial_proposal_id = mock_game_state.next_proposal_id
+
+    game_over = game_loop._apply_turn_mutations(
+        proposal, votes, discussions, vote_result, judge_decisions
+    )
+
+    # Verify proposal was applied
+    mock_game_manager.rules_manager.apply_proposal.assert_called_once_with(
+        proposal
+    )
+    # Verify rules were saved
+    mock_game_manager.save_rules.assert_called_once()
+    # Verify proposal ID was incremented
+    assert mock_game_state.next_proposal_id == initial_proposal_id + 1
+    # Verify turn advanced
+    assert mock_game_state.current_player_name == "Bob"
+    assert mock_game_state.move_number == 2
+    # Verify game state saved
+    mock_game_manager.save_game_state.assert_called_once()
+    # Verify transcript logged
+    mock_game_manager.logger.log_transcript.assert_called_once()
+    # Verify game did not end
+    assert game_over is False
+
+
+def test_apply_turn_mutations_failed_proposal(
+    game_loop: GameLoop,
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
+) -> None:
+    """Test _apply_turn_mutations does not apply failed proposals."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="NO"),
+        Vote(player_name="Charlie", vote="NO"),
+    ]
+
+    discussions: list[Discussion] = []
+
+    vote_result = VoteResult(
+        yes_count=1,
+        no_count=2,
+        abstain_count=0,
+        total_voters=3,
+        passed=False,
+        vote_mode="unanimous",
+    )
+
+    judge_decisions = JudgeDecisions(
+        veto_response={
+            "veto": False,
+            "reason": None,
+            "private_thoughts": None,
+        },
+        score_response={"private_thoughts": None, "score_adjustments": []},
+        judge_approved=False,
+    )
+
+    initial_proposal_id = mock_game_state.next_proposal_id
+
+    game_over = game_loop._apply_turn_mutations(
+        proposal, votes, discussions, vote_result, judge_decisions
+    )
+
+    # Verify proposal was NOT applied
+    mock_game_manager.rules_manager.apply_proposal.assert_not_called()
+    # Verify rules were NOT saved
+    mock_game_manager.save_rules.assert_not_called()
+    # Verify proposal ID was NOT incremented
+    assert mock_game_state.next_proposal_id == initial_proposal_id
+    # Verify turn still advanced
+    assert mock_game_state.current_player_name == "Bob"
+    assert mock_game_state.move_number == 2
+    # Verify game state saved
+    mock_game_manager.save_game_state.assert_called_once()
+    # Verify transcript logged
+    mock_game_manager.logger.log_transcript.assert_called_once()
+    # Verify game did not end
+    assert game_over is False
+
+
+def test_apply_turn_mutations_vetoed_proposal(
+    game_loop: GameLoop,
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
+) -> None:
+    """Test _apply_turn_mutations does not apply vetoed proposals."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="YES"),
+        Vote(player_name="Charlie", vote="YES"),
+    ]
+
+    discussions: list[Discussion] = []
+
+    vote_result = VoteResult(
+        yes_count=3,
+        no_count=0,
+        abstain_count=0,
+        total_voters=3,
+        passed=True,
+        vote_mode="unanimous",
+    )
+
+    judge_decisions = JudgeDecisions(
+        veto_response={
+            "veto": True,
+            "reason": "Bad idea",
+            "private_thoughts": None,
+        },
+        score_response={"private_thoughts": None, "score_adjustments": []},
+        judge_approved=False,  # Vetoed
+    )
+
+    initial_proposal_id = mock_game_state.next_proposal_id
+
+    game_over = game_loop._apply_turn_mutations(
+        proposal, votes, discussions, vote_result, judge_decisions
+    )
+
+    # Verify proposal was NOT applied (vetoed)
+    mock_game_manager.rules_manager.apply_proposal.assert_not_called()
+    # Verify rules were NOT saved
+    mock_game_manager.save_rules.assert_not_called()
+    # Verify proposal ID was NOT incremented
+    assert mock_game_state.next_proposal_id == initial_proposal_id
+    # Verify turn still advanced
+    assert mock_game_state.current_player_name == "Bob"
+    assert mock_game_state.move_number == 2
+    # Verify game did not end
+    assert game_over is False

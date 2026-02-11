@@ -11,7 +11,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # --- Enums ---
 
@@ -238,3 +238,51 @@ class ChatMessage(BaseModel):
 
     role: Literal["system", "user", "assistant"]
     content: str
+
+
+# --- Turn Resolution Data Models ---
+
+
+class VoteResult(BaseModel):
+    """
+    Encapsulates the outcome of vote tallying.
+
+    This is a pure data object returned by _tally_vote_results,
+    containing vote counts and the final pass/fail status.
+    """
+
+    yes_count: int = Field(..., description="Number of YES votes")
+    no_count: int = Field(..., description="Number of NO votes")
+    abstain_count: int = Field(..., description="Number of ABSTAIN votes")
+    total_voters: int = Field(..., description="Total number of voters")
+    passed: bool = Field(
+        ..., description="Whether the proposal passed the vote"
+    )
+    vote_mode: str = Field(
+        ..., description="The voting mode used (unanimous or majority)"
+    )
+
+
+class JudgeDecisions(BaseModel):
+    """
+    Consolidates all interpretive data from the Judge.
+
+    This includes veto decisions and score assessments,
+    returned by _get_judge_decisions.
+    """
+
+    veto_response: Any = Field(
+        ...,
+        description="The judge's veto decision response (JudgeVetoResponse)",
+    )
+    score_response: Any = Field(
+        ...,
+        description=(
+            "The judge's score assessment response (JudgeScoreResponse)"
+        ),
+    )
+    judge_approved: bool = Field(
+        ..., description="Whether the judge approved (not vetoed)"
+    )
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)

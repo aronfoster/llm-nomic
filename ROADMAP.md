@@ -27,15 +27,17 @@ Our architecture is built on these principles:
 
 **Goal:** Refactor the unweildy resolution logic and implement a multi-step "State Compiler" to bridge the gap between natural language rules and engine behavior.
 
-### 1. Core Refactor: Clean Resolution Loop
+### 1. Core Refactor: Clean Resolution Loop ✅ COMPLETE
 
 * **Task:** Decompose `GameLoop._resolve_turn` into discrete, side-effect-free logical steps.
-* **Sub-tasks:**
-  * Implement `_tally_vote_results(votes)`: Returns a pure data object with counts and pass/fail status.
-  * Implement `_get_judge_decisions(...)`: Consolidates all Judge-specific output (veto, scores, state updates).
-  * Implement `_apply_turn_mutations(results, judge_data)`: A single transactional method for updating files (`game_state.json`, `rules.jsonl`) and incrementing counters.
-* **Logging Requirement:** Increase `logging.debug` coverage across all sub-functions to ensure high-visibility execution tracking without useless duplication.
-* **Testing:** Unit tests must pass with `make ci`. Run `pip install -r requirements.txt` to ensure environment consistency.
+* **Status:** ✅ COMPLETE
+* **Completed Sub-tasks:**
+  * ✅ Implemented `_tally_vote_results(votes)`: Returns a pure `VoteResult` data object with counts and pass/fail status.
+  * ✅ Implemented `_get_judge_decisions(...)`: Consolidates all Judge-specific output (veto, scores) into a `JudgeDecisions` object.
+  * ✅ Implemented `_apply_turn_mutations(results, judge_data)`: A single transactional method for updating files (`game_state.json`, `rules.jsonl`) and incrementing counters.
+  * ✅ Added granular `logging.debug` coverage across all sub-functions for high-visibility execution tracking.
+  * ✅ Created comprehensive unit tests that verify each new method in isolation.
+  * ✅ All tests pass with `make ci`.
 
 ### 2. Judge Step 1: State Maintenance Interface
 
