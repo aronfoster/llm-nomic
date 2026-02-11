@@ -62,6 +62,7 @@ Our architecture is built on these principles:
 * **Status:** PLANNED
 * **Logic:**
 * Modify `PromptBuilder._format_game_state_block` in `src/nomic_engine/llm/prompt_builder.py` to include a "Leaderboard Context" line (e.g., "You are in 2nd place, 5 points behind the leader").
+  * Would listing the number of turns each player has had be valuable? Humans understand how going first confers an advantage, and that 
 
 ## Future Work
 
@@ -74,6 +75,7 @@ This is the long-term backlog and TODO scratchpad.
     * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
     * Need to handle "revision -> withdraw" logic to have them come up with a new proposal
     * Explore https://openrouter.ai/ support for tokens/models
+    * Specify versions for dependencies and start managing those
 
 * **Game State & Rules:**
     * Enhanced Voting Architecture**
