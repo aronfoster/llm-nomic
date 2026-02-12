@@ -94,3 +94,234 @@ def test_assess_scores_applies_adjustments(mock_game_manager):
     assert mock_game_manager.game_state.scores["Alice"] == 2
     prompt_builder.build_judge_context_message.assert_called_once()
     api_client.get_completion.assert_called_once()
+
+
+# =====================================================================
+# RETRY BEHAVIOR TESTS
+# =====================================================================
+
+
+def test_get_veto_retries_on_malformed_json(mock_game_manager):
+    """get_veto should retry when LLM returns malformed JSON."""
+
+    prompt_builder = Mock()
+    context_message = _dummy_messages()[1]
+    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
+        role="user", content="veto"
+    )
+
+    api_client = Mock()
+    # First call: malformed JSON (extra closing brace)
+    # Second call: valid JSON
+    api_client.get_completion.side_effect = [
+        '{"private_thoughts":"x","veto":true,"reason":"conflict"}\n}',
+        '{"private_thoughts":"x","veto":true,"reason":"conflict"}',
+    ]
+
+    judge = LLMJudge(
+        Mock(), prompt_builder=prompt_builder, api_client=api_client
+    )
+
+    decision = judge.get_veto(mock_game_manager, Mock(), [], [])
+
+    assert decision["veto"] is True
+    assert api_client.get_completion.call_count == 2
+
+
+def test_get_veto_raises_after_max_retries(mock_game_manager):
+    """get_veto should raise RuntimeError after exhausting retries."""
+
+    prompt_builder = Mock()
+    context_message = _dummy_messages()[1]
+    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
+        role="user", content="veto"
+    )
+
+    api_client = Mock()
+    # All attempts return malformed JSON
+    api_client.get_completion.return_value = "not valid json"
+
+    judge = LLMJudge(
+        Mock(), prompt_builder=prompt_builder, api_client=api_client
+    )
+
+    with pytest.raises(
+        RuntimeError, match="failed to generate a valid veto decision"
+    ):
+        judge.get_veto(mock_game_manager, Mock(), [], [])
+
+    # Should retry MAX_VETO_RETRIES times (default is 2)
+    assert api_client.get_completion.call_count == LLMJudge.MAX_VETO_RETRIES
+
+
+def test_get_veto_retries_on_api_error(mock_game_manager):
+    """get_veto should retry when API client returns None."""
+
+    prompt_builder = Mock()
+    context_message = _dummy_messages()[1]
+    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
+        role="user", content="veto"
+    )
+
+    api_client = Mock()
+    # First call: API error (None)
+    # Second call: valid JSON
+    api_client.get_completion.side_effect = [
+        None,
+        '{"private_thoughts":"x","veto":false,"reason":"ok"}',
+    ]
+
+    judge = LLMJudge(
+        Mock(), prompt_builder=prompt_builder, api_client=api_client
+    )
+
+    decision = judge.get_veto(mock_game_manager, Mock(), [], [])
+
+    assert decision["veto"] is False
+    assert api_client.get_completion.call_count == 2
+
+
+def test_get_veto_raises_on_missing_required_key(mock_game_manager):
+    """get_veto should raise RuntimeError after retries on missing keys."""
+
+    prompt_builder = Mock()
+    context_message = _dummy_messages()[1]
+    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
+        role="user", content="veto"
+    )
+
+    api_client = Mock()
+    # Missing "reason" key
+    api_client.get_completion.return_value = (
+        '{"private_thoughts":"x","veto":true}'
+    )
+
+    judge = LLMJudge(
+        Mock(), prompt_builder=prompt_builder, api_client=api_client
+    )
+
+    with pytest.raises(
+        RuntimeError, match="failed to generate a valid veto decision"
+    ):
+        judge.get_veto(mock_game_manager, Mock(), [], [])
+
+
+def test_assess_scores_retries_on_malformed_json(mock_game_manager):
+    """assess_scores should retry when LLM returns malformed JSON."""
+
+    prompt_builder = Mock()
+    context_message = _dummy_messages()[1]
+    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
+        role="user", content="score"
+    )
+
+    api_client = Mock()
+    # First call: malformed JSON
+    # Second call: valid JSON
+    api_client.get_completion.side_effect = [
+        "invalid json",
+        '{"private_thoughts":"ok","score_adjustments":[]}',
+    ]
+
+    judge = LLMJudge(
+        Mock(), prompt_builder=prompt_builder, api_client=api_client
+    )
+
+    response = judge.assess_scores(mock_game_manager, [], Mock(), [], [])
+
+    assert response["score_adjustments"] == []
+    assert api_client.get_completion.call_count == 2
+
+
+def test_assess_scores_raises_after_max_retries(mock_game_manager):
+    """assess_scores should raise RuntimeError after exhausting retries."""
+
+    prompt_builder = Mock()
+    context_message = _dummy_messages()[1]
+    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
+        role="user", content="score"
+    )
+
+    api_client = Mock()
+    # All attempts return malformed JSON
+    api_client.get_completion.return_value = "not valid json"
+
+    judge = LLMJudge(
+        Mock(), prompt_builder=prompt_builder, api_client=api_client
+    )
+
+    with pytest.raises(
+        RuntimeError, match="failed to generate a valid score assessment"
+    ):
+        judge.assess_scores(mock_game_manager, [], Mock(), [], [])
+
+    # Should retry MAX_SCORE_RETRIES times (default is 2)
+    assert api_client.get_completion.call_count == LLMJudge.MAX_SCORE_RETRIES
+
+
+def test_assess_scores_no_partial_application_on_failure(mock_game_manager):
+    """assess_scores should not modify scores on parsing failure."""
+
+    prompt_builder = Mock()
+    context_message = _dummy_messages()[1]
+    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
+        role="user", content="score"
+    )
+
+    api_client = Mock()
+    # All attempts return malformed JSON
+    api_client.get_completion.return_value = "not valid json"
+
+    judge = LLMJudge(
+        Mock(), prompt_builder=prompt_builder, api_client=api_client
+    )
+
+    initial_alice_score = mock_game_manager.game_state.scores["Alice"]
+    initial_bob_score = mock_game_manager.game_state.scores["Bob"]
+
+    with pytest.raises(RuntimeError):
+        judge.assess_scores(mock_game_manager, [], Mock(), [], [])
+
+    # Scores should remain unchanged
+    assert mock_game_manager.game_state.scores["Alice"] == initial_alice_score
+    assert mock_game_manager.game_state.scores["Bob"] == initial_bob_score
+
+
+def test_assess_scores_retries_on_invalid_player_name(mock_game_manager):
+    """assess_scores should retry when response references unknown player."""
+
+    prompt_builder = Mock()
+    context_message = _dummy_messages()[1]
+    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
+        role="user", content="score"
+    )
+
+    api_client = Mock()
+    # First call: references non-existent player "Charlie"
+    # Second call: valid response
+    api_client.get_completion.side_effect = [
+        '{"private_thoughts":"ok","score_adjustments":[{'
+        '"player":"Charlie","delta":5,"reason":"bonus"}]}',
+        '{"private_thoughts":"ok","score_adjustments":[{'
+        '"player":"Alice","delta":3,"reason":"bonus"}]}',
+    ]
+
+    judge = LLMJudge(
+        Mock(), prompt_builder=prompt_builder, api_client=api_client
+    )
+
+    response = judge.assess_scores(mock_game_manager, [], Mock(), [], [])
+
+    # Should succeed on second attempt
+    assert len(response["score_adjustments"]) == 1
+    assert response["score_adjustments"][0]["player"] == "Alice"
+    assert mock_game_manager.game_state.scores["Alice"] == 3
+    assert api_client.get_completion.call_count == 2

@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 class LLMJudge(BaseJudge):
     """Judge strategy that delegates decisions to an LLM model."""
 
+    # Maximum number of retry attempts when LLM produces invalid JSON
+    MAX_VETO_RETRIES = 2
+    MAX_SCORE_RETRIES = 2
+
     def __init__(
         self,
         model_config: ModelDefinition,
@@ -87,40 +91,87 @@ class LLMJudge(BaseJudge):
         votes: list["Vote"],
         discussions: list["Discussion"],
     ) -> JudgeVetoResponse:
-        messages = self._build_messages(
+        base_messages = self._build_messages(
             game_manager, proposal, votes, discussions
         )
-        messages.append(self.prompt_builder.build_judge_veto_prompt())
+        base_messages.append(self.prompt_builder.build_judge_veto_prompt())
 
         logger.debug(
             "Requesting veto decision from model %s",
             self.model_config.api_model_id,
         )
 
-        response_text = self.api_client.get_completion(messages)
-        if response_text is None:
-            raise RuntimeError("LLM judge failed to return a veto decision.")
+        # Retry loop with maximum attempts
+        for attempt in range(self.MAX_VETO_RETRIES):
+            # Use base_messages for first attempt, rebuild for retries
+            messages = base_messages.copy()
 
-        logger.info("Raw LLM judge veto response:\n%s", response_text)
+            response_text = self.api_client.get_completion(messages)
 
-        try:
-            data = parse_judge_veto_response(response_text)
-        except ValueError as e:
-            logger.error(f"Invalid judge veto response: {e}")
-            raise
+            # Handle API errors (None response)
+            if response_text is None:
+                logger.error(
+                    f"LLM Judge: API error on veto attempt {attempt + 1}/"
+                    f"{self.MAX_VETO_RETRIES}"
+                )
+                # Continue to retry if attempts remain
+                continue
 
-        logger.info(
-            "LLM Judge veto decision: %s | Reason: %s",
-            "VETO" if data["veto"] else "ALLOW",
-            data["reason"],
+            logger.info("Raw LLM judge veto response:\n%s", response_text)
+
+            # Try to parse the response
+            try:
+                data = parse_judge_veto_response(response_text)
+
+                # Success!
+                logger.info(
+                    "LLM Judge veto decision: %s | Reason: %s",
+                    "VETO" if data["veto"] else "ALLOW",
+                    data["reason"],
+                )
+                reason = cast(str | None, data.get("reason"))
+                private_thoughts = cast(
+                    str | None, data.get("private_thoughts")
+                )
+                return {
+                    "veto": bool(data["veto"]),
+                    "reason": reason,
+                    "private_thoughts": private_thoughts,
+                }
+
+            except ValueError as e:
+                # Parsing failed - log the error
+                logger.warning(
+                    f"LLM Judge: Invalid veto response on attempt "
+                    f"{attempt + 1}/{self.MAX_VETO_RETRIES}. Error: {e}"
+                )
+
+                # If this was the last attempt, break out
+                if attempt >= self.MAX_VETO_RETRIES - 1:
+                    break
+
+                # Prepare retry by appending bad response and error message
+                base_messages.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
+                retry_message = llm_prompts.JUDGE_VETO_RETRY_TEMPLATE.format(
+                    validation_error=str(e)
+                )
+                base_messages.append(
+                    ChatMessage(role="user", content=retry_message)
+                )
+
+                # Loop continues to retry with updated messages
+
+        # All retries exhausted - raise RuntimeError
+        logger.error(
+            f"LLM Judge: Failed to generate valid veto decision after "
+            f"{self.MAX_VETO_RETRIES} attempts."
         )
-        reason = cast(str | None, data.get("reason"))
-        private_thoughts = cast(str | None, data.get("private_thoughts"))
-        return {
-            "veto": bool(data["veto"]),
-            "reason": reason,
-            "private_thoughts": private_thoughts,
-        }
+        raise RuntimeError(
+            f"LLM Judge failed to generate a valid veto decision after "
+            f"{self.MAX_VETO_RETRIES} attempts."
+        )
 
     def assess_scores(
         self,
@@ -133,51 +184,98 @@ class LLMJudge(BaseJudge):
         assert game_manager.game_state is not None
         _ = players
 
-        messages = self._build_messages(
+        base_messages = self._build_messages(
             game_manager, proposal, votes, discussions
         )
-        messages.append(self.prompt_builder.build_judge_score_prompt())
+        base_messages.append(self.prompt_builder.build_judge_score_prompt())
 
         logger.debug(
             "Requesting score assessment from model %s",
             self.model_config.api_model_id,
         )
 
-        response_text = self.api_client.get_completion(messages)
-        if response_text is None:
-            raise RuntimeError("LLM judge failed to return score changes.")
+        # Retry loop with maximum attempts
+        for attempt in range(self.MAX_SCORE_RETRIES):
+            # Use base_messages for first attempt, rebuild for retries
+            messages = base_messages.copy()
 
-        logger.info("Raw LLM judge score response:\n%s", response_text)
+            response_text = self.api_client.get_completion(messages)
 
-        try:
-            data = parse_judge_score_response(
-                response_text,
-                valid_players=list(game_manager.game_state.scores.keys()),
-            )
-        except ValueError as e:
-            logger.error(f"Invalid judge score response: {e}")
-            raise
+            # Handle API errors (None response)
+            if response_text is None:
+                logger.error(
+                    f"LLM Judge: API error on score assessment attempt "
+                    f"{attempt + 1}/{self.MAX_SCORE_RETRIES}"
+                )
+                # Continue to retry if attempts remain
+                continue
 
-        adjustments = data.get("score_adjustments", [])
-        if not adjustments:
-            logger.info("LLM Judge applied no score changes this turn.")
-            return {
-                "private_thoughts": data.get("private_thoughts"),
-                "score_adjustments": [],
-            }
+            logger.info("Raw LLM judge score response:\n%s", response_text)
 
-        for adj in adjustments:
-            player_name = adj["player"]
-            delta = adj["delta"]
-            reason = adj["reason"]
-            game_manager.game_state.scores[player_name] += delta
-            logger.info(
-                "LLM Judge adjusted %s by %+d points (%s)",
-                player_name,
-                delta,
-                reason,
-            )
-        return {
-            "private_thoughts": data.get("private_thoughts"),
-            "score_adjustments": adjustments,
-        }
+            # Try to parse the response
+            try:
+                data = parse_judge_score_response(
+                    response_text,
+                    valid_players=list(game_manager.game_state.scores.keys()),
+                )
+
+                # Success! Apply score adjustments and return
+                adjustments = data.get("score_adjustments", [])
+                if not adjustments:
+                    logger.info(
+                        "LLM Judge applied no score changes this turn."
+                    )
+                    return {
+                        "private_thoughts": data.get("private_thoughts"),
+                        "score_adjustments": [],
+                    }
+
+                for adj in adjustments:
+                    player_name = adj["player"]
+                    delta = adj["delta"]
+                    reason = adj["reason"]
+                    game_manager.game_state.scores[player_name] += delta
+                    logger.info(
+                        "LLM Judge adjusted %s by %+d points (%s)",
+                        player_name,
+                        delta,
+                        reason,
+                    )
+                return {
+                    "private_thoughts": data.get("private_thoughts"),
+                    "score_adjustments": adjustments,
+                }
+
+            except ValueError as e:
+                # Parsing failed - log the error
+                logger.warning(
+                    f"LLM Judge: Invalid score response on attempt "
+                    f"{attempt + 1}/{self.MAX_SCORE_RETRIES}. Error: {e}"
+                )
+
+                # If this was the last attempt, break out
+                if attempt >= self.MAX_SCORE_RETRIES - 1:
+                    break
+
+                # Prepare retry by appending bad response and error message
+                base_messages.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
+                retry_message = llm_prompts.JUDGE_SCORE_RETRY_TEMPLATE.format(
+                    validation_error=str(e)
+                )
+                base_messages.append(
+                    ChatMessage(role="user", content=retry_message)
+                )
+
+                # Loop continues to retry with updated messages
+
+        # All retries exhausted - raise RuntimeError
+        logger.error(
+            f"LLM Judge: Failed to generate valid score assessment after "
+            f"{self.MAX_SCORE_RETRIES} attempts."
+        )
+        raise RuntimeError(
+            f"LLM Judge failed to generate a valid score assessment after "
+            f"{self.MAX_SCORE_RETRIES} attempts."
+        )
