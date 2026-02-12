@@ -15,10 +15,6 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-* Implement retry logic for judge scoring so that a response with invalid json will get additional tries
-  * Add MAX_SCORE_RETRIES = 2 and MAX_VETO_RETRIES = 2 to LLMJudge
-  * Wrap the API calls in the same retry loop pattern from LLMPlayer.vote()
-  * Use JUDGE_SCORE_RETRY_TEMPLATE and JUDGE_VETO_RETRY_TEMPLATE in prompts.py
 * Judge on lower quality models isn't scoring appropriately. Improve prompt to show vote totals in addition to vote/discussion. Reduce rule list to only those with 'point' or 'score' in them.
 * Lower quality LLM players are interpreting turn order as rank in the game. Maybe add some smart text to say "It's a 3-way tie" or "You are in last place by 8 points" or some other set of plain -language descriptions of the score situation since LLMs don't do great at math.
 * pylance is giving type errors in vs code that aren't caught by `make ci`
@@ -31,17 +27,12 @@ Our architecture is built on these principles:
 
 **Goal:** Refactor the unweildy resolution logic and implement a multi-step "State Compiler" to bridge the gap between natural language rules and engine behavior.
 
-### 1. Core Refactor: Clean Resolution Loop ✅ COMPLETE
+### 1. Create game state schema
 
-* **Task:** Decompose `GameLoop._resolve_turn` into discrete, side-effect-free logical steps.
-* **Status:** ✅ COMPLETE
-* **Completed Sub-tasks:**
-  * ✅ Implemented `_tally_vote_results(votes)`: Returns a pure `VoteResult` data object with counts and pass/fail status.
-  * ✅ Implemented `_get_judge_decisions(...)`: Consolidates all Judge-specific output (veto, scores) into a `JudgeDecisions` object.
-  * ✅ Implemented `_apply_turn_mutations(results, judge_data)`: A single transactional method for updating files (`game_state.json`, `rules.jsonl`) and incrementing counters.
-  * ✅ Added granular `logging.debug` coverage across all sub-functions for high-visibility execution tracking.
-  * ✅ Created comprehensive unit tests that verify each new method in isolation.
-  * ✅ All tests pass with `make ci`.
+* Create file for defining game state flags, including type, valid_values, default, and description
+* Shift data_models.py's GameState's flags to be defined from this file
+* Can create_game.py use this, too?
+* Current flag is only vote_mode
 
 ### 2. Judge Step 1: State Maintenance Interface
 
@@ -51,16 +42,13 @@ Our architecture is built on these principles:
 * **Implementations:**
    * **HumanJudge:** Interactive CLI loop displaying current flags/target score and prompting for specific overrides.
    * **LLMJudge:** Prepare the factory to accept the "Game State Compiler" prompt logic.
+* Notes:
+  * Can we leave out the entire context aside from the current game_state and the proposal (before+after of rule that's being changed)? This would make this a cheap LLM call, hopefully.
+  * Should have a helper method to validate input against schema
+  * Require retry logic
+  * What do we do if a rule isn't supported by current flags?
 
-### 3. Judge Step 2: Game State Compiler (LLM)
-
-* **Task:** Implement the "Compiler" prompt for the `LLMJudge`.
-* **Sub-tasks:**
-* Define a **Supported Feature Registry** in the prompt (limiting updates to valid flags).
-* Implement **Conflict Resolution logic**: Instruct the LLM to use Rule 211 (numerical precedence) for value conflicts - if that rule still exists. Send off the full rule list to the judge if not?
-* Add an `error_log` field to `StateUpdates`: Allows the Judge to report rules that are "Impossible to Implement" with current engine flags.
-
-### 5. Smart Player Context (Bug Mitigation)
+### 3. Smart Player Context (Bug Mitigation)
 
 * **Task:** Add plain-language score/rank descriptions to mitigate LLM math errors.
 * **Status:** PLANNED
@@ -71,18 +59,17 @@ Our architecture is built on these principles:
 ## Future Work
 
 This is the long-term backlog and TODO scratchpad.
-  * **Implement Full `LLMPlayer`:**
-    * Implement advanced token-saving strategies, especially context caching
-    * Implement async behavior
-    * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
-    * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
-    * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
-    * Need to handle "revision -> withdraw" logic to have them come up with a new proposal
-    * Explore https://openrouter.ai/ support for tokens/models
-    * Specify versions for dependencies and start managing those
-
+* **Improve `LLMPlayer`:**
+  * Implement advanced token-saving strategies, especially context caching
+  * Implement async behavior (per model provider?)
+  * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
+  * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
+  * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
+  * Need to handle "revision -> withdraw" logic to have them come up with a new proposal
+  * Explore https://openrouter.ai/ support for tokens/models
+  
 * **Game State & Rules:**
-    * Enhanced Voting Architecture**
+    * Enhanced Voting Architecture
         * **Task:** Replace binary vote logic with named "Abstention-Aware" modes.
         * **Data Model:** Expand `VoteMode` enum in `data_models.py` to include `UNANIMOUS_STRICT`, `CONSENSUS`, `MAJORITY_TOTAL`, and `MAJORITY_VOTING`.
         * **Engine Logic:** Update `GameLoop._tally_votes` to implement the specific denominator logic for each named mode.
@@ -94,6 +81,7 @@ This is the long-term backlog and TODO scratchpad.
 * **Tooling & Features:**
     * Build a `build_site.py` script to convert the game history into a shareable HTML file.
     * Need to shift to a dynamic turn structure where if rules change the turn steps (e.g an additional round of discussion after voting) it can be supported. Might need to ask the judge to define the steps and provide some guidance to the players.
+    * Specify versions for dependencies and start managing those
 
 * **Structured Metadata for Victory Rules**
     * The current game creation flow sets `target_score` manually, which works well for now.  
