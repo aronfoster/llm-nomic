@@ -18,6 +18,7 @@ Our architecture is built on these principles:
 * Judge on lower quality models isn't scoring appropriately. Improve prompt to show vote totals in addition to vote/discussion. Reduce rule list to only those with 'point' or 'score' in them.
 * Lower quality LLM players are interpreting turn order as rank in the game. Maybe add some smart text to say "It's a 3-way tie" or "You are in last place by 8 points" or some other set of plain -language descriptions of the score situation since LLMs don't do great at math.
 * pylance is giving type errors in vs code that aren't caught by `make ci`
+* Proposals that pass but that are judge vetoed should still award points as if they passed; the rule change just doesn't get applied to the rule list.
 
 ### Low Priority
 
@@ -27,14 +28,16 @@ Our architecture is built on these principles:
 
 **Goal:** Refactor the unweildy resolution logic and implement a multi-step "State Compiler" to bridge the gap between natural language rules and engine behavior.
 
-### 1. Create game state schema
+### 1. Create game state flag schema
 
 * Create file for defining game state flags, including type, valid_values, default, and description
 * Shift data_models.py's GameState's flags to be defined from this file
-* Can create_game.py use this, too?
-* Current flag is only vote_mode
+* create_game.py must use this
+* Current flag list is [vote_mode]
+* Add to JUDGE_VETO_TEMPLATE (and elsewhere as appropriate) the values from flag schema options and description. Have the judge veto check both "violates an immutable rule, conflicts with existing rules, or creates a paradox" AND "whether the game engine can support the new rule".
+   * example of unsupported rule = voting by "consensus" where rules pass iff all votes are "YES" or "ABSTAIN" (contrasted with the current unanimous, which requires all YES votes).
 
-### 2. Judge Step 1: State Maintenance Interface
+### 2. Judge State Maintenance Interface
 
 * **Task:** Add `maintain_state(rules, game_state, proposal) -> StateUpdates` to `BaseJudge`.
 * **Trigger:** Call this in the new `_get_judge_decisions` step immediately after a proposal passes.
