@@ -15,6 +15,10 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
+* Implement retry logic for judge scoring so that a response with invalid json will get additional tries
+  * Add MAX_SCORE_RETRIES = 2 and MAX_VETO_RETRIES = 2 to LLMJudge
+  * Wrap the API calls in the same retry loop pattern from LLMPlayer.vote()
+  * Use JUDGE_SCORE_RETRY_TEMPLATE and JUDGE_VETO_RETRY_TEMPLATE in prompts.py
 * Judge on lower quality models isn't scoring appropriately. Improve prompt to show vote totals in addition to vote/discussion. Reduce rule list to only those with 'point' or 'score' in them.
 * Lower quality LLM players are interpreting turn order as rank in the game. Maybe add some smart text to say "It's a 3-way tie" or "You are in last place by 8 points" or some other set of plain -language descriptions of the score situation since LLMs don't do great at math.
 * pylance is giving type errors in vs code that aren't caught by `make ci`
