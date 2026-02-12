@@ -151,6 +151,34 @@ Remember:
 
 No other text. Just the JSON object:"""
 
+JUDGE_VETO_RETRY_TEMPLATE = """Your previous response was not valid JSON.
+
+Error: {validation_error}
+
+This is your FINAL attempt. Output ONLY a valid JSON object with these
+exact keys in order:
+1. "private_thoughts"
+2. "veto" (boolean: true or false)
+3. "reason"
+
+No other text. Just the JSON object:"""
+
+JUDGE_SCORE_RETRY_TEMPLATE = """Your previous response was not valid JSON.
+
+Error: {validation_error}
+
+This is your FINAL attempt. Output ONLY a valid JSON object with these
+exact keys in order:
+1. "private_thoughts"
+2. "score_adjustments" (list of objects with keys: player, delta, reason)
+
+Remember:
+- score_adjustments must be a list (can be empty [])
+- Each adjustment needs: player (string), delta (integer), reason (string)
+- Player names must match valid players in the game
+
+No other text. Just the JSON object:"""
+
 # =====================================================================
 # ATOMIZED PROMPT BLOCKS (Sprint 6 - Stateful Context)
 # These composable blocks are used by PromptBuilder for stateful contexts.
