@@ -170,15 +170,19 @@ class HumanJudge(BaseJudge):
             if not target_input:
                 break
             if target_input.lower() == "none":
-                state_updates["target_score"] = None
-                logger.info("Human judge set target_score to None")
+                # Only add if different from current
+                if game_manager.game_state.target_score is not None:
+                    state_updates["target_score"] = None
+                    logger.info("Human judge set target_score to None")
                 break
             try:
                 target_value = int(target_input)
-                state_updates["target_score"] = target_value
-                logger.info(
-                    "Human judge changed target_score to %d", target_value
-                )
+                # Only add if different from current
+                if target_value != game_manager.game_state.target_score:
+                    state_updates["target_score"] = target_value
+                    logger.info(
+                        "Human judge changed target_score to %d", target_value
+                    )
                 break
             except ValueError:
                 print(
@@ -225,12 +229,14 @@ class HumanJudge(BaseJudge):
 
                     # Validate
                     validate_flag_value(flag_name, parsed_value)
-                    flag_updates[flag_name] = parsed_value
-                    logger.info(
-                        "Human judge changed flag %s to %s",
-                        flag_name,
-                        parsed_value,
-                    )
+                    # Only add if different from current
+                    if parsed_value != current_value:
+                        flag_updates[flag_name] = parsed_value
+                        logger.info(
+                            "Human judge changed flag %s to %s",
+                            flag_name,
+                            parsed_value,
+                        )
                     break
                 except ValueError as e:
                     print(f"Invalid input: {e}. Try again.")
