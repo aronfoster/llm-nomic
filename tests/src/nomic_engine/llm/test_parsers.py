@@ -6,6 +6,7 @@ import pytest
 
 from src.nomic_engine.llm.parsers import (
     parse_discussion_response,
+    parse_judge_maintain_state_response,
     parse_judge_score_response,
     parse_judge_veto_response,
     parse_proposal_response,
@@ -796,3 +797,223 @@ class TestParseProposalResponse:
 
         assert result["type"] == "Add"
         assert result["extra_field"] == "Should be ignored"
+
+
+class TestParseJudgeMaintainStateResponse:
+    """Tests for the parse_judge_maintain_state_response function."""
+
+    def test_valid_empty_changes(self):
+        """Test parsing response with no state changes."""
+        response = """{
+            "private_thoughts": "No engine changes needed.",
+            "flags": {},
+            "target_score": null
+        }"""
+
+        result = parse_judge_maintain_state_response(response)
+
+        assert result["private_thoughts"] == "No engine changes needed."
+        assert result["flags"] == {}
+        assert result["target_score"] is None
+
+    def test_valid_flag_change_only(self):
+        """Test parsing response with only flag changes."""
+        response = """{
+            "private_thoughts": "Rule changes voting to majority.",
+            "flags": {"vote_mode": "majority"},
+            "target_score": null
+        }"""
+
+        result = parse_judge_maintain_state_response(response)
+
+        assert result["private_thoughts"] == "Rule changes voting to majority."
+        assert result["flags"] == {"vote_mode": "majority"}
+        assert result["target_score"] is None
+
+    def test_valid_target_score_change_only(self):
+        """Test parsing response with only target_score change."""
+        response = """{
+            "private_thoughts": "Rule sets winning score to 100 points.",
+            "flags": {},
+            "target_score": 100
+        }"""
+
+        result = parse_judge_maintain_state_response(response)
+
+        assert (
+            result["private_thoughts"]
+            == "Rule sets winning score to 100 points."
+        )
+        assert result["flags"] == {}
+        assert result["target_score"] == 100
+
+    def test_valid_both_changes(self):
+        """Test parsing response with both flag and target_score changes."""
+        response = """{
+            "private_thoughts": "Multiple state changes required.",
+            "flags": {"vote_mode": "unanimous"},
+            "target_score": 50
+        }"""
+
+        result = parse_judge_maintain_state_response(response)
+
+        assert result["flags"] == {"vote_mode": "unanimous"}
+        assert result["target_score"] == 50
+
+    def test_invalid_json(self):
+        """Test that invalid JSON raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "flags": {}
+        """  # Missing closing brace
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "not valid JSON" in str(exc_info.value)
+
+    def test_missing_private_thoughts(self):
+        """Test that missing 'private_thoughts' raises ValueError."""
+        response = """{
+            "flags": {},
+            "target_score": null
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "Missing required key" in str(exc_info.value)
+        assert "private_thoughts" in str(exc_info.value)
+
+    def test_missing_flags(self):
+        """Test that missing 'flags' raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "target_score": null
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "Missing required key" in str(exc_info.value)
+        assert "flags" in str(exc_info.value)
+
+    def test_missing_target_score(self):
+        """Test that missing 'target_score' raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "flags": {}
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "Missing required key" in str(exc_info.value)
+        assert "target_score" in str(exc_info.value)
+
+    def test_invalid_private_thoughts_type(self):
+        """Test that non-string private_thoughts raises ValueError."""
+        response = """{
+            "private_thoughts": 123,
+            "flags": {},
+            "target_score": null
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "private_thoughts must be a string" in str(exc_info.value)
+
+    def test_invalid_flags_type(self):
+        """Test that non-dict flags raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "flags": "not_a_dict",
+            "target_score": null
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "flags must be a dict" in str(exc_info.value)
+
+    def test_invalid_target_score_type(self):
+        """Test that non-int target_score raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "flags": {},
+            "target_score": "100"
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "target_score must be an integer or null" in str(exc_info.value)
+
+    def test_invalid_target_score_negative(self):
+        """Test that negative target_score raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "flags": {},
+            "target_score": -10
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "target_score must be positive" in str(exc_info.value)
+
+    def test_invalid_target_score_zero(self):
+        """Test that zero target_score raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "flags": {},
+            "target_score": 0
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "target_score must be positive" in str(exc_info.value)
+
+    def test_invalid_flag_value(self):
+        """Test that invalid flag value raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "flags": {"vote_mode": "invalid"},
+            "target_score": null
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "not valid" in str(exc_info.value)
+
+    def test_unknown_flag_name(self):
+        """Test that unknown flag name raises ValueError."""
+        response = """{
+            "private_thoughts": "Analysis",
+            "flags": {"unknown_flag": "value"},
+            "target_score": null
+        }"""
+
+        with pytest.raises(ValueError) as exc_info:
+            parse_judge_maintain_state_response(response)
+
+        assert "Unknown flag" in str(exc_info.value)
+
+    def test_markdown_wrapped_json(self):
+        """Test parsing JSON wrapped in markdown code blocks."""
+        response = """```json
+        {
+            "private_thoughts": "No changes needed.",
+            "flags": {},
+            "target_score": null
+        }
+        ```"""
+
+        result = parse_judge_maintain_state_response(response)
+
+        assert result["private_thoughts"] == "No changes needed."
+        assert result["flags"] == {}
+        assert result["target_score"] is None

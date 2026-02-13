@@ -9,10 +9,16 @@ from ..data_models import ChatMessage, ModelDefinition
 from ..llm import ApiClient, PromptBuilder
 from ..llm import prompts as llm_prompts
 from ..llm.parsers import (
+    parse_judge_maintain_state_response,
     parse_judge_score_response,
     parse_judge_veto_response,
 )
-from .base_judge import BaseJudge, JudgeScoreResponse, JudgeVetoResponse
+from .base_judge import (
+    BaseJudge,
+    JudgeScoreResponse,
+    JudgeVetoResponse,
+    StateUpdates,
+)
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
@@ -28,6 +34,7 @@ class LLMJudge(BaseJudge):
     # Maximum number of retry attempts when LLM produces invalid JSON
     MAX_VETO_RETRIES = 2
     MAX_SCORE_RETRIES = 2
+    MAX_MAINTAIN_STATE_RETRIES = 2
 
     def __init__(
         self,
@@ -282,4 +289,118 @@ class LLMJudge(BaseJudge):
         raise RuntimeError(
             f"LLM Judge failed to generate a valid score assessment after "
             f"{self.MAX_SCORE_RETRIES} attempts."
+        )
+
+    def maintain_state(
+        self,
+        game_manager: "GameManager",
+        proposal: "Proposal",
+        original_rule_text: str | None,
+        new_rule_text: str | None,
+    ) -> StateUpdates:
+        """
+        LLM-powered state maintenance that updates GameState when rules change.
+
+        Uses the LLM to determine if the rule change requires updating flags
+        or target_score. Includes retry logic for invalid responses.
+        """
+        assert game_manager.game_state is not None
+
+        # Build minimal context: just system message and maintain_state
+        # prompt
+        system_message = ChatMessage(
+            role="system", content=llm_prompts.JUDGE_SYSTEM_PROMPT
+        )
+        maintain_state_prompt = (
+            self.prompt_builder.build_judge_maintain_state_prompt(
+                proposal=proposal,
+                original_rule_text=original_rule_text,
+                new_rule_text=new_rule_text,
+                game_state=game_manager.game_state,
+            )
+        )
+        base_messages = [system_message, maintain_state_prompt]
+
+        logger.debug(
+            "Requesting state maintenance decision from model %s for "
+            "proposal %s",
+            self.model_config.api_model_id,
+            proposal.proposal_id,
+        )
+
+        # Retry loop with maximum attempts
+        for attempt in range(self.MAX_MAINTAIN_STATE_RETRIES):
+            # Use base_messages for first attempt, rebuild for retries
+            messages = base_messages.copy()
+
+            response_text = self.api_client.get_completion(messages)
+
+            # Handle API errors (None response)
+            if response_text is None:
+                logger.error(
+                    f"LLM Judge: API error on maintain_state attempt "
+                    f"{attempt + 1}/{self.MAX_MAINTAIN_STATE_RETRIES}"
+                )
+                # Continue to retry if attempts remain
+                continue
+
+            logger.info(
+                "Raw LLM judge maintain_state response:\n%s", response_text
+            )
+
+            # Try to parse the response
+            try:
+                data = parse_judge_maintain_state_response(response_text)
+
+                # Success! Build StateUpdates from parsed data
+                state_updates: StateUpdates = {}
+                if data.get("flags"):
+                    state_updates["flags"] = data["flags"]
+                if data.get("target_score") is not None:
+                    state_updates["target_score"] = data["target_score"]
+
+                if state_updates:
+                    logger.info(
+                        "LLM Judge recommends state updates: %s", state_updates
+                    )
+                else:
+                    logger.info("LLM Judge recommends no state changes.")
+
+                return state_updates
+
+            except ValueError as e:
+                # Parsing failed - log the error
+                logger.warning(
+                    f"LLM Judge: Invalid maintain_state response on attempt "
+                    f"{attempt + 1}/{self.MAX_MAINTAIN_STATE_RETRIES}. "
+                    f"Error: {e}"
+                )
+
+                # If this was the last attempt, break out
+                if attempt >= self.MAX_MAINTAIN_STATE_RETRIES - 1:
+                    break
+
+                # Prepare retry by appending bad response and error message
+                base_messages.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
+                retry_message = (
+                    llm_prompts.JUDGE_MAINTAIN_STATE_RETRY_TEMPLATE.format(
+                        validation_error=str(e)
+                    )
+                )
+                base_messages.append(
+                    ChatMessage(role="user", content=retry_message)
+                )
+
+                # Loop continues to retry with updated messages
+
+        # All retries exhausted - raise RuntimeError
+        logger.error(
+            f"LLM Judge: Failed to generate valid maintain_state decision "
+            f"after {self.MAX_MAINTAIN_STATE_RETRIES} attempts."
+        )
+        raise RuntimeError(
+            f"LLM Judge failed to generate a valid maintain_state decision "
+            f"after {self.MAX_MAINTAIN_STATE_RETRIES} attempts."
         )

@@ -99,6 +99,48 @@ Examples:
 {json_format_enforcement}
 """
 
+JUDGE_MAINTAIN_STATE_TEMPLATE = """Review the rule change and determine
+if the game engine configuration needs to be updated.
+
+=== RULE CHANGE SUMMARY ===
+Proposal Type: {proposal_type}
+{original_rule_section}
+{new_rule_section}
+
+=== CURRENT ENGINE STATE ===
+Target Score: {current_target_score}
+Current Flags:
+{current_flags}
+
+=== SUPPORTED ENGINE CAPABILITIES ===
+{supported_flags}
+
+Your task is to determine if this rule change requires updating the engine
+configuration (flags or target_score). Consider:
+- Does the new/amended rule define a winning score? Update target_score.
+- Does the rule change voting requirements? Update vote_mode flag.
+- Does the rule reference engine behavior that maps to a supported flag?
+
+Respond with EXACTLY one JSON object with these keys IN THIS ORDER:
+1. "private_thoughts" (your reasoning about whether state changes are needed)
+2. "flags" (object with flag name -> new value mappings, or {{}})
+3. "target_score" (integer for new target, or null to leave unchanged)
+
+Examples:
+{{"private_thoughts": "Rule sets winning score to 100 points.",
+  "flags": {{}}, "target_score": 100}}
+{{"private_thoughts": "Rule changes voting to majority.",
+  "flags": {{"vote_mode": "majority"}}, "target_score": null}}
+{{"private_thoughts": "No engine changes needed.",
+  "flags": {{}}, "target_score": null}}
+
+IMPORTANT: Only include flags that need to be CHANGED. Return {{}} for flags
+if no changes are needed. Return null for target_score if it should remain
+unchanged.
+
+{json_format_enforcement}
+"""
+
 # -----------------------------------------------------------------
 # RETRY TEMPLATES (still in use by LLMPlayer)
 # -----------------------------------------------------------------
@@ -183,6 +225,24 @@ Remember:
 - score_adjustments must be a list (can be empty [])
 - Each adjustment needs: player (string), delta (integer), reason (string)
 - Player names must match valid players in the game
+
+No other text. Just the JSON object:"""
+
+JUDGE_MAINTAIN_STATE_RETRY_TEMPLATE = """Your previous response was not valid.
+
+Error: {validation_error}
+
+This is your FINAL attempt. Output ONLY a valid JSON object with these
+exact keys in order:
+1. "private_thoughts"
+2. "flags" (object with flag name -> value mappings, or {{}})
+3. "target_score" (integer or null)
+
+Remember:
+- flags must be an object/dict (can be empty {{}})
+- Only include flags that are changing
+- target_score must be null or a positive integer
+- Flag names and values must match the supported schema
 
 No other text. Just the JSON object:"""
 

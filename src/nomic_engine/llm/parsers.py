@@ -579,3 +579,95 @@ def parse_revision_response(response_text: str) -> dict[str, str | None]:
             )
 
     return data
+
+
+def parse_judge_maintain_state_response(response_text: str) -> dict[str, Any]:
+    """
+    Parse and validate a maintain_state response from the Judge LLM.
+
+    Expected JSON format:
+    {
+        "private_thoughts": "Reasoning about state changes...",
+        "flags": {"vote_mode": "majority"},  # or {}
+        "target_score": 100  # or null
+    }
+
+    Args:
+        response_text: The raw text response from the LLM.
+
+    Returns:
+        A validated dictionary with keys: private_thoughts, flags, target_score
+
+    Raises:
+        ValueError: If the response is not valid JSON, missing required
+            keys, contains invalid values, or violates flag schema
+            constraints. Error messages are descriptive to aid debugging
+            and can be sent back to the LLM.
+    """
+    from ..utils.flag_schema import validate_state_updates
+
+    # Step 1: Extract JSON from potential markdown/conversational wrapping
+    cleaned_text = _extract_json_string(response_text)
+
+    # Step 2: Parse JSON
+    try:
+        data = json.loads(cleaned_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Response is not valid JSON. Error: {e}. "
+            f"Expected a JSON object with keys: private_thoughts, flags, "
+            f"target_score."
+        )
+
+    # Step 3: Validate that it's a dictionary
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Response must be a JSON object (dict), "
+            f"got {type(data).__name__}."
+        )
+
+    # Step 4: Validate required keys
+    required_keys = ["private_thoughts", "flags", "target_score"]
+    missing_keys = [key for key in required_keys if key not in data]
+    if missing_keys:
+        raise ValueError(
+            f"Missing required key(s): {', '.join(missing_keys)}. "
+            f"Required keys are: {', '.join(required_keys)}."
+        )
+
+    # Step 5: Validate private_thoughts is a string
+    if not isinstance(data["private_thoughts"], str):
+        raise ValueError(
+            f"private_thoughts must be a string, "
+            f"got {type(data['private_thoughts']).__name__}."
+        )
+
+    # Step 6: Validate flags is a dict
+    flags = data["flags"]
+    if not isinstance(flags, dict):
+        raise ValueError(
+            f"flags must be a dict/object, got {type(flags).__name__}."
+        )
+
+    # Step 7: Validate target_score is int or None
+    target_score = data["target_score"]
+    if target_score is not None and not isinstance(target_score, int):
+        raise ValueError(
+            f"target_score must be an integer or null, "
+            f"got {type(target_score).__name__}."
+        )
+
+    if target_score is not None and target_score <= 0:
+        raise ValueError(f"target_score must be positive, got {target_score}.")
+
+    # Step 8: Build StateUpdates and validate against schema
+    state_updates: dict[str, Any] = {}
+    if flags:
+        state_updates["flags"] = flags
+    if target_score is not None:
+        state_updates["target_score"] = target_score
+
+    # This will validate flag names and values against the schema
+    validate_state_updates(state_updates)
+
+    return data

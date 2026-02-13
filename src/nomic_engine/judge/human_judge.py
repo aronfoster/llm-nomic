@@ -10,6 +10,7 @@ from .base_judge import (
     JudgeScoreResponse,
     JudgeVetoResponse,
     ScoreAdjustment,
+    StateUpdates,
 )
 
 if TYPE_CHECKING:
@@ -112,3 +113,137 @@ class HumanJudge(BaseJudge):
             "private_thoughts": None,
             "score_adjustments": adjustments,
         }
+
+    def maintain_state(
+        self,
+        game_manager: "GameManager",
+        proposal: "Proposal",
+        original_rule_text: str | None,
+        new_rule_text: str | None,
+    ) -> StateUpdates:
+        """
+        Interactive CLI to update GameState flags and target_score.
+
+        Displays current state, prompts for changes, validates input.
+        """
+        from ..utils.flag_schema import (
+            format_supported_flags,
+            load_flag_schema,
+            validate_flag_value,
+        )
+
+        assert game_manager.game_state is not None
+
+        print(
+            f"\n--- Judge (State Maintenance), review state for "
+            f"proposal {proposal.proposal_id} ---"
+        )
+        print(f"\nProposal type: {proposal.type.value}")
+        if original_rule_text:
+            print(f"Original rule text: {original_rule_text}")
+        if new_rule_text:
+            print(f"New rule text: {new_rule_text}")
+
+        # Display current state
+        print("\n=== Current Game State ===")
+        print(f"Target score: {game_manager.game_state.target_score}")
+        print(f"Flags: {game_manager.game_state.flags}")
+
+        # Display supported flags
+        print("\n=== Supported Flags ===")
+        print(format_supported_flags())
+
+        # Collect changes
+        state_updates: StateUpdates = {}
+        schema = load_flag_schema()
+
+        # Prompt for target_score
+        print("\n--- Target Score ---")
+        print(
+            f"Current: {game_manager.game_state.target_score} "
+            "(Press Enter to keep unchanged)"
+        )
+        while True:
+            target_input = input(
+                "New target_score (or Enter to skip): "
+            ).strip()
+            if not target_input:
+                break
+            if target_input.lower() == "none":
+                state_updates["target_score"] = None
+                logger.info("Human judge set target_score to None")
+                break
+            try:
+                target_value = int(target_input)
+                if target_value <= 0:
+                    print("Error: target_score must be positive. Try again.")
+                    continue
+                state_updates["target_score"] = target_value
+                logger.info(
+                    "Human judge changed target_score to %d", target_value
+                )
+                break
+            except ValueError:
+                print(
+                    "Invalid input. Enter an integer, 'none', or press "
+                    "Enter."
+                )
+
+        # Prompt for each flag
+        print("\n--- Flags ---")
+        flag_updates = {}
+        for flag_name, definition in sorted(schema.items()):
+            current_value = game_manager.game_state.flags.get(flag_name)
+            valid_values = definition.get("valid_values")
+
+            print(
+                f"\n{flag_name} (current: {current_value}) "
+                "(Press Enter to keep unchanged)"
+            )
+            if valid_values:
+                print(f"  Valid values: {', '.join(map(str, valid_values))}")
+
+            while True:
+                flag_input = input(f"New value for {flag_name}: ").strip()
+                if not flag_input:
+                    break
+
+                # Convert to appropriate type
+                try:
+                    flag_type = definition["type"]
+                    if flag_type == "integer":
+                        parsed_value = int(flag_input)
+                    elif flag_type == "boolean":
+                        if flag_input.lower() in ("true", "1", "yes"):
+                            parsed_value = True
+                        elif flag_input.lower() in ("false", "0", "no"):
+                            parsed_value = False
+                        else:
+                            print(
+                                "Invalid boolean. Use true/false, yes/no, 1/0."
+                            )
+                            continue
+                    else:  # string
+                        parsed_value = flag_input
+
+                    # Validate
+                    validate_flag_value(flag_name, parsed_value)
+                    flag_updates[flag_name] = parsed_value
+                    logger.info(
+                        "Human judge changed flag %s to %s",
+                        flag_name,
+                        parsed_value,
+                    )
+                    break
+                except ValueError as e:
+                    print(f"Invalid input: {e}. Try again.")
+
+        if flag_updates:
+            state_updates["flags"] = flag_updates
+
+        if state_updates:
+            print(f"\nState updates: {state_updates}")
+        else:
+            print("\nNo state changes requested.")
+
+        return state_updates

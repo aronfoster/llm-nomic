@@ -196,3 +196,53 @@ def format_supported_flags() -> str:
             parts.append(f" Valid values: {vals}")
         lines.append("".join(parts))
     return "\n".join(lines)
+
+
+def validate_state_updates(state_updates: dict[str, Any]) -> None:
+    """
+    Validate a StateUpdates dictionary returned by judge.maintain_state().
+
+    Args:
+        state_updates: Dictionary with optional 'flags' and 'target_score'
+            keys.
+
+    Raises:
+        ValueError: If the structure is invalid or flag values are
+            invalid.
+    """
+    if not isinstance(state_updates, dict):
+        raise ValueError(
+            f"StateUpdates must be a dict, got {type(state_updates).__name__}"
+        )
+
+    # Check for unexpected keys
+    allowed_keys = {"flags", "target_score"}
+    unexpected = set(state_updates.keys()) - allowed_keys
+    if unexpected:
+        raise ValueError(
+            f"StateUpdates contains unexpected keys: {', '.join(unexpected)}"
+        )
+
+    # Validate flags if present
+    if "flags" in state_updates:
+        flags = state_updates["flags"]
+        if not isinstance(flags, dict):
+            raise ValueError(
+                f"StateUpdates['flags'] must be a dict, "
+                f"got {type(flags).__name__}"
+            )
+        validate_flags(flags)
+
+    # Validate target_score if present
+    if "target_score" in state_updates:
+        target_score = state_updates["target_score"]
+        if target_score is not None and not isinstance(target_score, int):
+            raise ValueError(
+                f"StateUpdates['target_score'] must be int or None, "
+                f"got {type(target_score).__name__}"
+            )
+        if target_score is not None and target_score <= 0:
+            raise ValueError(
+                f"StateUpdates['target_score'] must be positive, "
+                f"got {target_score}"
+            )
