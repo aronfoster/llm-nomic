@@ -94,8 +94,6 @@ def test_api_client_google_provider(monkeypatch):
         assert api_client.model_config == mock_model_def
 
 
-
-
 def test_api_client_xai_provider(monkeypatch):
     """Test ApiClient initializes correctly for xai provider."""
     monkeypatch.setenv("XAI_API_KEY", "secret-key")
