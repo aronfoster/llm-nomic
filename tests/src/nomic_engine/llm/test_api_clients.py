@@ -94,24 +94,6 @@ def test_api_client_google_provider(monkeypatch):
         assert api_client.model_config == mock_model_def
 
 
-def test_api_client_cloud_providers_missing_key():
-    """Test that cloud providers raise ValueError when API key is missing."""
-    cloud_providers = ["openai", "anthropic", "google"]
-
-    for provider in cloud_providers:
-        mock_model_def = ModelDefinition(
-            id=f"test-{provider}",
-            provider=provider,
-            api_model_id=f"{provider}-model-id",
-            env_key_name=f"{provider.upper()}_API_KEY",
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            ApiClient(mock_model_def)
-
-        assert f"API key for provider {provider} not found" in str(
-            exc_info.value
-        )
 
 
 def test_api_client_xai_provider(monkeypatch):

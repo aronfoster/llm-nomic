@@ -17,7 +17,6 @@ Our architecture is built on these principles:
 
 * Judge on lower quality models isn't scoring appropriately. Improve prompt to show vote totals in addition to vote/discussion. Reduce rule list to only those with 'point' or 'score' in them.
 * Lower quality LLM players are interpreting turn order as rank in the game. Maybe add some smart text to say "It's a 3-way tie" or "You are in last place by 8 points" or some other set of plain -language descriptions of the score situation since LLMs don't do great at math.
-* pylance is giving type errors in vs code that aren't caught by `make ci`
 * Proposals that pass but that are judge vetoed should still award points as if they passed; the rule change just doesn't get applied to the rule list.
 
 ### Low Priority
@@ -55,7 +54,7 @@ Our architecture is built on these principles:
 * **Status:** PLANNED
 * **Logic:**
 * Modify `PromptBuilder._format_game_state_block` in `src/nomic_engine/llm/prompt_builder.py` to include a "Leaderboard Context" line (e.g., "You are in 2nd place, 5 points behind the leader").
-  * Would listing the number of turns each player has had be valuable? Humans understand how going first confers an advantage, and that 
+  * Would listing the number of turns each player has had be valuable? Humans understand how going first confers an advantage, and that might be missed by an LLM
 
 ## Future Work
 
