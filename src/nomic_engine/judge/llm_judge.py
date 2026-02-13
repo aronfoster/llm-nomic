@@ -94,7 +94,11 @@ class LLMJudge(BaseJudge):
         base_messages = self._build_messages(
             game_manager, proposal, votes, discussions
         )
-        base_messages.append(self.prompt_builder.build_judge_veto_prompt())
+        base_messages.append(
+            self.prompt_builder.build_judge_veto_prompt(
+                game_state=game_manager.game_state,
+            )
+        )
 
         logger.debug(
             "Requesting veto decision from model %s",

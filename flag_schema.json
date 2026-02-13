@@ -1,0 +1,8 @@
+{
+  "vote_mode": {
+    "type": "string",
+    "valid_values": ["unanimous", "majority"],
+    "default": "unanimous",
+    "description": "Determines voting threshold. 'unanimous' requires all YES votes. 'majority' requires >50% YES votes."
+  }
+}

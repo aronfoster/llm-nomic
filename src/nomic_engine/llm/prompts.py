@@ -61,8 +61,15 @@ JUDGE_SYSTEM_PROMPT = (
 
 JUDGE_VETO_TEMPLATE = """Review the proposal outcome for legality.
 
-Decide whether the proposal should be vetoed because it violates an
-immutable rule, conflicts with existing rules, or creates a paradox.
+Current Engine Configuration:
+{dynamic_current_flags}
+
+Supported Engine Capabilities:
+{dynamic_supported_flags}
+
+You should veto proposals that:
+1. Violate an immutable rule, conflict with existing rules, or create a paradox
+2. Require engine capabilities that are not currently supported
 
 Respond with EXACTLY one JSON object with these keys IN THIS ORDER:
 1. "private_thoughts" (your reasoning for internal logging)

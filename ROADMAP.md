@@ -28,14 +28,14 @@ Our architecture is built on these principles:
 
 **Goal:** Refactor the unweildy resolution logic and implement a multi-step "State Compiler" to bridge the gap between natural language rules and engine behavior.
 
-### 1. Create game state flag schema
+### 1. ~~Create game state flag schema~~ DONE
 
-* Create file for defining game state flags, including type, valid_values, default, and description
-* Shift data_models.py's GameState's flags to be defined from this file
-* create_game.py must use this
-* Current flag list is [vote_mode]
-* Add to JUDGE_VETO_TEMPLATE (and elsewhere as appropriate) the values from flag schema options and description. Have the judge veto check both "violates an immutable rule, conflicts with existing rules, or creates a paradox" AND "whether the game engine can support the new rule".
-   * example of unsupported rule = voting by "consensus" where rules pass iff all votes are "YES" or "ABSTAIN" (contrasted with the current unanimous, which requires all YES votes).
+* ~~Create file for defining game state flags, including type, valid_values, default, and description~~
+* ~~Shift data_models.py's GameState's flags to be defined from this file~~
+* ~~create_game.py must use this~~
+* ~~Current flag list is [vote_mode]~~
+* ~~Add to JUDGE_VETO_TEMPLATE (and elsewhere as appropriate) the values from flag schema options and description. Have the judge veto check both "violates an immutable rule, conflicts with existing rules, or creates a paradox" AND "whether the game engine can support the new rule".~~
+   * ~~example of unsupported rule = voting by "consensus" where rules pass iff all votes are "YES" or "ABSTAIN" (contrasted with the current unanimous, which requires all YES votes).~~
 
 ### 2. Judge State Maintenance Interface
 

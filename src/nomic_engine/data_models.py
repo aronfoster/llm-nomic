@@ -11,7 +11,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # --- Enums ---
 
@@ -118,6 +118,16 @@ class GameConfig(BaseModel):
 # --- Dynamic Game State (for game_state.json) ---
 
 
+def _get_schema_defaults() -> Dict[str, Any]:
+    """Load flag defaults from the schema, with hardcoded fallback."""
+    try:
+        from .flag_schema import get_flag_defaults
+
+        return get_flag_defaults()
+    except Exception:
+        return {"vote_mode": "unanimous"}
+
+
 class GameState(BaseModel):
     """The dynamic state of the game, saved in game_state.json."""
 
@@ -128,7 +138,7 @@ class GameState(BaseModel):
         default=None, description="Score required to win the game."
     )
     flags: Dict[str, Any] = Field(
-        default_factory=lambda: {"vote_mode": "unanimous"},
+        default_factory=lambda: _get_schema_defaults(),
         description="Rules-driven engine toggles.",
     )
     current_player_name: str = Field(
@@ -146,6 +156,18 @@ class GameState(BaseModel):
             "The next sequential proposal ID to assign (starts at 301)."
         ),
     )
+
+    @model_validator(mode="after")
+    def _validate_flags(self) -> "GameState":
+        """Validate flag values against the flag schema."""
+        from .flag_schema import FlagSchemaError, validate_flags
+
+        try:
+            validate_flags(self.flags)
+        except FlagSchemaError:
+            # Schema unavailable — skip validation gracefully
+            pass
+        return self
 
 
 # --- Internal Data Models (for game logic) ---

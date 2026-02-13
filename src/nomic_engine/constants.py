@@ -13,4 +13,5 @@ GAME_TRANSCRIPT_FILE = "game_transcript.md"
 # --- Root Files ---
 INITIAL_RULES_FILE = "Nomic_Initial_Ruleset_v0.md"
 MODEL_LIBRARY_FILE = "models.yml"
+FLAG_SCHEMA_FILE = "flag_schema.json"
 GAMES_DIR = "games"
