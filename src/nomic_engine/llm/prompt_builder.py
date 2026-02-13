@@ -520,3 +520,50 @@ class PromptBuilder:
             json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT
         )
         return ChatMessage(role="user", content=content)
+
+    def build_judge_maintain_state_prompt(
+        self,
+        proposal: Proposal,
+        original_rule_text: str | None,
+        new_rule_text: str | None,
+        game_state: GameState,
+    ) -> ChatMessage:
+        """Build the instructions for Judge state maintenance.
+
+        Args:
+            proposal: The proposal being applied
+            original_rule_text: The text of the rule being changed (None
+                for ADD)
+            new_rule_text: The new text being added/amended (None for
+                REPEAL)
+            game_state: The current game state
+        """
+        # Format rule text sections
+        if original_rule_text:
+            original_section = f"Original Rule Text: {original_rule_text}"
+        else:
+            original_section = "Original Rule Text: N/A (new rule)"
+
+        if new_rule_text:
+            new_section = f"New Rule Text: {new_rule_text}"
+        else:
+            new_section = "New Rule Text: N/A (rule being repealed)"
+
+        # Format current state
+        current_flags = format_current_flags(game_state.flags)
+
+        try:
+            supported_flags = format_supported_flags()
+        except FlagSchemaError:
+            supported_flags = "Flag schema unavailable."
+
+        content = prompts.JUDGE_MAINTAIN_STATE_TEMPLATE.format(
+            proposal_type=proposal.type.value,
+            original_rule_section=original_section,
+            new_rule_section=new_section,
+            current_target_score=game_state.target_score,
+            current_flags=current_flags,
+            supported_flags=supported_flags,
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+        )
+        return ChatMessage(role="user", content=content)

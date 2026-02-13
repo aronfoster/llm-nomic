@@ -25,6 +25,7 @@ from src.nomic_engine.utils.flag_schema import (
     load_flag_schema,
     validate_flag_value,
     validate_flags,
+    validate_state_updates,
 )
 
 
@@ -490,3 +491,66 @@ class TestJudgeVetoPromptIntegration:
         )
         msg = builder.build_judge_veto_prompt(game_state=game_state)
         assert '- vote_mode: "majority"' in msg.content
+
+
+# =========================================================================
+# 8. StateUpdates validation
+# =========================================================================
+
+
+class TestStateUpdatesValidation:
+    """Tests for validating StateUpdates dictionaries."""
+
+    def test_valid_empty_state_updates(self) -> None:
+        """Empty StateUpdates is valid."""
+        validate_state_updates({})
+
+    def test_valid_flags_only(self) -> None:
+        """StateUpdates with only flags is valid."""
+        validate_state_updates({"flags": {"vote_mode": "majority"}})
+
+    def test_valid_target_score_only(self) -> None:
+        """StateUpdates with only target_score is valid."""
+        validate_state_updates({"target_score": 100})
+
+    def test_valid_both_fields(self) -> None:
+        """StateUpdates with both fields is valid."""
+        validate_state_updates(
+            {"flags": {"vote_mode": "unanimous"}, "target_score": 50}
+        )
+
+    def test_valid_target_score_none(self) -> None:
+        """StateUpdates with target_score=None is valid."""
+        validate_state_updates({"target_score": None})
+
+    def test_invalid_not_dict(self) -> None:
+        """Non-dict StateUpdates raises ValueError."""
+        with pytest.raises(ValueError, match="must be a dict"):
+            validate_state_updates("not a dict")  # type: ignore[arg-type]
+
+    def test_invalid_unexpected_key(self) -> None:
+        """Unexpected keys allowed (TypedDict enforces at type-check)."""
+        # This should not raise - TypedDict enforces keys at type-check time
+        validate_state_updates(
+            {"flags": {}, "extra_key": "value"}  # type: ignore[arg-type]
+        )
+
+    def test_invalid_flags_not_dict(self) -> None:
+        """Non-dict flags raise ValueError."""
+        with pytest.raises(ValueError, match="flags.*must be a dict"):
+            validate_state_updates({"flags": "not a dict"})  # type: ignore[arg-type]
+
+    def test_invalid_flag_value(self) -> None:
+        """Invalid flag value raises ValueError."""
+        with pytest.raises(ValueError, match="not valid"):
+            validate_state_updates({"flags": {"vote_mode": "invalid"}})
+
+    def test_invalid_unknown_flag(self) -> None:
+        """Unknown flag name raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown flag"):
+            validate_state_updates({"flags": {"unknown_flag": "value"}})
+
+    def test_invalid_target_score_not_int(self) -> None:
+        """Non-int target_score raises ValueError."""
+        with pytest.raises(ValueError, match="target_score.*must be int"):
+            validate_state_updates({"target_score": "100"})  # type: ignore[arg-type]

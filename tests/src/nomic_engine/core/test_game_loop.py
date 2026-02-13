@@ -532,9 +532,14 @@ def test_step_4_vote_respects_individual_votes(
 # --- Tests for Step 5: Resolve ---
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 @patch("builtins.input", side_effect=["n", "10", "5", "-2"])
 def test_step_5_resolve_unanimous_pass_with_judge_approval(
     mock_input: Mock,
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,
@@ -631,6 +636,7 @@ def test_step_5_resolve_triggers_game_over(
         "private_thoughts": None,
     }
     judge.assess_scores.side_effect = assess_scores_side_effect
+    judge.maintain_state.return_value = {}
 
     game_loop = GameLoop(mock_game_manager, mock_players, judge)
 
@@ -716,6 +722,7 @@ def test_step_5_resolve_skips_game_over_without_target(
         "private_thoughts": None,
         "score_adjustments": [],
     }
+    judge.maintain_state.return_value = {}
 
     game_loop = GameLoop(mock_game_manager, mock_players, judge)
 
@@ -725,9 +732,14 @@ def test_step_5_resolve_skips_game_over_without_target(
     mock_game_manager.logger.log_event.assert_not_called()
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 @patch("builtins.input", side_effect=["y", "0", "0", "0"])
 def test_step_5_resolve_judge_veto(
     mock_input: Mock,
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,
@@ -778,9 +790,14 @@ def test_step_5_resolve_judge_veto(
     assert mock_game_state.next_proposal_id == initial_proposal_id
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 @patch("builtins.input", side_effect=["-10", "3", "3"])
 def test_step_5_resolve_failed_proposal_score_penalty(
     mock_input: Mock,
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,
@@ -832,9 +849,14 @@ def test_step_5_resolve_failed_proposal_score_penalty(
     assert mock_game_state.next_proposal_id == initial_proposal_id
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 @patch("builtins.input", side_effect=["8", "0", "10"])
 def test_step_5_resolve_manual_score_entry(
     mock_input: Mock,
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_game_state: GameState,
 ) -> None:
@@ -872,9 +894,14 @@ def test_step_5_resolve_manual_score_entry(
     assert mock_game_state.scores["Charlie"] == 10
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 @patch("builtins.input", side_effect=["n", "0", "0", "0"])
 def test_step_5_resolve_turn_advances_correctly(
     mock_input: Mock,
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_game_state: GameState,
 ) -> None:
@@ -902,9 +929,14 @@ def test_step_5_resolve_turn_advances_correctly(
     assert mock_game_state.move_number == 2
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 @patch("builtins.input", side_effect=["n", "0", "0", "0"])
 def test_step_5_resolve_turn_wraps_around(
     mock_input: Mock,
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_game_state: GameState,
 ) -> None:
@@ -934,9 +966,14 @@ def test_step_5_resolve_turn_wraps_around(
     assert mock_game_state.current_player_name == "Alice"
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 @patch("builtins.input", side_effect=["n", "5", "5", "5"])
 def test_step_5_resolve_zero_voters_automatic_pass(
     mock_input: Mock,
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,
@@ -990,9 +1027,14 @@ def test_step_5_resolve_zero_voters_automatic_pass(
     assert mock_game_state.next_proposal_id == initial_proposal_id + 1
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 @patch("builtins.input", side_effect=["y", "-5", "0", "0"])
 def test_step_5_resolve_veto_blocks_proposal_application(
     mock_input: Mock,
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,
@@ -1078,6 +1120,7 @@ def test_judge_veto_not_called_when_proposal_fails(
         "private_thoughts": None,
         "score_adjustments": [],
     }
+    judge.maintain_state.return_value = {}
 
     game_loop = GameLoop(mock_game_manager, mock_players, judge)
 
@@ -1125,6 +1168,7 @@ def test_judge_veto_called_when_proposal_passes(
         "private_thoughts": None,
         "score_adjustments": [],
     }
+    judge.maintain_state.return_value = {}
 
     game_loop = GameLoop(mock_game_manager, mock_players, judge)
 
@@ -1140,9 +1184,14 @@ def test_judge_veto_called_when_proposal_passes(
 # --- Tests for run_turn Integration ---
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 @patch("builtins.input", side_effect=["n", "10", "5", "0"])
 def test_run_turn_full_integration_success(
     mock_input: Mock,
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_players: list[Mock],
     mock_game_manager: Mock,
@@ -1180,9 +1229,14 @@ def test_run_turn_full_integration_success(
     mock_game_manager.logger.log_transcript.assert_called_once()
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 @patch("builtins.input", return_value="y")
 def test_run_turn_stops_on_illegal_proposal(
     mock_input: Mock,
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_players: list[Mock],
     mock_game_manager: Mock,
@@ -1622,6 +1676,7 @@ def test_get_judge_decisions_proposal_passed(
         "private_thoughts": None,
         "score_adjustments": [],
     }
+    judge.maintain_state.return_value = {}
 
     game_loop.judge = judge
 
@@ -1679,6 +1734,7 @@ def test_get_judge_decisions_proposal_failed(
         "private_thoughts": None,
         "score_adjustments": [],
     }
+    judge.maintain_state.return_value = {}
 
     game_loop.judge = judge
 
@@ -1736,6 +1792,7 @@ def test_get_judge_decisions_with_veto(
         "private_thoughts": None,
         "score_adjustments": [],
     }
+    judge.maintain_state.return_value = {}
 
     game_loop.judge = judge
 
@@ -1753,7 +1810,12 @@ def test_get_judge_decisions_with_veto(
     judge.assess_scores.assert_called_once()
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
 def test_apply_turn_mutations_passed_proposal(
+    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,

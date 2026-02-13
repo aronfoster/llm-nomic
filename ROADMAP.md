@@ -37,18 +37,17 @@ Our architecture is built on these principles:
 * ~~Add to JUDGE_VETO_TEMPLATE (and elsewhere as appropriate) the values from flag schema options and description. Have the judge veto check both "violates an immutable rule, conflicts with existing rules, or creates a paradox" AND "whether the game engine can support the new rule".~~
    * ~~example of unsupported rule = voting by "consensus" where rules pass iff all votes are "YES" or "ABSTAIN" (contrasted with the current unanimous, which requires all YES votes).~~
 
-### 2. Judge State Maintenance Interface
+### 2. ~~Judge State Maintenance Interface~~ DONE
 
-* **Task:** Add `maintain_state(rules, game_state, proposal) -> StateUpdates` to `BaseJudge`.
-* **Trigger:** Call this in the new `_get_judge_decisions` step immediately after a proposal passes.
-* **Logic:** The Judge should return a **delta only**—returning a `StateUpdates` object only if a rule change necessitates an engine change.
-* **Implementations:**
-   * **HumanJudge:** Interactive CLI loop displaying current flags/target score and prompting for specific overrides.
-   * **LLMJudge:** Prepare the factory to accept the "Game State Compiler" prompt logic.
-* Notes:
-  * Can we leave out the entire context aside from the current game_state and the proposal (before+after of rule that's being changed)? This would make this a cheap LLM call, hopefully.
-  * Should have a helper method to validate input against schema
-  * Require retry logic
+* ~~**Task:** Add `maintain_state(game_manager, proposal, original_rule_text, new_rule_text) -> StateUpdates` to `BaseJudge`.~~
+* ~~**Trigger:** Call after vote passes and judge doesn't veto, before applying proposal to rules. NOT called for TRANSMUTE proposals.~~
+* ~~**Logic:** The Judge returns a **delta only**—returning a `StateUpdates` object only if a rule change necessitates an engine change (flags and/or target_score).~~
+* ~~**Implementations:**~~
+   * ~~**HumanJudge:** Interactive CLI loop displaying current flags/target score and prompting for specific overrides with validation.~~
+   * ~~**LLMJudge:** Minimal context (current state, supported flags, rule change). New prompt template with 2 retries on invalid responses. Parser validates against flag_schema.json.~~
+* ~~**Integration:** Updated GameLoop._apply_turn_mutations to call maintain_state at correct timing with proper arguments based on proposal type (ADD/AMEND/REPEAL).~~
+* ~~**Validation:** Created validate_state_updates helper in flag_schema.py to validate returned StateUpdates against schema.~~
+* ~~**Tests:** Comprehensive unit tests for validation, parsing, and GameLoop integration including TRANSMUTE exclusion.~~
 
 ### 3. Smart Player Context (Bug Mitigation)
 

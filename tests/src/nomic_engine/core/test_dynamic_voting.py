@@ -441,6 +441,7 @@ def test_resolve_turn_uses_majority_mode(
         "private_thoughts": None,
         "score_adjustments": [],
     }
+    judge.maintain_state.return_value = {}
 
     game_loop = GameLoop(mock_game_manager, [], judge)
 
@@ -484,6 +485,7 @@ def test_resolve_turn_majority_mode_fails_at_50_percent(
         "private_thoughts": None,
         "score_adjustments": [],
     }
+    judge.maintain_state.return_value = {}
 
     # Need 4 players for a clean 50/50 split
     mock_game_state.scores = {"Alice": 0, "Bob": 0, "Charlie": 0, "Dave": 0}
