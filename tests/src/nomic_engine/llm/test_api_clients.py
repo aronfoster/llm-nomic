@@ -84,18 +84,12 @@ def test_api_client_google_provider(monkeypatch):
         env_key_name="GOOGLE_API_KEY",
     )
 
-    with (
-        patch(
-            "src.nomic_engine.llm.api_clients.genai.configure"
-        ) as mock_configure,
-        patch(
-            "src.nomic_engine.llm.api_clients.genai.GenerativeModel"
-        ) as mock_model,
-    ):
+    with patch(
+        "src.nomic_engine.llm.api_clients.genai.Client"
+    ) as mock_client_class:
         api_client = ApiClient(mock_model_def)
 
-        mock_configure.assert_called_once_with(api_key="test-google-key")
-        mock_model.assert_called_once_with("gemini-2.5-pro")
+        mock_client_class.assert_called_once_with(api_key="test-google-key")
         assert api_client.model_id_for_api == "gemini-2.5-pro"
         assert api_client.model_config == mock_model_def
 
@@ -470,15 +464,12 @@ def test_get_completion_google_success(monkeypatch):
     mock_response = MagicMock()
     mock_response.text = "Google response"
 
-    with (
-        patch("src.nomic_engine.llm.api_clients.genai.configure"),
-        patch(
-            "src.nomic_engine.llm.api_clients.genai.GenerativeModel"
-        ) as mock_model_class,
-    ):
+    with patch(
+        "src.nomic_engine.llm.api_clients.genai.Client"
+    ) as mock_client_class:
         mock_client = MagicMock()
-        mock_client.generate_content.return_value = mock_response
-        mock_model_class.return_value = mock_client
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
 
         api_client = ApiClient(mock_model_def)
 
@@ -491,15 +482,16 @@ def test_get_completion_google_success(monkeypatch):
 
         result = api_client.get_completion(messages)
 
-        # Verify message format conversion
-        call_args = mock_client.generate_content.call_args
+        # Verify message format conversion and API call
+        call_args = mock_client.models.generate_content.call_args
         expected_messages = [
             {"role": "user", "parts": ["You are helpful."]},
             {"role": "user", "parts": ["Hello!"]},
             {"role": "model", "parts": ["Hi there!"]},
             {"role": "user", "parts": ["How are you?"]},
         ]
-        assert call_args.args[0] == expected_messages
+        assert call_args.kwargs["model"] == "gemini-2.5-pro"
+        assert call_args.kwargs["contents"] == expected_messages
         assert result == "Google response"
 
 
@@ -514,15 +506,14 @@ def test_get_completion_google_error(monkeypatch):
         env_key_name="GOOGLE_API_KEY",
     )
 
-    with (
-        patch("src.nomic_engine.llm.api_clients.genai.configure"),
-        patch(
-            "src.nomic_engine.llm.api_clients.genai.GenerativeModel"
-        ) as mock_model_class,
-    ):
+    with patch(
+        "src.nomic_engine.llm.api_clients.genai.Client"
+    ) as mock_client_class:
         mock_client = MagicMock()
-        mock_client.generate_content.side_effect = Exception("API error")
-        mock_model_class.return_value = mock_client
+        mock_client.models.generate_content.side_effect = Exception(
+            "API error"
+        )
+        mock_client_class.return_value = mock_client
 
         api_client = ApiClient(mock_model_def)
         messages = [ChatMessage(role="user", content="Hello!")]

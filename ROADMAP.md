@@ -22,7 +22,7 @@ Our architecture is built on these principles:
 
 ### Low Priority
 
-* Update google.generativeai to google.genai. See https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md for more details.
+* ~~Update google.generativeai to google.genai. See https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md for more details.~~ DONE
 
 ## Sprint 26-1: Modular Resolution & State Compilation
 

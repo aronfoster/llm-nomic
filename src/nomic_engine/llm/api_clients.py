@@ -8,7 +8,7 @@ from typing import Any, Iterable, cast
 
 import anthropic
 import anthropic.types
-import google.generativeai as genai
+from google import genai
 from openai import OpenAI, OpenAIError
 from openai.types.chat import ChatCompletionMessageParam
 
@@ -115,14 +115,9 @@ class ApiClient:
                     )
                 )
 
-            # google-generativeai module has incomplete type stubs
-            # Configure and create client using cast for missing types
-            cast(Any, genai).configure(api_key=api_key)
-            model_id = self.model_config.api_model_id
-            self._google_client = cast(
-                Any, cast(Any, genai).GenerativeModel(model_id)
-            )
-            self.model_id_for_api = model_id
+            # Create Google GenAI client
+            self._google_client = genai.Client(api_key=api_key)
+            self.model_id_for_api = self.model_config.api_model_id
         else:
             raise ValueError(f"Unknown provider: {self.model_config.provider}")
 
@@ -227,12 +222,12 @@ class ApiClient:
                             msg.role,
                         )
 
-                # Generate content using cast since google-generativeai
-                # doesn't provide complete type stubs
-                google_response = cast(
-                    Any, self._google_client
-                ).generate_content(gemini_messages)
-                return str(cast(Any, google_response).text)
+                # Generate content using the new google.genai SDK
+                google_response = self._google_client.models.generate_content(
+                    model=self.model_id_for_api,
+                    contents=gemini_messages,
+                )
+                return str(google_response.text)
 
             else:
                 logger.error(

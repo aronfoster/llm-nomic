@@ -8,7 +8,7 @@ cffi
 # API Clients
 openai
 anthropic
-google-generativeai
+google-genai
 
 # Testing & Code Quality
 pytest
