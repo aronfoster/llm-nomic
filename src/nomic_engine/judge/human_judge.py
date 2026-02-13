@@ -212,6 +212,7 @@ class HumanJudge(BaseJudge):
                 # Convert to appropriate type
                 try:
                     flag_type = definition["type"]
+                    parsed_value: int | bool | str
                     if flag_type == "integer":
                         parsed_value = int(flag_input)
                     elif flag_type == "boolean":

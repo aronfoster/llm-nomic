@@ -62,6 +62,10 @@ def load_flag_schema() -> dict[str, Any]:
     # Validate each flag entry has required fields
     required_fields = {"type", "valid_values", "default", "description"}
     for flag_name, definition in schema.items():
+        # Skip metadata entries that start with underscore
+        if flag_name.startswith("_"):
+            continue
+
         if not isinstance(definition, dict):
             raise FlagSchemaError(
                 f"Flag '{flag_name}' must be an object, "

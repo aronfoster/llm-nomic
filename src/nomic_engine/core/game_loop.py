@@ -682,7 +682,7 @@ class GameLoop:
                     # AMEND: both texts present
                     if proposal.target_rule_id:
                         target_rule = (
-                            self.game_manager.rules_manager.get_rule_by_id(
+                            self.game_manager.rules_manager._find_rule_by_id(
                                 proposal.target_rule_id
                             )
                         )
@@ -693,7 +693,7 @@ class GameLoop:
                     # REPEAL: original text only
                     if proposal.target_rule_id:
                         target_rule = (
-                            self.game_manager.rules_manager.get_rule_by_id(
+                            self.game_manager.rules_manager._find_rule_by_id(
                                 proposal.target_rule_id
                             )
                         )
