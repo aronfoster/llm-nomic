@@ -14,10 +14,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from ..constants import FLAG_SCHEMA_FILE
 
-# Path to the flag schema file (project root)
-_FLAG_SCHEMA_FILE = "flag_schema.json"
+logger = logging.getLogger(__name__)
 
 # Cached schema to avoid repeated disk reads
 _cached_schema: dict[str, Any] | None = None
@@ -25,20 +24,6 @@ _cached_schema: dict[str, Any] | None = None
 
 class FlagSchemaError(Exception):
     """Raised when the flag schema file is missing or malformed."""
-
-
-def _find_schema_path() -> Path:
-    """Locate flag_schema.json by walking up from this file's directory."""
-    current = Path(__file__).resolve().parent
-    for _ in range(5):
-        candidate = current / _FLAG_SCHEMA_FILE
-        if candidate.exists():
-            return candidate
-        current = current.parent
-    raise FlagSchemaError(
-        f"Cannot find {_FLAG_SCHEMA_FILE} in any parent directory "
-        f"of {Path(__file__).resolve().parent}"
-    )
 
 
 def load_flag_schema() -> dict[str, Any]:
@@ -56,14 +41,13 @@ def load_flag_schema() -> dict[str, Any]:
     if _cached_schema is not None:
         return _cached_schema
 
-    try:
-        schema_path = _find_schema_path()
-    except FlagSchemaError:
-        raise
+    schema_path = Path(FLAG_SCHEMA_FILE)
 
     try:
         with schema_path.open("r", encoding="utf-8") as f:
             schema = json.load(f)
+    except FileNotFoundError:
+        raise FlagSchemaError(f"Flag schema file not found: {schema_path}")
     except json.JSONDecodeError as e:
         raise FlagSchemaError(f"Malformed JSON in {schema_path}: {e}") from e
     except OSError as e:
@@ -71,7 +55,8 @@ def load_flag_schema() -> dict[str, Any]:
 
     if not isinstance(schema, dict):
         raise FlagSchemaError(
-            f"Flag schema must be a JSON object, got {type(schema).__name__}"
+            f"Flag schema must be a JSON object, "
+            f"got {type(schema).__name__}"
         )
 
     # Validate each flag entry has required fields
@@ -195,8 +180,8 @@ def format_supported_flags() -> str:
 
     Returns:
         Formatted string with descriptions and valid values, like:
-        - vote_mode (string): Determines voting threshold. ... Valid values:
-          unanimous, majority
+        - vote_mode (string): Determines voting threshold. ...
+          Valid values: unanimous, majority
     """
     schema = load_flag_schema()
     if not schema:

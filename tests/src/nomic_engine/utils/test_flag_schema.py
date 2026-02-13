@@ -12,12 +12,11 @@ Covers:
 
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from src.nomic_engine.data_models import GameState
-from src.nomic_engine.flag_schema import (
+from src.nomic_engine.utils.flag_schema import (
     FlagSchemaError,
     clear_schema_cache,
     format_current_flags,
@@ -83,67 +82,53 @@ class TestSchemaLoading:
 class TestSchemaLoadingErrors:
     """Tests for error handling when schema is missing or malformed."""
 
-    def test_missing_schema_raises_error(self, tmp_path: Path) -> None:
+    def test_missing_schema_raises_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """FlagSchemaError raised when schema file doesn't exist."""
-        clear_schema_cache()
-        with patch(
-            "src.nomic_engine.flag_schema._find_schema_path",
-            side_effect=FlagSchemaError("not found"),
-        ):
-            with pytest.raises(FlagSchemaError, match="not found"):
-                load_flag_schema()
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(FlagSchemaError, match="not found"):
+            load_flag_schema()
 
-    def test_malformed_json_raises_error(self, tmp_path: Path) -> None:
-        """FlagSchemaError raised when schema file has invalid JSON."""
+    def test_malformed_json_raises_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """FlagSchemaError raised when file has invalid JSON."""
         bad_file = tmp_path / "flag_schema.json"
         bad_file.write_text("{ invalid json }")
-        clear_schema_cache()
-        with patch(
-            "src.nomic_engine.flag_schema._find_schema_path",
-            return_value=bad_file,
-        ):
-            with pytest.raises(FlagSchemaError, match="Malformed JSON"):
-                load_flag_schema()
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(FlagSchemaError, match="Malformed JSON"):
+            load_flag_schema()
 
-    def test_non_object_schema_raises_error(self, tmp_path: Path) -> None:
+    def test_non_object_schema_raises_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """FlagSchemaError raised when schema root is not an object."""
         bad_file = tmp_path / "flag_schema.json"
         bad_file.write_text('["not", "an", "object"]')
-        clear_schema_cache()
-        with patch(
-            "src.nomic_engine.flag_schema._find_schema_path",
-            return_value=bad_file,
-        ):
-            with pytest.raises(FlagSchemaError, match="must be a JSON object"):
-                load_flag_schema()
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(FlagSchemaError, match="must be a JSON object"):
+            load_flag_schema()
 
     def test_missing_required_fields_raises_error(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """FlagSchemaError raised when a flag entry is missing fields."""
         bad_file = tmp_path / "flag_schema.json"
         bad_file.write_text(json.dumps({"test_flag": {"type": "string"}}))
-        clear_schema_cache()
-        with patch(
-            "src.nomic_engine.flag_schema._find_schema_path",
-            return_value=bad_file,
-        ):
-            with pytest.raises(
-                FlagSchemaError, match="missing required fields"
-            ):
-                load_flag_schema()
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(FlagSchemaError, match="missing required fields"):
+            load_flag_schema()
 
-    def test_non_dict_flag_entry_raises_error(self, tmp_path: Path) -> None:
+    def test_non_dict_flag_entry_raises_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """FlagSchemaError raised when a flag value is not a dict."""
         bad_file = tmp_path / "flag_schema.json"
         bad_file.write_text(json.dumps({"test_flag": "not_a_dict"}))
-        clear_schema_cache()
-        with patch(
-            "src.nomic_engine.flag_schema._find_schema_path",
-            return_value=bad_file,
-        ):
-            with pytest.raises(FlagSchemaError, match="must be an object"):
-                load_flag_schema()
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(FlagSchemaError, match="must be an object"):
+            load_flag_schema()
 
 
 # =========================================================================
@@ -197,9 +182,11 @@ class TestFlagValidation:
 
 
 class TestFlagValidationWithCustomSchema:
-    """Test validation with custom schemas that include various types."""
+    """Test validation with custom schemas for various types."""
 
-    def test_boolean_flag_validation(self, tmp_path: Path) -> None:
+    def test_boolean_flag_validation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Boolean flags validate type correctly."""
         schema_file = tmp_path / "flag_schema.json"
         schema_file.write_text(
@@ -214,17 +201,15 @@ class TestFlagValidationWithCustomSchema:
                 }
             )
         )
-        clear_schema_cache()
-        with patch(
-            "src.nomic_engine.flag_schema._find_schema_path",
-            return_value=schema_file,
-        ):
-            validate_flag_value("debug_mode", True)
-            validate_flag_value("debug_mode", False)
-            with pytest.raises(ValueError, match="expects type"):
-                validate_flag_value("debug_mode", "true")
+        monkeypatch.chdir(tmp_path)
+        validate_flag_value("debug_mode", True)
+        validate_flag_value("debug_mode", False)
+        with pytest.raises(ValueError, match="expects type"):
+            validate_flag_value("debug_mode", "true")
 
-    def test_integer_flag_validation(self, tmp_path: Path) -> None:
+    def test_integer_flag_validation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Integer flags validate type correctly."""
         schema_file = tmp_path / "flag_schema.json"
         schema_file.write_text(
@@ -239,14 +224,10 @@ class TestFlagValidationWithCustomSchema:
                 }
             )
         )
-        clear_schema_cache()
-        with patch(
-            "src.nomic_engine.flag_schema._find_schema_path",
-            return_value=schema_file,
-        ):
-            validate_flag_value("max_retries", 5)
-            with pytest.raises(ValueError, match="expects type"):
-                validate_flag_value("max_retries", "five")
+        monkeypatch.chdir(tmp_path)
+        validate_flag_value("max_retries", 5)
+        with pytest.raises(ValueError, match="expects type"):
+            validate_flag_value("max_retries", "five")
 
 
 # =========================================================================
@@ -280,7 +261,7 @@ class TestGameStateDefaults:
         )
         assert state.flags == {"vote_mode": "majority"}
 
-    def test_invalid_flag_value_raises_validation_error(self) -> None:
+    def test_invalid_flag_value_raises_error(self) -> None:
         """GameState rejects invalid flag values at construction."""
         with pytest.raises(ValueError, match="not valid"):
             GameState(
@@ -353,7 +334,9 @@ class TestGetFlagDefaults:
         defaults = get_flag_defaults()
         assert defaults == {"vote_mode": "unanimous"}
 
-    def test_excludes_null_defaults(self, tmp_path: Path) -> None:
+    def test_excludes_null_defaults(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Flags with null defaults are excluded."""
         schema_file = tmp_path / "flag_schema.json"
         schema_file.write_text(
@@ -374,14 +357,10 @@ class TestGetFlagDefaults:
                 }
             )
         )
-        clear_schema_cache()
-        with patch(
-            "src.nomic_engine.flag_schema._find_schema_path",
-            return_value=schema_file,
-        ):
-            defaults = get_flag_defaults()
-            assert defaults == {"has_default": "a"}
-            assert "no_default" not in defaults
+        monkeypatch.chdir(tmp_path)
+        defaults = get_flag_defaults()
+        assert defaults == {"has_default": "a"}
+        assert "no_default" not in defaults
 
 
 # =========================================================================
@@ -423,7 +402,9 @@ class TestPromptFormatting:
         assert "majority" in result
         assert "Determines voting threshold" in result
 
-    def test_format_supported_flags_includes_valid_values(self) -> None:
+    def test_format_supported_flags_includes_valid_values(
+        self,
+    ) -> None:
         """Supported flags output includes valid values."""
         result = format_supported_flags()
         assert "Valid values:" in result
@@ -449,8 +430,8 @@ class TestJudgeVetoPromptIntegration:
             turn_order=["Alice"],
             next_proposal_id=301,
         )
-        message = builder.build_judge_veto_prompt(game_state=game_state)
-        assert '- vote_mode: "unanimous"' in message.content
+        msg = builder.build_judge_veto_prompt(game_state=game_state)
+        assert '- vote_mode: "unanimous"' in msg.content
 
     def test_veto_prompt_includes_supported_flags(self) -> None:
         """Judge veto prompt includes supported flag descriptions."""
@@ -464,10 +445,10 @@ class TestJudgeVetoPromptIntegration:
             turn_order=["Alice"],
             next_proposal_id=301,
         )
-        message = builder.build_judge_veto_prompt(game_state=game_state)
-        assert "Supported Engine Capabilities" in message.content
-        assert "vote_mode (string)" in message.content
-        assert "Valid values: unanimous, majority" in message.content
+        msg = builder.build_judge_veto_prompt(game_state=game_state)
+        assert "Supported Engine Capabilities" in msg.content
+        assert "vote_mode (string)" in msg.content
+        assert "Valid values: unanimous, majority" in msg.content
 
     def test_veto_prompt_includes_veto_criteria(self) -> None:
         """Judge veto prompt includes both veto criteria."""
@@ -481,18 +462,18 @@ class TestJudgeVetoPromptIntegration:
             turn_order=["Alice"],
             next_proposal_id=301,
         )
-        message = builder.build_judge_veto_prompt(game_state=game_state)
-        assert "Violate an immutable rule" in message.content
-        assert "engine capabilities" in message.content
+        msg = builder.build_judge_veto_prompt(game_state=game_state)
+        assert "Violate an immutable rule" in msg.content
+        assert "engine capabilities" in msg.content
 
     def test_veto_prompt_without_game_state(self) -> None:
-        """Judge veto prompt works without game_state (backward compat)."""
+        """Veto prompt works without game_state (backward compat)."""
         from src.nomic_engine.llm.prompt_builder import PromptBuilder
 
         builder = PromptBuilder()
-        message = builder.build_judge_veto_prompt()
-        assert "No flags currently set." in message.content
-        assert "Supported Engine Capabilities" in message.content
+        msg = builder.build_judge_veto_prompt()
+        assert "No flags currently set." in msg.content
+        assert "Supported Engine Capabilities" in msg.content
 
     def test_veto_prompt_with_majority_mode(self) -> None:
         """Judge veto prompt reflects current game flag state."""
@@ -507,5 +488,5 @@ class TestJudgeVetoPromptIntegration:
             next_proposal_id=301,
             flags={"vote_mode": "majority"},
         )
-        message = builder.build_judge_veto_prompt(game_state=game_state)
-        assert '- vote_mode: "majority"' in message.content
+        msg = builder.build_judge_veto_prompt(game_state=game_state)
+        assert '- vote_mode: "majority"' in msg.content

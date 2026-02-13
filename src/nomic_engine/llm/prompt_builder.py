@@ -17,7 +17,7 @@ from ..data_models import (
     Rule,
     Vote,
 )
-from ..flag_schema import (
+from ..utils.flag_schema import (
     FlagSchemaError,
     format_current_flags,
     format_supported_flags,

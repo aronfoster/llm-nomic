@@ -35,7 +35,10 @@ from src.nomic_engine.data_models import (
     PlayerConfig,
     PlayerPersonality,
 )
-from src.nomic_engine.flag_schema import get_flag_defaults, load_flag_schema
+from src.nomic_engine.utils.flag_schema import (
+    get_flag_defaults,
+    load_flag_schema,
+)
 from src.nomic_engine.utils.loaders import load_model_library
 from src.nomic_engine.utils.parsers import parse_rules_md
 

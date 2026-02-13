@@ -121,7 +121,7 @@ class GameConfig(BaseModel):
 def _get_schema_defaults() -> Dict[str, Any]:
     """Load flag defaults from the schema, with hardcoded fallback."""
     try:
-        from .flag_schema import get_flag_defaults
+        from .utils.flag_schema import get_flag_defaults
 
         return get_flag_defaults()
     except Exception:
@@ -160,7 +160,7 @@ class GameState(BaseModel):
     @model_validator(mode="after")
     def _validate_flags(self) -> "GameState":
         """Validate flag values against the flag schema."""
-        from .flag_schema import FlagSchemaError, validate_flags
+        from .utils.flag_schema import FlagSchemaError, validate_flags
 
         try:
             validate_flags(self.flags)
