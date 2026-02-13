@@ -657,9 +657,6 @@ def parse_judge_maintain_state_response(response_text: str) -> dict[str, Any]:
             f"got {type(target_score).__name__}."
         )
 
-    if target_score is not None and target_score <= 0:
-        raise ValueError(f"target_score must be positive, got {target_score}.")
-
     # Step 8: Build StateUpdates and validate against schema
     state_updates: dict[str, Any] = {}
     if flags:

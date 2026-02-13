@@ -554,13 +554,3 @@ class TestStateUpdatesValidation:
         """Non-int target_score raises ValueError."""
         with pytest.raises(ValueError, match="target_score.*must be int"):
             validate_state_updates({"target_score": "100"})  # type: ignore[arg-type]
-
-    def test_invalid_target_score_negative(self) -> None:
-        """Negative target_score raises ValueError."""
-        with pytest.raises(ValueError, match="must be positive"):
-            validate_state_updates({"target_score": -10})
-
-    def test_invalid_target_score_zero(self) -> None:
-        """Zero target_score raises ValueError."""
-        with pytest.raises(ValueError, match="must be positive"):
-            validate_state_updates({"target_score": 0})

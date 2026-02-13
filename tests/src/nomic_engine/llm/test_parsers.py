@@ -950,32 +950,6 @@ class TestParseJudgeMaintainStateResponse:
 
         assert "target_score must be an integer or null" in str(exc_info.value)
 
-    def test_invalid_target_score_negative(self):
-        """Test that negative target_score raises ValueError."""
-        response = """{
-            "private_thoughts": "Analysis",
-            "flags": {},
-            "target_score": -10
-        }"""
-
-        with pytest.raises(ValueError) as exc_info:
-            parse_judge_maintain_state_response(response)
-
-        assert "target_score must be positive" in str(exc_info.value)
-
-    def test_invalid_target_score_zero(self):
-        """Test that zero target_score raises ValueError."""
-        response = """{
-            "private_thoughts": "Analysis",
-            "flags": {},
-            "target_score": 0
-        }"""
-
-        with pytest.raises(ValueError) as exc_info:
-            parse_judge_maintain_state_response(response)
-
-        assert "target_score must be positive" in str(exc_info.value)
-
     def test_invalid_flag_value(self):
         """Test that invalid flag value raises ValueError."""
         response = """{

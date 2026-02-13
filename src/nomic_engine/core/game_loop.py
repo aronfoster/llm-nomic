@@ -708,28 +708,41 @@ class GameLoop:
                     new_rule_text=new_rule_text,
                 )
 
-                # Apply state updates if any
+                # Apply state updates if any (only if values changed)
                 if state_updates:
                     if "flags" in state_updates:
                         for flag_name, flag_value in state_updates[
                             "flags"
                         ].items():
-                            self.game_manager.game_state.flags[flag_name] = (
-                                flag_value
+                            current_value = (
+                                self.game_manager.game_state.flags.get(
+                                    flag_name
+                                )
+                            )
+                            if current_value != flag_value:
+                                self.game_manager.game_state.flags[
+                                    flag_name
+                                ] = flag_value
+                                logger.info(
+                                    "Updated flag %s from %s to %s",
+                                    flag_name,
+                                    current_value,
+                                    flag_value,
+                                )
+                    if "target_score" in state_updates:
+                        new_score = state_updates["target_score"]
+                        current_score = (
+                            self.game_manager.game_state.target_score
+                        )
+                        if current_score != new_score:
+                            self.game_manager.game_state.target_score = (
+                                new_score
                             )
                             logger.info(
-                                "Updated flag %s to %s",
-                                flag_name,
-                                flag_value,
+                                "Updated target_score from %s to %s",
+                                current_score,
+                                new_score,
                             )
-                    if "target_score" in state_updates:
-                        self.game_manager.game_state.target_score = (
-                            state_updates["target_score"]
-                        )
-                        logger.info(
-                            "Updated target_score to %s",
-                            state_updates["target_score"],
-                        )
             else:
                 logger.debug(
                     "Skipping maintain_state for TRANSMUTE proposal %s",

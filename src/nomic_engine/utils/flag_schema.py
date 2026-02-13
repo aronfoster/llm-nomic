@@ -215,14 +215,6 @@ def validate_state_updates(state_updates: dict[str, Any]) -> None:
             f"StateUpdates must be a dict, got {type(state_updates).__name__}"
         )
 
-    # Check for unexpected keys
-    allowed_keys = {"flags", "target_score"}
-    unexpected = set(state_updates.keys()) - allowed_keys
-    if unexpected:
-        raise ValueError(
-            f"StateUpdates contains unexpected keys: {', '.join(unexpected)}"
-        )
-
     # Validate flags if present
     if "flags" in state_updates:
         flags = state_updates["flags"]
@@ -240,9 +232,4 @@ def validate_state_updates(state_updates: dict[str, Any]) -> None:
             raise ValueError(
                 f"StateUpdates['target_score'] must be int or None, "
                 f"got {type(target_score).__name__}"
-            )
-        if target_score is not None and target_score <= 0:
-            raise ValueError(
-                f"StateUpdates['target_score'] must be positive, "
-                f"got {target_score}"
             )

@@ -175,9 +175,6 @@ class HumanJudge(BaseJudge):
                 break
             try:
                 target_value = int(target_input)
-                if target_value <= 0:
-                    print("Error: target_score must be positive. Try again.")
-                    continue
                 state_updates["target_score"] = target_value
                 logger.info(
                     "Human judge changed target_score to %d", target_value
