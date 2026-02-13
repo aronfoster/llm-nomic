@@ -49,7 +49,6 @@ Our architecture is built on these principles:
   * Can we leave out the entire context aside from the current game_state and the proposal (before+after of rule that's being changed)? This would make this a cheap LLM call, hopefully.
   * Should have a helper method to validate input against schema
   * Require retry logic
-  * What do we do if a rule isn't supported by current flags?
 
 ### 3. Smart Player Context (Bug Mitigation)
 
