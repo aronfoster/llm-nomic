@@ -529,11 +529,11 @@ class TestStateUpdatesValidation:
             validate_state_updates("not a dict")  # type: ignore[arg-type]
 
     def test_invalid_unexpected_key(self) -> None:
-        """Unexpected keys raise ValueError."""
-        with pytest.raises(ValueError, match="unexpected keys"):
-            validate_state_updates(
-                {"flags": {}, "extra_key": "value"}  # type: ignore[arg-type]
-            )
+        """Unexpected keys allowed (TypedDict enforces at type-check)."""
+        # This should not raise - TypedDict enforces keys at type-check time
+        validate_state_updates(
+            {"flags": {}, "extra_key": "value"}  # type: ignore[arg-type]
+        )
 
     def test_invalid_flags_not_dict(self) -> None:
         """Non-dict flags raise ValueError."""

@@ -1,8 +1,4 @@
 {
-  "_allowed_state_keys": {
-    "description": "Valid keys for StateUpdates returned by judge.maintain_state(). If you add a new field to StateUpdates TypedDict in base_judge.py, add it here.",
-    "keys": ["flags", "target_score"]
-  },
   "vote_mode": {
     "type": "string",
     "valid_values": ["unanimous", "majority"],

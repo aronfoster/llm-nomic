@@ -78,6 +78,11 @@ def mock_game_manager(
             (r for r in mock_rules if r.rule_id == rule_id), None
         )
     )
+    rules_manager._find_rule_by_id = Mock(
+        side_effect=lambda rule_id: next(
+            (r for r in mock_rules if r.rule_id == rule_id), None
+        )
+    )
     manager.rules_manager = rules_manager
 
     # Mock GameLogger
@@ -117,7 +122,7 @@ class TestMaintainStateIntegration:
         self, mock_game_manager: Mock, mock_judge: Mock
     ) -> None:
         """maintain_state is called for ADD proposals."""
-        game_loop = GameLoop(mock_game_manager, mock_judge)
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
 
         proposal = Proposal(
             proposer_name="Alice",
@@ -130,7 +135,14 @@ class TestMaintainStateIntegration:
 
         votes = [Vote(player_name="Alice", vote="YES", reason="Good idea.")]
         discussions: list[Discussion] = []
-        vote_result = VoteResult(passed=True, yes_count=1, total_count=1)
+        vote_result = VoteResult(
+            yes_count=1,
+            no_count=0,
+            abstain_count=0,
+            total_voters=1,
+            passed=True,
+            vote_mode="unanimous",
+        )
         judge_decisions = JudgeDecisions(
             judge_approved=True,
             veto_response={
@@ -157,7 +169,7 @@ class TestMaintainStateIntegration:
         self, mock_game_manager: Mock, mock_judge: Mock
     ) -> None:
         """maintain_state is called for AMEND proposals with both texts."""
-        game_loop = GameLoop(mock_game_manager, mock_judge)
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
 
         proposal = Proposal(
             proposer_name="Alice",
@@ -171,7 +183,14 @@ class TestMaintainStateIntegration:
 
         votes = [Vote(player_name="Alice", vote="YES", reason="Good idea.")]
         discussions: list[Discussion] = []
-        vote_result = VoteResult(passed=True, yes_count=1, total_count=1)
+        vote_result = VoteResult(
+            yes_count=1,
+            no_count=0,
+            abstain_count=0,
+            total_voters=1,
+            passed=True,
+            vote_mode="unanimous",
+        )
         judge_decisions = JudgeDecisions(
             judge_approved=True,
             veto_response={
@@ -206,7 +225,7 @@ class TestMaintainStateIntegration:
         maintain_state is called for REPEAL proposals with original text
         only.
         """
-        game_loop = GameLoop(mock_game_manager, mock_judge)
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
 
         proposal = Proposal(
             proposer_name="Alice",
@@ -219,7 +238,14 @@ class TestMaintainStateIntegration:
 
         votes = [Vote(player_name="Alice", vote="YES", reason="Good idea.")]
         discussions: list[Discussion] = []
-        vote_result = VoteResult(passed=True, yes_count=1, total_count=1)
+        vote_result = VoteResult(
+            yes_count=1,
+            no_count=0,
+            abstain_count=0,
+            total_voters=1,
+            passed=True,
+            vote_mode="unanimous",
+        )
         judge_decisions = JudgeDecisions(
             judge_approved=True,
             veto_response={
@@ -248,7 +274,7 @@ class TestMaintainStateIntegration:
         self, mock_game_manager: Mock, mock_judge: Mock
     ) -> None:
         """maintain_state is NOT called for TRANSMUTE proposals."""
-        game_loop = GameLoop(mock_game_manager, mock_judge)
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
 
         proposal = Proposal(
             proposer_name="Alice",
@@ -261,7 +287,14 @@ class TestMaintainStateIntegration:
 
         votes = [Vote(player_name="Alice", vote="YES", reason="Good idea.")]
         discussions: list[Discussion] = []
-        vote_result = VoteResult(passed=True, yes_count=1, total_count=1)
+        vote_result = VoteResult(
+            yes_count=1,
+            no_count=0,
+            abstain_count=0,
+            total_voters=1,
+            passed=True,
+            vote_mode="unanimous",
+        )
         judge_decisions = JudgeDecisions(
             judge_approved=True,
             veto_response={
@@ -283,7 +316,7 @@ class TestMaintainStateIntegration:
         self, mock_game_manager: Mock, mock_judge: Mock
     ) -> None:
         """maintain_state is NOT called when proposal is not approved."""
-        game_loop = GameLoop(mock_game_manager, mock_judge)
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
 
         proposal = Proposal(
             proposer_name="Alice",
@@ -296,7 +329,14 @@ class TestMaintainStateIntegration:
 
         votes = [Vote(player_name="Alice", vote="NO", reason="Bad idea.")]
         discussions: list[Discussion] = []
-        vote_result = VoteResult(passed=False, yes_count=0, total_count=1)
+        vote_result = VoteResult(
+            yes_count=0,
+            no_count=1,
+            abstain_count=0,
+            total_voters=1,
+            passed=False,
+            vote_mode="unanimous",
+        )
         judge_decisions = JudgeDecisions(
             judge_approved=False,  # Not approved
             veto_response={
@@ -318,7 +358,7 @@ class TestMaintainStateIntegration:
         self, mock_game_manager: Mock, mock_judge: Mock
     ) -> None:
         """StateUpdates with flags are correctly applied to game_state."""
-        game_loop = GameLoop(mock_game_manager, mock_judge)
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
 
         # Configure judge to return flag updates
         mock_judge.maintain_state.return_value = {
@@ -336,7 +376,14 @@ class TestMaintainStateIntegration:
 
         votes = [Vote(player_name="Alice", vote="YES", reason="Good idea.")]
         discussions: list[Discussion] = []
-        vote_result = VoteResult(passed=True, yes_count=1, total_count=1)
+        vote_result = VoteResult(
+            yes_count=1,
+            no_count=0,
+            abstain_count=0,
+            total_voters=1,
+            passed=True,
+            vote_mode="unanimous",
+        )
         judge_decisions = JudgeDecisions(
             judge_approved=True,
             veto_response={
@@ -361,7 +408,7 @@ class TestMaintainStateIntegration:
         StateUpdates with target_score are correctly applied to
         game_state.
         """
-        game_loop = GameLoop(mock_game_manager, mock_judge)
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
 
         # Configure judge to return target_score update
         mock_judge.maintain_state.return_value = {"target_score": 100}
@@ -377,7 +424,14 @@ class TestMaintainStateIntegration:
 
         votes = [Vote(player_name="Alice", vote="YES", reason="Good idea.")]
         discussions: list[Discussion] = []
-        vote_result = VoteResult(passed=True, yes_count=1, total_count=1)
+        vote_result = VoteResult(
+            yes_count=1,
+            no_count=0,
+            abstain_count=0,
+            total_voters=1,
+            passed=True,
+            vote_mode="unanimous",
+        )
         judge_decisions = JudgeDecisions(
             judge_approved=True,
             veto_response={
@@ -399,7 +453,7 @@ class TestMaintainStateIntegration:
         self, mock_game_manager: Mock, mock_judge: Mock
     ) -> None:
         """StateUpdates with both flags and target_score are applied."""
-        game_loop = GameLoop(mock_game_manager, mock_judge)
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
 
         # Configure judge to return both updates
         mock_judge.maintain_state.return_value = {
@@ -418,7 +472,14 @@ class TestMaintainStateIntegration:
 
         votes = [Vote(player_name="Alice", vote="YES", reason="Good idea.")]
         discussions: list[Discussion] = []
-        vote_result = VoteResult(passed=True, yes_count=1, total_count=1)
+        vote_result = VoteResult(
+            yes_count=1,
+            no_count=0,
+            abstain_count=0,
+            total_voters=1,
+            passed=True,
+            vote_mode="unanimous",
+        )
         judge_decisions = JudgeDecisions(
             judge_approved=True,
             veto_response={
@@ -441,7 +502,7 @@ class TestMaintainStateIntegration:
         self, mock_game_manager: Mock, mock_judge: Mock
     ) -> None:
         """Empty StateUpdates result in no changes to game_state."""
-        game_loop = GameLoop(mock_game_manager, mock_judge)
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
 
         # Configure judge to return empty updates
         mock_judge.maintain_state.return_value = {}
@@ -460,7 +521,14 @@ class TestMaintainStateIntegration:
 
         votes = [Vote(player_name="Alice", vote="YES", reason="Good idea.")]
         discussions: list[Discussion] = []
-        vote_result = VoteResult(passed=True, yes_count=1, total_count=1)
+        vote_result = VoteResult(
+            yes_count=1,
+            no_count=0,
+            abstain_count=0,
+            total_voters=1,
+            passed=True,
+            vote_mode="unanimous",
+        )
         judge_decisions = JudgeDecisions(
             judge_approved=True,
             veto_response={

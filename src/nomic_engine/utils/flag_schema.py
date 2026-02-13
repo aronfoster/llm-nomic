@@ -62,10 +62,6 @@ def load_flag_schema() -> dict[str, Any]:
     # Validate each flag entry has required fields
     required_fields = {"type", "valid_values", "default", "description"}
     for flag_name, definition in schema.items():
-        # Skip metadata entries that start with underscore
-        if flag_name.startswith("_"):
-            continue
-
         if not isinstance(definition, dict):
             raise FlagSchemaError(
                 f"Flag '{flag_name}' must be an object, "
@@ -206,8 +202,9 @@ def validate_state_updates(state_updates: dict[str, Any]) -> None:
     """
     Validate a StateUpdates dictionary returned by judge.maintain_state().
 
-    Validates that all keys are allowed (matches StateUpdates TypedDict)
-    and that flag values are valid according to flag_schema.json.
+    Validates that flag values are valid according to flag_schema.json
+    and that target_score has correct type. The TypedDict definition
+    enforces allowed keys at type-check time.
 
     Args:
         state_updates: Dictionary with optional 'flags' and 'target_score'
@@ -220,18 +217,6 @@ def validate_state_updates(state_updates: dict[str, Any]) -> None:
     if not isinstance(state_updates, dict):
         raise ValueError(
             f"StateUpdates must be a dict, got {type(state_updates).__name__}"
-        )
-
-    # Validate keys match StateUpdates TypedDict fields
-    # NOTE: If you add a new field to StateUpdates in base_judge.py,
-    # you must also add it to allowed_keys here
-    allowed_keys = {"flags", "target_score"}
-    unexpected = set(state_updates.keys()) - allowed_keys
-    if unexpected:
-        raise ValueError(
-            f"StateUpdates contains unexpected keys: "
-            f"{', '.join(sorted(unexpected))}. "
-            f"Allowed keys: {', '.join(sorted(allowed_keys))}"
         )
 
     # Validate flags if present
