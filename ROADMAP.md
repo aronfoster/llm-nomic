@@ -16,12 +16,14 @@ Our architecture is built on these principles:
 ### HIGH PRIORITY
 
 * Judge on lower quality models isn't scoring appropriately. Improve prompt to show vote totals in addition to vote/discussion. Reduce rule list to only those with 'point' or 'score' in them.
+  * TODO: check if this is still an issue
 * Lower quality LLM players are interpreting turn order as rank in the game. Maybe add some smart text to say "It's a 3-way tie" or "You are in last place by 8 points" or some other set of plain -language descriptions of the score situation since LLMs don't do great at math.
 * Proposals that pass but that are judge vetoed should still award points as if they passed; the rule change just doesn't get applied to the rule list.
+* After game victory, running another turn should immediately exit rather than running another turn
 
 ### Low Priority
 
-* ~~Update google.generativeai to google.genai. See https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md for more details.~~ DONE
+* None
 
 ## Sprint 26-1: Modular Resolution & State Compilation
 
@@ -54,7 +56,7 @@ Our architecture is built on these principles:
 * **Status:** PLANNED
 * **Logic:**
 * Modify `PromptBuilder._format_game_state_block` in `src/nomic_engine/llm/prompt_builder.py` to include a "Leaderboard Context" line (e.g., "You are in 2nd place, 5 points behind the leader").
-  * Would listing the number of turns each player has had be valuable? Humans understand how going first confers an advantage, and that might be missed by an LLM
+  * Would listing the number of turns each player has had be valuable? Humans understand how going first confers an advantage, and it seems like LLMs don't understand that on early turns. Is that a problem?
 
 ## Future Work
 
@@ -65,7 +67,8 @@ This is the long-term backlog and TODO scratchpad.
   * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
   * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
   * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
-  * Need to handle "revision -> withdraw" logic to have them come up with a new proposal
+  * Need to handle "revision -> withdraw" logic
+    * Do we move to the next player when a proposal is withdrawn, or let them propose a new one?
   * Explore https://openrouter.ai/ support for tokens/models
   
 * **Game State & Rules:**
@@ -82,21 +85,6 @@ This is the long-term backlog and TODO scratchpad.
     * Build a `build_site.py` script to convert the game history into a shareable HTML file.
     * Need to shift to a dynamic turn structure where if rules change the turn steps (e.g an additional round of discussion after voting) it can be supported. Might need to ask the judge to define the steps and provide some guidance to the players.
     * Specify versions for dependencies and start managing those
-
-* **Structured Metadata for Victory Rules**
-    * The current game creation flow sets `target_score` manually, which works well for now.  
-    * In a future iteration, the ruleset should become the authoritative source for victory conditions by allowing **structured metadata** inside `rules.jsonl`.
-    * Enable rules (e.g., Rule 208) to embed machine-readable metadata that defines the game’s victory condition.
-
-    **Example (proposed format):**
-    ```jsonl
-    {"id": 208,
-     "title": "Victory",
-     "text": "The winner is the first player to reach 100 points.",
-     "metadata": {
-       "victory_condition": "points",
-       "target_score": 100
-     }}
 
 * **Dynamic Game Structure**
    * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by concensus?). This allows extra steps to be created, or order of steps to be changed.
