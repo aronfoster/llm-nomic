@@ -17,6 +17,11 @@ from ..data_models import (
     Rule,
     Vote,
 )
+from ..utils.flag_schema import (
+    FlagSchemaError,
+    format_current_flags,
+    format_supported_flags,
+)
 from . import prompts
 
 
@@ -483,11 +488,28 @@ class PromptBuilder:
 
         return ChatMessage(role="user", content=content)
 
-    def build_judge_veto_prompt(self) -> ChatMessage:
-        """Build the instructions for the Judge veto decision."""
+    def build_judge_veto_prompt(
+        self, game_state: GameState | None = None
+    ) -> ChatMessage:
+        """Build the instructions for the Judge veto decision.
+
+        Args:
+            game_state: The current game state. When provided, current
+                flag values are included in the prompt.
+        """
+        current_flags = "No flags currently set."
+        if game_state is not None:
+            current_flags = format_current_flags(game_state.flags)
+
+        try:
+            supported_flags = format_supported_flags()
+        except FlagSchemaError:
+            supported_flags = "Flag schema unavailable."
 
         content = prompts.JUDGE_VETO_TEMPLATE.format(
-            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT
+            dynamic_current_flags=current_flags,
+            dynamic_supported_flags=supported_flags,
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
         )
         return ChatMessage(role="user", content=content)
 

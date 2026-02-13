@@ -324,8 +324,8 @@ def test_game_state_default_flags():
 
 
 def test_game_state_custom_flags():
-    """Test that GameState accepts custom flags during initialization."""
-    custom_flags = {"vote_mode": "majority", "custom_setting": "value"}
+    """Test that GameState accepts valid custom flags during initialization."""
+    custom_flags = {"vote_mode": "majority"}
     state = GameState(
         scores={"Alice": 0, "Bob": 0},
         current_player_name="Alice",
@@ -336,7 +336,6 @@ def test_game_state_custom_flags():
     )
     assert state.flags == custom_flags
     assert state.flags["vote_mode"] == "majority"
-    assert state.flags["custom_setting"] == "value"
 
 
 def test_state_updates_with_flags_only():

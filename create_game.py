@@ -35,6 +35,10 @@ from src.nomic_engine.data_models import (
     PlayerConfig,
     PlayerPersonality,
 )
+from src.nomic_engine.utils.flag_schema import (
+    get_flag_defaults,
+    load_flag_schema,
+)
 from src.nomic_engine.utils.loaders import load_model_library
 from src.nomic_engine.utils.parsers import parse_rules_md
 
@@ -377,6 +381,10 @@ def create_game_files(
     # 2. Create game_state.json
     state_path = game_dir / GAME_STATE_FILE
     logger.info(f"Creating {state_path}")
+    # Load flag schema and populate defaults
+    load_flag_schema()
+    flag_defaults = get_flag_defaults()
+    logger.info(f"Loaded flag defaults from schema: {flag_defaults}")
     game_state = GameState(
         scores={player.name: 0 for player in players},
         target_score=game_config.target_score,
@@ -384,6 +392,7 @@ def create_game_files(
         current_player_name=players[0].name,
         move_number=1,
         next_proposal_id=301,
+        flags=flag_defaults,
     )
     with state_path.open("w", encoding="utf-8") as f:
         f.write(game_state.model_dump_json(indent=2))
