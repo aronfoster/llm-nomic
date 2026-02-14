@@ -8,6 +8,7 @@ Core Pydantic models to enforce data types and structure for:
 
 from __future__ import annotations
 
+import logging
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
@@ -126,7 +127,12 @@ def _get_schema_defaults() -> Dict[str, Any]:
         from .utils.flag_schema import get_flag_defaults
 
         return get_flag_defaults()
-    except Exception:
+    except Exception as exc:
+        logging.warning(
+            "Failed to load flag schema defaults; using hardcoded "
+            "fallback: %s",
+            exc,
+        )
         return {"vote_mode": "unanimous"}
 
 

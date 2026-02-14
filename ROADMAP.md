@@ -69,25 +69,29 @@ You can replace the existing Sprint 27, Task 1 with the following consolidated t
 * **Task:** Remove empty placeholder files that are no longer needed:
   * `src/nomic_engine/utils/api_clients.py` (empty — logic lives in `llm/api_clients.py`)
   * `src/nomic_engine/utils/prompt_builder.py` (empty — logic lives in `llm/prompt_builder.py`)
-* **Fix:** Delete the files, verify no imports reference them, run `make ci`.
+* **Status:** ✅ Completed
+* **Fix:** Deleted the files, verified no imports reference them, and ran `make ci`.
 
 ### 5. Fix Prompt Inconsistencies
 
 * **Task:** Two minor prompt issues that can confuse LLMs:
   1. `JSON_FORMAT_ENFORCEMENT` threatens "your vote = ABSTAIN" but this text is injected into proposal, discussion, and revision contexts where ABSTAIN doesn't apply. Make the threat text generic or context-specific.
   2. Proposal examples in `INSTRUCTION_PROPOSE` use multi-line strings inside JSON values (literal newlines). Some models produce invalid JSON with actual newline characters. Switch examples to single-line values.
-* **Fix:** Update `prompts.py` templates.
-* **Tests:** Verify existing parser tests still pass with updated examples.
+* **Status:** ✅ Completed
+* **Fix:** Updated `prompts.py` templates with generic rejection text and single-line JSON example values.
+* **Tests:** Verified via `make ci`.
 
 ### 6. Fix Duplicate Step Comments in Parsers
 
 * **Task:** Several parser functions in `llm/parsers.py` have duplicate `# Step 2` comments from copy-paste drift (e.g., `parse_vote_response`, `parse_discussion_response`, `parse_proposal_response`).
-* **Fix:** Renumber comments sequentially.
+* **Status:** ✅ Completed
+* **Fix:** Renumbered parser step comments sequentially.
 
 ### 7. Add Fallback Logging in `data_models._get_schema_defaults`
 
 * **Task:** If `flag_schema.json` is broken or missing, `_get_schema_defaults()` silently falls back to a hardcoded dict with no logging.
-* **Fix:** Add a `logging.warning()` in the except branch so silent schema failures are visible in logs.
+* **Status:** ✅ Completed
+* **Fix:** Added a `logging.warning()` in the except branch so silent schema failures are visible in logs.
 
 ### 8. Smart Player Context (Bug Mitigation)
 

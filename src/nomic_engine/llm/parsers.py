@@ -71,14 +71,14 @@ def parse_vote_response(response_text: str) -> dict[str, str]:
             f"public_reason, vote."
         )
 
-    # Step 2: Validate that it's a dictionary
+    # Step 3: Validate that it's a dictionary
     if not isinstance(data, dict):
         raise ValueError(
             f"Response must be a JSON object (dict), "
             f"got {type(data).__name__}."
         )
 
-    # Step 3: Validate required keys
+    # Step 4: Validate required keys
     required_keys = ["vote", "public_reason", "private_thoughts"]
     missing_keys = [key for key in required_keys if key not in data]
     if missing_keys:
@@ -87,7 +87,7 @@ def parse_vote_response(response_text: str) -> dict[str, str]:
             f"Required keys are: {', '.join(required_keys)}."
         )
 
-    # Step 4: Validate vote value (case-insensitive)
+    # Step 5: Validate vote value (case-insensitive)
     vote_value = data["vote"]
     if not isinstance(vote_value, str):
         raise ValueError(
@@ -106,7 +106,7 @@ def parse_vote_response(response_text: str) -> dict[str, str]:
     # Update the vote to normalized uppercase
     data["vote"] = vote_normalized
 
-    # Step 5: Validate that public_reason and private_thoughts are strings
+    # Step 6: Validate that public_reason and private_thoughts are strings
     if not isinstance(data["public_reason"], str):
         raise ValueError(
             f"public_reason must be a string, "
@@ -156,14 +156,14 @@ def parse_discussion_response(response_text: str) -> dict[str, str]:
             f"discussion_text."
         )
 
-    # Step 2: Validate that it's a dictionary
+    # Step 3: Validate that it's a dictionary
     if not isinstance(data, dict):
         raise ValueError(
             f"Response must be a JSON object (dict), "
             f"got {type(data).__name__}."
         )
 
-    # Step 3: Validate required keys
+    # Step 4: Validate required keys
     required_keys = ["private_thoughts", "discussion_text"]
     missing_keys = [key for key in required_keys if key not in data]
     if missing_keys:
@@ -172,7 +172,7 @@ def parse_discussion_response(response_text: str) -> dict[str, str]:
             f"Required keys are: {', '.join(required_keys)}."
         )
 
-    # Step 4: Validate that both fields are strings
+    # Step 5: Validate that both fields are strings
     if not isinstance(data["private_thoughts"], str):
         raise ValueError(
             f"private_thoughts must be a string, "
@@ -227,14 +227,14 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
             f"target_rule_id, new_text, rationale."
         )
 
-    # Step 2: Validate that it's a dictionary
+    # Step 3: Validate that it's a dictionary
     if not isinstance(data, dict):
         raise ValueError(
             f"Response must be a JSON object (dict), "
             f"got {type(data).__name__}."
         )
 
-    # Step 3: Validate required keys (always required)
+    # Step 4: Validate required keys (always required)
     required_keys = ["private_thoughts", "type", "rationale"]
     missing_keys = [key for key in required_keys if key not in data]
     if missing_keys:
@@ -244,7 +244,7 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
             f"new_text, rationale."
         )
 
-    # Step 4: Validate type value (case-insensitive)
+    # Step 5: Validate type value (case-insensitive)
     proposal_type = data["type"]
     if not isinstance(proposal_type, str):
         raise ValueError(
@@ -270,7 +270,7 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
     # Update the type to match ProposalType enum value
     data["type"] = type_map[proposal_type_upper]
 
-    # Step 5: Validate that private_thoughts and rationale are strings
+    # Step 6: Validate that private_thoughts and rationale are strings
     if not isinstance(data["private_thoughts"], str):
         raise ValueError(
             f"private_thoughts must be a string, "
@@ -283,7 +283,7 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
             f"got {type(data['rationale']).__name__}."
         )
 
-    # Step 6: Validate target_rule_id type (string or null)
+    # Step 7: Validate target_rule_id type (string or null)
     target_rule_id = data.get("target_rule_id")
     if target_rule_id is not None and not isinstance(target_rule_id, str):
         raise ValueError(
@@ -291,7 +291,7 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
             f"got {type(target_rule_id).__name__}."
         )
 
-    # Step 7: Validate new_text type (string or null)
+    # Step 8: Validate new_text type (string or null)
     new_text = data.get("new_text")
     if new_text is not None and not isinstance(new_text, str):
         raise ValueError(
@@ -299,7 +299,7 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
             f"got {type(new_text).__name__}."
         )
 
-    # Step 8: CRITICAL Game Logic Validation
+    # Step 9: CRITICAL Game Logic Validation
     # Use the uppercase version for comparisons
     proposal_type_upper = proposal_type_upper  # Already defined above
 
@@ -509,14 +509,14 @@ def parse_revision_response(response_text: str) -> dict[str, str | None]:
             f"new_text, rationale."
         )
 
-    # Step 2: Validate that it's a dictionary
+    # Step 3: Validate that it's a dictionary
     if not isinstance(data, dict):
         raise ValueError(
             f"Response must be a JSON object (dict), "
             f"got {type(data).__name__}."
         )
 
-    # Step 3: Validate required keys
+    # Step 4: Validate required keys
     required_keys = ["private_thoughts", "action"]
     missing_keys = [key for key in required_keys if key not in data]
     if missing_keys:
@@ -526,7 +526,7 @@ def parse_revision_response(response_text: str) -> dict[str, str | None]:
             f"rationale."
         )
 
-    # Step 4: Validate action value (case-insensitive)
+    # Step 5: Validate action value (case-insensitive)
     action_value = data["action"]
     if not isinstance(action_value, str):
         raise ValueError(
@@ -545,14 +545,14 @@ def parse_revision_response(response_text: str) -> dict[str, str | None]:
     # Update the action to normalized uppercase
     data["action"] = action_normalized
 
-    # Step 5: Validate that private_thoughts is a string
+    # Step 6: Validate that private_thoughts is a string
     if not isinstance(data["private_thoughts"], str):
         raise ValueError(
             f"private_thoughts must be a string, "
             f"got {type(data['private_thoughts']).__name__}."
         )
 
-    # Step 6: Validate new_text type (string or null)
+    # Step 7: Validate new_text type (string or null)
     new_text = data.get("new_text")
     if new_text is not None and not isinstance(new_text, str):
         raise ValueError(
@@ -560,7 +560,7 @@ def parse_revision_response(response_text: str) -> dict[str, str | None]:
             f"got {type(new_text).__name__}."
         )
 
-    # Step 7: Validate rationale type (string or null)
+    # Step 8: Validate rationale type (string or null)
     rationale = data.get("rationale")
     if rationale is not None and not isinstance(rationale, str):
         raise ValueError(
@@ -568,7 +568,7 @@ def parse_revision_response(response_text: str) -> dict[str, str | None]:
             f"got {type(rationale).__name__}."
         )
 
-    # Step 8: CRITICAL Game Logic Validation for MODIFY action
+    # Step 9: CRITICAL Game Logic Validation for MODIFY action
     if action_normalized == "MODIFY":
         # MODIFY: At least one of new_text or rationale must be provided
         if not new_text and not rationale:
