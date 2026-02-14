@@ -54,12 +54,14 @@ You can replace the existing Sprint 27, Task 1 with the following consolidated t
 ### 2. Type `JudgeDecisions` Fields Properly
 
 * **Task:** `JudgeDecisions.veto_response` and `score_response` are typed as `Any` despite having well-defined TypedDict shapes (`JudgeVetoResponse` and `JudgeScoreResponse`).
+* **Status:** ✅ Completed
 * **Fix:** Replace `Any` with the proper TypedDict types. Remove `ConfigDict(arbitrary_types_allowed=True)` once `Any` is gone.
 * **Tests:** Existing tests should continue to pass; mypy will now catch misuse.
 
 ### 3. Remove Unreachable Code in `run_turn`
 
 * **Task:** `GameLoop.run_turn()` has an unreachable `return False` after the try/except block. Every path through the try already returns, and the except re-raises.
+* **Status:** ✅ Completed
 * **Fix:** Delete the dead `return False`.
 
 ### 4. Clean Up Empty / Dead Files
