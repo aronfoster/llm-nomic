@@ -111,8 +111,8 @@ class LLMPlayer(BasePlayer):
         self._reset_history(system_message)
 
         # Retry loop with maximum attempts
-        max_retries = self.tuning.max_propose_retries
-        for attempt in range(max_retries):
+        max_proposal_retries = self.tuning.max_propose_retries
+        for attempt in range(max_proposal_retries):
             # Status indicator for UX
             print(f"\n🤖 {self.player_name} is thinking about a proposal...")
 
@@ -128,7 +128,7 @@ class LLMPlayer(BasePlayer):
             if response_text is None:
                 logger.error(
                     f"{self.player_name}: API error on attempt {attempt + 1}/"
-                    f"{max_retries}"
+                    f"{max_proposal_retries}"
                 )
                 # Continue to retry if attempts remain
                 continue
@@ -159,11 +159,11 @@ class LLMPlayer(BasePlayer):
                 # Parsing failed - log the error
                 logger.warning(
                     f"{self.player_name}: Invalid response on attempt "
-                    f"{attempt + 1}/{max_retries}. Error: {e}"
+                    f"{attempt + 1}/{max_proposal_retries}. Error: {e}"
                 )
 
                 # If this was the last attempt, break out
-                if attempt >= max_retries - 1:
+                if attempt >= max_proposal_retries - 1:
                     break
 
                 # Construct retry by appending bad response and error message
@@ -186,11 +186,11 @@ class LLMPlayer(BasePlayer):
         # to generate a "pass" turn for a proposal phase)
         logger.error(
             f"{self.player_name}: Failed to generate valid proposal after "
-            f"{max_retries} attempts."
+            f"{max_proposal_retries} attempts."
         )
         raise RuntimeError(
             f"LLM failed to generate a valid proposal after "
-            f"{max_retries} attempts."
+            f"{max_proposal_retries} attempts."
         )
 
     def discuss(
@@ -225,8 +225,8 @@ class LLMPlayer(BasePlayer):
         self._reset_history(system_message)
 
         # Retry loop with maximum attempts
-        max_retries = self.tuning.max_discuss_retries
-        for attempt in range(max_retries):
+        max_discussion_retries = self.tuning.max_discuss_retries
+        for attempt in range(max_discussion_retries):
             # Status indicator for UX
             print(f"\n🤖 {self.player_name} is thinking...")
 
@@ -242,7 +242,7 @@ class LLMPlayer(BasePlayer):
             if response_text is None:
                 logger.error(
                     f"{self.player_name}: API error on attempt {attempt + 1}/"
-                    f"{max_retries}"
+                    f"{max_discussion_retries}"
                 )
                 # Continue to retry if attempts remain
                 continue
@@ -273,11 +273,11 @@ class LLMPlayer(BasePlayer):
                 # Parsing failed - log the error
                 logger.warning(
                     f"{self.player_name}: Invalid response on attempt "
-                    f"{attempt + 1}/{max_retries}. Error: {e}"
+                    f"{attempt + 1}/{max_discussion_retries}. Error: {e}"
                 )
 
                 # If this was the last attempt, break out
-                if attempt >= max_retries - 1:
+                if attempt >= max_discussion_retries - 1:
                     break
 
                 # Construct retry by appending bad response and error message
@@ -298,7 +298,7 @@ class LLMPlayer(BasePlayer):
         # All retries exhausted - return empty Discussion (abstain)
         logger.error(
             f"{self.player_name}: Failed to generate valid discussion after "
-            f"{max_retries} attempts. Defaulting to abstain."
+            f"{max_discussion_retries} attempts. Defaulting to abstain."
         )
         return Discussion(
             player_name=self.player_name,
@@ -344,8 +344,8 @@ class LLMPlayer(BasePlayer):
         self.turn_history.append(vote_instruction)
 
         # Retry loop with maximum attempts
-        max_retries = self.tuning.max_vote_retries
-        for attempt in range(max_retries):
+        max_vote_retries = self.tuning.max_vote_retries
+        for attempt in range(max_vote_retries):
             # Status indicator for UX
             print(f"\n🤖 {self.player_name} is thinking...")
 
@@ -361,7 +361,7 @@ class LLMPlayer(BasePlayer):
             if response_text is None:
                 logger.error(
                     f"{self.player_name}: API error on attempt {attempt + 1}/"
-                    f"{max_retries}"
+                    f"{max_vote_retries}"
                 )
                 # Continue to retry if attempts remain
                 continue
@@ -394,11 +394,11 @@ class LLMPlayer(BasePlayer):
                 # Parsing failed - log the error
                 logger.warning(
                     f"{self.player_name}: Invalid response on attempt "
-                    f"{attempt + 1}/{max_retries}. Error: {e}"
+                    f"{attempt + 1}/{max_vote_retries}. Error: {e}"
                 )
 
                 # If this was the last attempt, break out
-                if attempt >= max_retries - 1:
+                if attempt >= max_vote_retries - 1:
                     break
 
                 # Construct retry by appending bad response and error message
@@ -419,7 +419,7 @@ class LLMPlayer(BasePlayer):
         # All retries exhausted - return ABSTAIN as fallback
         logger.error(
             f"{self.player_name}: Failed to generate valid vote after "
-            f"{max_retries} attempts. Defaulting to ABSTAIN."
+            f"{max_vote_retries} attempts. Defaulting to ABSTAIN."
         )
         return Vote(
             player_name=self.player_name,
@@ -458,8 +458,8 @@ class LLMPlayer(BasePlayer):
         self.turn_history.append(revision_instruction)
 
         # Retry loop with maximum attempts
-        max_retries = self.tuning.max_revise_retries
-        for attempt in range(max_retries):
+        max_revision_retries = self.tuning.max_revise_retries
+        for attempt in range(max_revision_retries):
             # Status indicator for UX
             print(f"\n🤖 {self.player_name} is reviewing feedback...")
 
@@ -475,7 +475,7 @@ class LLMPlayer(BasePlayer):
             if response_text is None:
                 logger.error(
                     f"{self.player_name}: API error on attempt {attempt + 1}/"
-                    f"{max_retries}"
+                    f"{max_revision_retries}"
                 )
                 # Continue to retry if attempts remain
                 continue
@@ -522,11 +522,11 @@ class LLMPlayer(BasePlayer):
                 # Parsing failed - log the error
                 logger.warning(
                     f"{self.player_name}: Invalid response on attempt "
-                    f"{attempt + 1}/{max_retries}. Error: {e}"
+                    f"{attempt + 1}/{max_revision_retries}. Error: {e}"
                 )
 
                 # If this was the last attempt, break out
-                if attempt >= max_retries - 1:
+                if attempt >= max_revision_retries - 1:
                     break
 
                 # Construct retry by appending bad response and error message
@@ -549,6 +549,6 @@ class LLMPlayer(BasePlayer):
         # to avoid stalling the game
         logger.error(
             f"{self.player_name}: Failed to generate valid revision after "
-            f"{max_retries} attempts. Defaulting to KEEP."
+            f"{max_revision_retries} attempts. Defaulting to KEEP."
         )
         return proposal
