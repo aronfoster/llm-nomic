@@ -465,13 +465,15 @@ def test_get_completion_google_success(monkeypatch):
         # Verify message format conversion and API call
         call_args = mock_client.models.generate_content.call_args
         expected_messages = [
-            {"role": "user", "parts": ["You are helpful."]},
             {"role": "user", "parts": ["Hello!"]},
             {"role": "model", "parts": ["Hi there!"]},
             {"role": "user", "parts": ["How are you?"]},
         ]
         assert call_args.kwargs["model"] == "gemini-2.5-pro"
         assert call_args.kwargs["contents"] == expected_messages
+        assert call_args.kwargs["config"] == {
+            "system_instruction": "You are helpful.",
+        }
         assert result == "Google response"
 
 
@@ -500,3 +502,46 @@ def test_get_completion_google_error(monkeypatch):
 
         result = api_client.get_completion(messages)
         assert result is None
+
+
+def test_get_completion_google_system_messages_use_system_instruction(
+    monkeypatch,
+):
+    """Test Gemini system messages are not serialized as user messages."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="gemini-2.5-pro",
+        provider="google",
+        api_model_id="gemini-2.5-pro",
+        env_key_name="GOOGLE_API_KEY",
+    )
+
+    mock_response = MagicMock()
+    mock_response.text = "Google response"
+
+    with patch(
+        "src.nomic_engine.llm.api_clients.genai.Client"
+    ) as mock_client_class:
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
+
+        api_client = ApiClient(mock_model_def)
+
+        messages = [
+            ChatMessage(role="system", content="System 1"),
+            ChatMessage(role="system", content="System 2"),
+            ChatMessage(role="user", content="First user message"),
+        ]
+
+        result = api_client.get_completion(messages)
+
+        call_args = mock_client.models.generate_content.call_args
+        assert call_args.kwargs["contents"] == [
+            {"role": "user", "parts": ["First user message"]}
+        ]
+        assert call_args.kwargs["config"] == {
+            "system_instruction": "System 1\n\nSystem 2"
+        }
+        assert result == "Google response"

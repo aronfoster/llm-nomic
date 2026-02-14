@@ -39,6 +39,7 @@ Our architecture is built on these principles:
 
 ### 2. Fix Google Gemini System Message Handling
 
+* **Status:** ✅ DONE
 * **Task:** In `api_clients.py`, system messages are currently sent as `{"role": "user", ...}` to Gemini. If a real user message follows, Gemini receives two consecutive `user` role messages, which can cause errors or degraded output.
 * **Fix:** Use Gemini's `system_instruction` parameter for system messages, or concatenate the system content into the first user message with a clear delimiter.
 * **Tests:** Unit test verifying message construction for Gemini provider with system + user message sequences.
