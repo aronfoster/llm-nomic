@@ -156,7 +156,10 @@ def test_get_veto_raises_after_max_retries(mock_game_manager):
         judge.get_veto(mock_game_manager, Mock(), [], [])
 
     # Should retry MAX_VETO_RETRIES times (default is 2)
-    assert api_client.get_completion.call_count == LLMJudge.MAX_VETO_RETRIES
+    assert (
+        api_client.get_completion.call_count
+        == judge.tuning.max_judge_veto_retries
+    )
 
 
 def test_get_veto_retries_on_api_error(mock_game_manager):
@@ -265,7 +268,10 @@ def test_assess_scores_raises_after_max_retries(mock_game_manager):
         judge.assess_scores(mock_game_manager, [], Mock(), [], [])
 
     # Should retry MAX_SCORE_RETRIES times (default is 2)
-    assert api_client.get_completion.call_count == LLMJudge.MAX_SCORE_RETRIES
+    assert (
+        api_client.get_completion.call_count
+        == judge.tuning.max_judge_score_retries
+    )
 
 
 def test_assess_scores_no_partial_application_on_failure(mock_game_manager):

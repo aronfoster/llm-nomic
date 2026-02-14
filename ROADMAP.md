@@ -32,19 +32,18 @@ Our architecture is built on these principles:
 
 ### 1. Centralized Engine Tuning (Configuration Refactor)
 
-* **Goal**: Move all retry and threshold constants out of class definitions and into the central `GameConfig` to allow for single-point tuning via `config.yml`.
-* **Implementation**:
-* **Data Model**: Update `GameConfig` in `src/nomic_engine/data_models.py` to include a `tuning` sub-model or dictionary containing:
-* `max_propose_retries`
-* `max_discuss_retries`
-* `max_revise_retries`
-* `max_vote_retries`
-* `max_judge_veto_retries`
-* `max_judge_score_retries`
-* `max_judge_maintain_state_retries`
-
-
-* **Refactor**: Remove hardcoded constants from `LLMPlayer` (in `src/nomic_engine/players/llm_player.py`) and `LLMJudge` (in `src/nomic_engine/judge/llm_judge.py`). Update their `__init__` or method calls to pull these values from the `game_manager.game_config`.
+* ✅ **Completed**: Retry constants are now centralized in `GameConfig.tuning` for single-point tuning via `config.yml`.
+* **Implemented**:
+  * Added `EngineTuningConfig` in `src/nomic_engine/data_models.py` with:
+    * `max_propose_retries`
+    * `max_discuss_retries`
+    * `max_revise_retries`
+    * `max_vote_retries`
+    * `max_judge_veto_retries`
+    * `max_judge_score_retries`
+    * `max_judge_maintain_state_retries`
+  * Refactored `LLMPlayer` and `LLMJudge` to consume tuning values from `GameConfig` instead of class-level hardcoded constants.
+  * Wired `main.py` instantiation so player/judge objects receive `game_manager.game_config.tuning`.
 
 
 ### 2. Dynamic Withdrawal & Cumulative Pivot Logic
