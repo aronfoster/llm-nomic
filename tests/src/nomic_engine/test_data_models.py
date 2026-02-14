@@ -7,6 +7,7 @@ import pytest
 from src.nomic_engine.data_models import (
     ChatMessage,
     Discussion,
+    EngineTuningConfig,
     GameConfig,
     GameState,
     ModelDefinition,
@@ -370,3 +371,40 @@ def test_state_updates_empty():
     """Test that StateUpdates can be empty (total=False)."""
     updates: StateUpdates = {}
     assert len(updates) == 0
+
+
+def test_engine_tuning_config_defaults():
+    """Test EngineTuningConfig default retry values."""
+    tuning = EngineTuningConfig()
+
+    assert tuning.max_propose_retries == 2
+    assert tuning.max_discuss_retries == 2
+    assert tuning.max_revise_retries == 2
+    assert tuning.max_vote_retries == 2
+    assert tuning.max_judge_veto_retries == 2
+    assert tuning.max_judge_score_retries == 2
+    assert tuning.max_judge_maintain_state_retries == 2
+
+
+def test_game_config_allows_tuning_override():
+    """Test that GameConfig accepts centralized engine tuning overrides."""
+    config = GameConfig(
+        players=[PlayerConfig(name="Alice", model_id="gpt-4o")],
+        tuning={
+            "max_propose_retries": 3,
+            "max_discuss_retries": 4,
+            "max_revise_retries": 5,
+            "max_vote_retries": 6,
+            "max_judge_veto_retries": 7,
+            "max_judge_score_retries": 8,
+            "max_judge_maintain_state_retries": 9,
+        },
+    )
+
+    assert config.tuning.max_propose_retries == 3
+    assert config.tuning.max_discuss_retries == 4
+    assert config.tuning.max_revise_retries == 5
+    assert config.tuning.max_vote_retries == 6
+    assert config.tuning.max_judge_veto_retries == 7
+    assert config.tuning.max_judge_score_retries == 8
+    assert config.tuning.max_judge_maintain_state_retries == 9

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
-from ..data_models import ChatMessage, ModelDefinition
+from ..data_models import ChatMessage, EngineTuningConfig, ModelDefinition
 from ..judge_contracts import (
     JudgeScoreResponse,
     JudgeVetoResponse,
@@ -31,16 +31,12 @@ logger = logging.getLogger(__name__)
 class LLMJudge(BaseJudge):
     """Judge strategy that delegates decisions to an LLM model."""
 
-    # Maximum number of retry attempts when LLM produces invalid JSON
-    MAX_VETO_RETRIES = 2
-    MAX_SCORE_RETRIES = 2
-    MAX_MAINTAIN_STATE_RETRIES = 2
-
     def __init__(
         self,
         model_config: ModelDefinition,
         prompt_builder: PromptBuilder | None = None,
         api_client: ApiClient | None = None,
+        tuning: EngineTuningConfig | None = None,
     ) -> None:
         """Initialize the LLMJudge.
 
@@ -53,6 +49,7 @@ class LLMJudge(BaseJudge):
                 If None, a new ApiClient(model_config) is created.
         """
         self.model_config = model_config
+        self.tuning = tuning or EngineTuningConfig()
         self.prompt_builder = prompt_builder or PromptBuilder()
         self.api_client = api_client or ApiClient(model_config)
         logger.info(
@@ -113,7 +110,8 @@ class LLMJudge(BaseJudge):
         )
 
         # Retry loop with maximum attempts
-        for attempt in range(self.MAX_VETO_RETRIES):
+        max_retries = self.tuning.max_judge_veto_retries
+        for attempt in range(max_retries):
             # Use base_messages for first attempt, rebuild for retries
             messages = base_messages.copy()
 
@@ -123,7 +121,7 @@ class LLMJudge(BaseJudge):
             if response_text is None:
                 logger.error(
                     f"LLM Judge: API error on veto attempt {attempt + 1}/"
-                    f"{self.MAX_VETO_RETRIES}"
+                    f"{max_retries}"
                 )
                 # Continue to retry if attempts remain
                 continue
@@ -154,11 +152,11 @@ class LLMJudge(BaseJudge):
                 # Parsing failed - log the error
                 logger.warning(
                     f"LLM Judge: Invalid veto response on attempt "
-                    f"{attempt + 1}/{self.MAX_VETO_RETRIES}. Error: {e}"
+                    f"{attempt + 1}/{max_retries}. Error: {e}"
                 )
 
                 # If this was the last attempt, break out
-                if attempt >= self.MAX_VETO_RETRIES - 1:
+                if attempt >= max_retries - 1:
                     break
 
                 # Prepare retry by appending bad response and error message
@@ -177,11 +175,11 @@ class LLMJudge(BaseJudge):
         # All retries exhausted - raise RuntimeError
         logger.error(
             f"LLM Judge: Failed to generate valid veto decision after "
-            f"{self.MAX_VETO_RETRIES} attempts."
+            f"{max_retries} attempts."
         )
         raise RuntimeError(
             f"LLM Judge failed to generate a valid veto decision after "
-            f"{self.MAX_VETO_RETRIES} attempts."
+            f"{max_retries} attempts."
         )
 
     def assess_scores(
@@ -206,7 +204,8 @@ class LLMJudge(BaseJudge):
         )
 
         # Retry loop with maximum attempts
-        for attempt in range(self.MAX_SCORE_RETRIES):
+        max_retries = self.tuning.max_judge_score_retries
+        for attempt in range(max_retries):
             # Use base_messages for first attempt, rebuild for retries
             messages = base_messages.copy()
 
@@ -216,7 +215,7 @@ class LLMJudge(BaseJudge):
             if response_text is None:
                 logger.error(
                     f"LLM Judge: API error on score assessment attempt "
-                    f"{attempt + 1}/{self.MAX_SCORE_RETRIES}"
+                    f"{attempt + 1}/{max_retries}"
                 )
                 # Continue to retry if attempts remain
                 continue
@@ -257,11 +256,11 @@ class LLMJudge(BaseJudge):
                 # Parsing failed - log the error
                 logger.warning(
                     f"LLM Judge: Invalid score response on attempt "
-                    f"{attempt + 1}/{self.MAX_SCORE_RETRIES}. Error: {e}"
+                    f"{attempt + 1}/{max_retries}. Error: {e}"
                 )
 
                 # If this was the last attempt, break out
-                if attempt >= self.MAX_SCORE_RETRIES - 1:
+                if attempt >= max_retries - 1:
                     break
 
                 # Prepare retry by appending bad response and error message
@@ -280,11 +279,11 @@ class LLMJudge(BaseJudge):
         # All retries exhausted - raise RuntimeError
         logger.error(
             f"LLM Judge: Failed to generate valid score assessment after "
-            f"{self.MAX_SCORE_RETRIES} attempts."
+            f"{max_retries} attempts."
         )
         raise RuntimeError(
             f"LLM Judge failed to generate a valid score assessment after "
-            f"{self.MAX_SCORE_RETRIES} attempts."
+            f"{max_retries} attempts."
         )
 
     def maintain_state(
@@ -325,7 +324,8 @@ class LLMJudge(BaseJudge):
         )
 
         # Retry loop with maximum attempts
-        for attempt in range(self.MAX_MAINTAIN_STATE_RETRIES):
+        max_retries = self.tuning.max_judge_maintain_state_retries
+        for attempt in range(max_retries):
             # Use base_messages for first attempt, rebuild for retries
             messages = base_messages.copy()
 
@@ -335,7 +335,7 @@ class LLMJudge(BaseJudge):
             if response_text is None:
                 logger.error(
                     f"LLM Judge: API error on maintain_state attempt "
-                    f"{attempt + 1}/{self.MAX_MAINTAIN_STATE_RETRIES}"
+                    f"{attempt + 1}/{max_retries}"
                 )
                 # Continue to retry if attempts remain
                 continue
@@ -368,12 +368,12 @@ class LLMJudge(BaseJudge):
                 # Parsing failed - log the error
                 logger.warning(
                     f"LLM Judge: Invalid maintain_state response on attempt "
-                    f"{attempt + 1}/{self.MAX_MAINTAIN_STATE_RETRIES}. "
+                    f"{attempt + 1}/{max_retries}. "
                     f"Error: {e}"
                 )
 
                 # If this was the last attempt, break out
-                if attempt >= self.MAX_MAINTAIN_STATE_RETRIES - 1:
+                if attempt >= max_retries - 1:
                     break
 
                 # Prepare retry by appending bad response and error message
@@ -394,9 +394,9 @@ class LLMJudge(BaseJudge):
         # All retries exhausted - raise RuntimeError
         logger.error(
             f"LLM Judge: Failed to generate valid maintain_state decision "
-            f"after {self.MAX_MAINTAIN_STATE_RETRIES} attempts."
+            f"after {max_retries} attempts."
         )
         raise RuntimeError(
             f"LLM Judge failed to generate a valid maintain_state decision "
-            f"after {self.MAX_MAINTAIN_STATE_RETRIES} attempts."
+            f"after {max_retries} attempts."
         )

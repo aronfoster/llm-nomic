@@ -93,6 +93,46 @@ class PlayerConfig(BaseModel):
     )
 
 
+class EngineTuningConfig(BaseModel):
+    """Engine retry tuning loaded from config.yml."""
+
+    max_propose_retries: int = Field(
+        default=2,
+        ge=1,
+        description="Maximum retries for player proposal generation.",
+    )
+    max_discuss_retries: int = Field(
+        default=2,
+        ge=1,
+        description="Maximum retries for player discussion generation.",
+    )
+    max_revise_retries: int = Field(
+        default=2,
+        ge=1,
+        description="Maximum retries for player revision generation.",
+    )
+    max_vote_retries: int = Field(
+        default=2,
+        ge=1,
+        description="Maximum retries for player vote generation.",
+    )
+    max_judge_veto_retries: int = Field(
+        default=2,
+        ge=1,
+        description="Maximum retries for judge veto decisions.",
+    )
+    max_judge_score_retries: int = Field(
+        default=2,
+        ge=1,
+        description="Maximum retries for judge score assessment.",
+    )
+    max_judge_maintain_state_retries: int = Field(
+        default=2,
+        ge=1,
+        description="Maximum retries for judge state maintenance.",
+    )
+
+
 class GameConfig(BaseModel):
     """The static configuration for a game instance, from config.yml."""
 
@@ -115,6 +155,10 @@ class GameConfig(BaseModel):
             "LLM model definition to use when the judge is model-powered. "
             "Required if judge_type is 'llm'."
         ),
+    )
+    tuning: EngineTuningConfig = Field(
+        default_factory=EngineTuningConfig,
+        description="Centralized retry and threshold tuning values.",
     )
 
 

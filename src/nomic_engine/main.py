@@ -106,6 +106,7 @@ def instantiate_players(
                     player_config.name,
                     model_def,
                     player_config.personality,
+                    game_manager.game_config.tuning,
                 )
             )
 
@@ -126,7 +127,10 @@ def instantiate_judge(game_manager: GameManager) -> BaseJudge:
             raise ValueError(
                 "Game config is missing judge_model for LLM judge type"
             )
-        return LLMJudge(judge_model)
+        return LLMJudge(
+            judge_model,
+            tuning=game_manager.game_config.tuning,
+        )
 
     return HumanJudge()
 

@@ -269,11 +269,11 @@ class TestLLMPlayerVote:
         # Verify API was called MAX_VOTE_RETRIES times (2)
         assert (
             mock_api_instance.get_completion.call_count
-            == LLMPlayer.MAX_VOTE_RETRIES
+            == player.tuning.max_vote_retries
         )
 
         # Verify parser was called MAX_VOTE_RETRIES times
-        assert mock_parse.call_count == LLMPlayer.MAX_VOTE_RETRIES
+        assert mock_parse.call_count == player.tuning.max_vote_retries
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
@@ -375,7 +375,7 @@ class TestLLMPlayerVote:
         # Verify API was called MAX_VOTE_RETRIES times
         assert (
             mock_api_instance.get_completion.call_count
-            == LLMPlayer.MAX_VOTE_RETRIES
+            == player.tuning.max_vote_retries
         )
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
@@ -653,11 +653,11 @@ class TestLLMPlayerDiscuss:
         # Verify API was called MAX_DISCUSS_RETRIES times (2)
         assert (
             mock_api_instance.get_completion.call_count
-            == LLMPlayer.MAX_DISCUSS_RETRIES
+            == player.tuning.max_discuss_retries
         )
 
         # Verify parser was called MAX_DISCUSS_RETRIES times
-        assert mock_parse.call_count == LLMPlayer.MAX_DISCUSS_RETRIES
+        assert mock_parse.call_count == player.tuning.max_discuss_retries
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
@@ -699,7 +699,7 @@ class TestLLMPlayerDiscuss:
         # Verify API was called MAX_DISCUSS_RETRIES times
         assert (
             mock_api_instance.get_completion.call_count
-            == LLMPlayer.MAX_DISCUSS_RETRIES
+            == player.tuning.max_discuss_retries
         )
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
@@ -976,11 +976,11 @@ class TestLLMPlayerPropose:
         # Verify API was called MAX_PROPOSE_RETRIES times (2)
         assert (
             mock_api_instance.get_completion.call_count
-            == LLMPlayer.MAX_PROPOSE_RETRIES
+            == player.tuning.max_propose_retries
         )
 
         # Verify parser was called MAX_PROPOSE_RETRIES times
-        assert mock_parse.call_count == LLMPlayer.MAX_PROPOSE_RETRIES
+        assert mock_parse.call_count == player.tuning.max_propose_retries
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
@@ -1069,7 +1069,7 @@ class TestLLMPlayerPropose:
         # Verify API was called MAX_PROPOSE_RETRIES times
         assert (
             mock_api_instance.get_completion.call_count
-            == LLMPlayer.MAX_PROPOSE_RETRIES
+            == player.tuning.max_propose_retries
         )
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
@@ -1491,7 +1491,7 @@ class TestLLMPlayerRevise:
         # Verify API was called MAX_REVISE_RETRIES times
         assert (
             mock_api_instance.get_completion.call_count
-            == LLMPlayer.MAX_REVISE_RETRIES
+            == player.tuning.max_revise_retries
         )
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
@@ -1538,7 +1538,7 @@ class TestLLMPlayerRevise:
         # Verify API was called MAX_REVISE_RETRIES times
         assert (
             mock_api_instance.get_completion.call_count
-            == LLMPlayer.MAX_REVISE_RETRIES
+            == player.tuning.max_revise_retries
         )
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
