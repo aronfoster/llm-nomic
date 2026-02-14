@@ -287,7 +287,9 @@ GAME_STATE_BLOCK = """=== GAME STATE ===
 Move #{move_number}
 Scores: {scores_text}
 Your position: {player_position}
-Turn order: {turn_order}"""
+Turn order: {turn_order}
+
+{leaderboard_context}"""
 
 PROPOSAL_BLOCK = """=== PROPOSAL #{proposal_id} ===
 **Proposer:** {proposer_name}

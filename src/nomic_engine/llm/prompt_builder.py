@@ -28,6 +28,110 @@ from . import prompts
 class PromptBuilder:
     """Builds LLM chat message context blocks from atomized templates."""
 
+    def _format_rank(self, rank: int) -> str:
+        """Format a numeric rank with an ordinal suffix (1st, 2nd, etc)."""
+        if 10 <= rank % 100 <= 20:
+            suffix = "th"
+        else:
+            suffix = {1: "st", 2: "nd", 3: "rd"}.get(rank % 10, "th")
+        return f"{rank}{suffix}"
+
+    def _build_leaderboard_context(
+        self, game_state: GameState, player_name: str
+    ) -> str:
+        """Build strategic leaderboard context for player prompts."""
+        sorted_players = sorted(
+            game_state.scores.items(), key=lambda item: (-item[1], item[0])
+        )
+
+        if not sorted_players:
+            return (
+                "LEADERBOARD CONTEXT:\n"
+                "Rank: N/A.\n"
+                "Leaderboard: No scores yet.\n"
+                "Goal: No target score is configured.\n"
+                "Turn Parity: Turn parity unavailable."
+            )
+
+        if player_name not in game_state.scores:
+            raise ValueError(
+                f"Player '{player_name}' not found in scores: "
+                f"{sorted(game_state.scores.keys())}"
+            )
+
+        score_groups: dict[int, list[str]] = {}
+        for name, score in sorted_players:
+            score_groups.setdefault(score, []).append(name)
+
+        player_score = game_state.scores[player_name]
+        higher_scores = {
+            score for score in score_groups if score > player_score
+        }
+        rank = len(higher_scores) + 1
+        tied_players = [
+            name
+            for name in score_groups[game_state.scores[player_name]]
+            if name != player_name
+        ]
+
+        rank_text = self._format_rank(rank)
+        if tied_players:
+            tied_with = ", ".join(tied_players)
+            rank_line = f"Rank: {rank_text} (Tied with {tied_with})."
+        else:
+            rank_line = f"Rank: {rank_text}."
+
+        leaderboard_parts = [
+            f"{index}. {name} ({score})"
+            for index, (name, score) in enumerate(sorted_players, start=1)
+        ]
+        leaderboard_line = f"Leaderboard: {', '.join(leaderboard_parts)}."
+
+        if game_state.target_score is None:
+            goal_line = "Goal: No target score is configured."
+        else:
+            points_needed = max(
+                0, game_state.target_score - game_state.scores[player_name]
+            )
+            goal_line = (
+                "Goal: "
+                f"{points_needed} points required to reach "
+                f"the target score of {game_state.target_score}."
+            )
+
+        turn_count = len(game_state.turn_order)
+        if turn_count == 0:
+            parity_line = "Turn Parity: Turn parity unavailable."
+        else:
+            completed_turns: dict[str, int] = {}
+            full_rounds_completed = (game_state.move_number - 1) // turn_count
+            position_in_round = (game_state.move_number - 1) % turn_count
+            for idx, name in enumerate(game_state.turn_order):
+                completed_turns[name] = full_rounds_completed + (
+                    1 if idx < position_in_round else 0
+                )
+
+            current_turn_number = completed_turns.get(player_name, 0) + 1
+            other_turns = [
+                f"{name} has completed {completed_turns[name]} turns"
+                for name in game_state.turn_order
+                if name != player_name
+            ]
+            player_turn = self._format_rank(current_turn_number)
+            parity_line = f"Turn Parity: This is your {player_turn} turn."
+            if other_turns:
+                parity_line = f"{parity_line} {' '.join(other_turns)}."
+
+        return "\n".join(
+            [
+                "LEADERBOARD CONTEXT:",
+                rank_line,
+                leaderboard_line,
+                goal_line,
+                parity_line,
+            ]
+        )
+
     def _format_rules(self, rules: list[Rule]) -> str:
         """
         Format a list of rules into a readable text block.
@@ -200,12 +304,16 @@ class PromptBuilder:
         scores_text = self._format_scores(game_state.scores)
         player_position = self._get_player_position(player_name, game_state)
         turn_order_str = ", ".join(game_state.turn_order)
+        leaderboard_context = self._build_leaderboard_context(
+            game_state, player_name
+        )
 
         return prompts.GAME_STATE_BLOCK.format(
             move_number=game_state.move_number,
             scores_text=scores_text,
             player_position=player_position,
             turn_order=turn_order_str,
+            leaderboard_context=leaderboard_context,
         )
 
     def build_proposer_system_message(
