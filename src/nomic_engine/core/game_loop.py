@@ -17,8 +17,8 @@ from ..data_models import (
     VoteResult,
 )
 from ..judge import BaseJudge
-from ..judge.base_judge import JudgeScoreResponse, JudgeVetoResponse
 from ..judge.human_judge import HumanJudge
+from ..judge_contracts import JudgeScoreResponse, JudgeVetoResponse
 from ..players.base_player import BasePlayer
 from ..validation.validator import validate_proposal
 from .game_manager import GameManager
@@ -144,8 +144,6 @@ class GameLoop:
         except Exception as e:
             logger.error(f"Error during turn execution: {e}", exc_info=True)
             raise
-
-        return False
 
     def _get_current_player(self) -> BasePlayer:
         """
@@ -660,6 +658,22 @@ class GameLoop:
 
         logger.debug("Entering _apply_turn_mutations")
 
+        # Apply judge-provided score deltas (state mutation centralized here)
+        adjustments = judge_decisions.score_response.get(
+            "score_adjustments", []
+        )
+        for adjustment in adjustments:
+            player_name = adjustment["player"]
+            delta = adjustment["delta"]
+            reason = adjustment["reason"]
+            self.game_manager.game_state.scores[player_name] += delta
+            logger.info(
+                "Applied score adjustment: %s %+d points (%s)",
+                player_name,
+                delta,
+                reason,
+            )
+
         # Apply proposal if passed and approved
         if judge_decisions.judge_approved:
             # Maintain state before applying proposal (skip for TRANSMUTE)
@@ -756,17 +770,18 @@ class GameLoop:
             self.game_manager.save_rules()
             logger.debug("Proposal applied and rules saved")
 
-            # Increment proposal ID counter (only when proposal passes)
-            self.game_manager.game_state.next_proposal_id += 1
-            logger.debug(
-                f"Proposal ID incremented to "
-                f"{self.game_manager.game_state.next_proposal_id}"
-            )
         else:
             logger.debug(
                 "Proposal not applied (failed vote or vetoed), "
                 "skipping rule modifications"
             )
+
+        # Increment proposal ID for all valid proposals (Rule 108)
+        self.game_manager.game_state.next_proposal_id += 1
+        logger.debug(
+            "Proposal ID incremented to %s",
+            self.game_manager.game_state.next_proposal_id,
+        )
 
         # Detect victory
         victory_reached, winners, winning_score = self._detect_victory()

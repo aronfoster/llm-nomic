@@ -6,6 +6,11 @@ import logging
 from typing import TYPE_CHECKING, cast
 
 from ..data_models import ChatMessage, ModelDefinition
+from ..judge_contracts import (
+    JudgeScoreResponse,
+    JudgeVetoResponse,
+    StateUpdates,
+)
 from ..llm import ApiClient, PromptBuilder
 from ..llm import prompts as llm_prompts
 from ..llm.parsers import (
@@ -13,12 +18,7 @@ from ..llm.parsers import (
     parse_judge_score_response,
     parse_judge_veto_response,
 )
-from .base_judge import (
-    BaseJudge,
-    JudgeScoreResponse,
-    JudgeVetoResponse,
-    StateUpdates,
-)
+from .base_judge import BaseJudge
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
@@ -230,11 +230,11 @@ class LLMJudge(BaseJudge):
                     valid_players=list(game_manager.game_state.scores.keys()),
                 )
 
-                # Success! Apply score adjustments and return
+                # Success! Return intended score adjustments (no mutation)
                 adjustments = data.get("score_adjustments", [])
                 if not adjustments:
                     logger.info(
-                        "LLM Judge applied no score changes this turn."
+                        "LLM Judge proposed no score changes this turn."
                     )
                     return {
                         "private_thoughts": data.get("private_thoughts"),
@@ -242,15 +242,11 @@ class LLMJudge(BaseJudge):
                     }
 
                 for adj in adjustments:
-                    player_name = adj["player"]
-                    delta = adj["delta"]
-                    reason = adj["reason"]
-                    game_manager.game_state.scores[player_name] += delta
                     logger.info(
-                        "LLM Judge adjusted %s by %+d points (%s)",
-                        player_name,
-                        delta,
-                        reason,
+                        "LLM Judge proposed %s %+d points (%s)",
+                        adj["player"],
+                        adj["delta"],
+                        adj["reason"],
                     )
                 return {
                     "private_thoughts": data.get("private_thoughts"),

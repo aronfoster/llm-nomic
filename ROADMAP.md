@@ -35,6 +35,7 @@ You can replace the existing Sprint 27, Task 1 with the following consolidated t
 ### 1. Centralize State Mutations & Fix Proposal ID Tracking
 
 * **Task:** Refactor `GameLoop._apply_turn_mutations` to be the exclusive point of state modification and fix the non-sequential Proposal ID bug. This involves decoupling the scoring logic from the Judge and ensuring compliance with Rule 108.
+* **Status:** ✅ Completed
 * **Current behavior:** * `next_proposal_id` only increments if a proposal is adopted, which violates Rule 108 ("each rule-change... shall receive the next successive integer, whether or not the proposal is adopted").
 * `LLMJudge.assess_scores` directly mutates `game_manager.game_state.scores`, creating a hidden side effect and a dependency where `_detect_victory` only works because the Judge already changed the state.
 

@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from .base_judge import (
-    BaseJudge,
+from ..judge_contracts import (
     JudgeScoreResponse,
     JudgeVetoResponse,
     ScoreAdjustment,
     StateUpdates,
 )
+from .base_judge import BaseJudge
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
@@ -95,9 +95,8 @@ class HumanJudge(BaseJudge):
                     print("Invalid input. Please enter an integer.")
                     continue
 
-            game_manager.game_state.scores[player.player_name] += points_change
             logger.info(
-                "Human judge adjusted %s by %+d points",
+                "Human judge proposed %s %+d points",
                 player.player_name,
                 points_change,
             )

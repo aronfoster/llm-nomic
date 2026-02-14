@@ -69,8 +69,8 @@ def test_get_veto_returns_bool(mock_game_manager):
     api_client.get_completion.assert_called_once()
 
 
-def test_assess_scores_applies_adjustments(mock_game_manager):
-    """Score adjustments returned by the LLM should modify game state."""
+def test_assess_scores_returns_adjustments_without_mutation(mock_game_manager):
+    """Score adjustments returned by the LLM should be side-effect free."""
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
@@ -89,9 +89,12 @@ def test_assess_scores_applies_adjustments(mock_game_manager):
         Mock(), prompt_builder=prompt_builder, api_client=api_client
     )
 
-    judge.assess_scores(mock_game_manager, [], Mock(), [], [])
+    response = judge.assess_scores(mock_game_manager, [], Mock(), [], [])
 
-    assert mock_game_manager.game_state.scores["Alice"] == 2
+    assert response["score_adjustments"] == [
+        {"player": "Alice", "delta": 2, "reason": "bonus"}
+    ]
+    assert mock_game_manager.game_state.scores["Alice"] == 0
     prompt_builder.build_judge_context_message.assert_called_once()
     api_client.get_completion.assert_called_once()
 
@@ -323,5 +326,8 @@ def test_assess_scores_retries_on_invalid_player_name(mock_game_manager):
     # Should succeed on second attempt
     assert len(response["score_adjustments"]) == 1
     assert response["score_adjustments"][0]["player"] == "Alice"
-    assert mock_game_manager.game_state.scores["Alice"] == 3
+    assert response["score_adjustments"] == [
+        {"player": "Alice", "delta": 3, "reason": "bonus"}
+    ]
+    assert mock_game_manager.game_state.scores["Alice"] == 0
     assert api_client.get_completion.call_count == 2
