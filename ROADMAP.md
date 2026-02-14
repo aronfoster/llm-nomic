@@ -26,103 +26,51 @@ Our architecture is built on these principles:
 
 * None
 
-## Sprint 27: Code Review Bugfixes & Hardening
+## Sprint 28: Withdrawal Improvement
 
-**Goal:** Fix correctness bugs and type safety issues identified during code review. Clean up dead code.
+**Goal:** Implement dynamic withdrawal logic
 
-### 1. Centralize State Mutations & Fix Proposal ID Tracking
+### 1. Centralized Engine Tuning (Configuration Refactor)
 
-* **Task:** Refactor `GameLoop._apply_turn_mutations` to be the exclusive point of state modification and fix the non-sequential Proposal ID bug. This involves decoupling the scoring logic from the Judge and ensuring compliance with Rule 108.
-* **Status:** ✅ Completed
-* **Current behavior:** * `next_proposal_id` only increments if a proposal is adopted, which violates Rule 108 ("each rule-change... shall receive the next successive integer, whether or not the proposal is adopted").
-* `LLMJudge.assess_scores` directly mutates `game_manager.game_state.scores`, creating a hidden side effect and a dependency where `_detect_victory` only works because the Judge already changed the state.
+* **Goal**: Move all retry and threshold constants out of class definitions and into the central `GameConfig` to allow for single-point tuning via `config.yml`.
+* **Implementation**:
+* **Data Model**: Update `GameConfig` in `src/nomic_engine/data_models.py` to include a `tuning` sub-model or dictionary containing:
+* `max_propose_retries`
+* `max_discuss_retries`
+* `max_revise_retries`
+* `max_vote_retries`
+* `max_judge_veto_retries`
+* `max_judge_score_retries`
+* `max_judge_maintain_state_retries`
 
 
-* **Fix:**
-* **Unconditional ID Increment:** Move the `next_proposal_id += 1` logic in `src/nomic_engine/core/game_loop.py` outside the `judge_approved` conditional so it fires for all valid proposals.
-* **Score Decoupling:** Update the `BaseJudge.assess_scores` interface in `src/nomic_engine/judge/base_judge.py` to be side-effect-free. It should only return a `JudgeScoreResponse` containing the intended deltas.
-* **State Committer Pattern:** Modify `_apply_turn_mutations` to take the deltas from the Judge's response and apply them to `game_state.scores` directly.
-* **Strict Typing:** Replace `Any` types in the `JudgeDecisions` and `JudgeScoreResponse` models within `src/nomic_engine/data_models.py` with the specific TypedDict shapes defined in the base judge class.
+* **Refactor**: Remove hardcoded constants from `LLMPlayer` (in `src/nomic_engine/players/llm_player.py`) and `LLMJudge` (in `src/nomic_engine/judge/llm_judge.py`). Update their `__init__` or method calls to pull these values from the `game_manager.game_config`.
 
 
-* **Tests:** * Add test cases verifying `next_proposal_id` increments for failed votes and vetoed proposals.
-* Add unit tests for `_apply_turn_mutations` to ensure scores are updated correctly based on Judge-provided deltas.
-* Verify that `_detect_victory` correctly identifies a winner after the engine (not the Judge) updates the scores.
+### 2. Dynamic Withdrawal & Cumulative Pivot Logic
 
-### 2. Type `JudgeDecisions` Fields Properly
+* **Goal**: Implement a configurable policy for handled withdrawn proposals that uses "Cumulative Context" to improve retry quality and ensure proper turn rotation.
+* **Configuration**: Add `withdrawal_policy` (`FORFEIT` or `RETRY`) and `max_withdrawal_retries` (default 2) to `GameConfig`.
+* **Implementation Logic**:
+* **Cumulative Context Requirement**: The developer must ensure that when a player pivots (retries a proposal), the **entire previous turn history** (Initial Proposal -> All Peer Discussions -> Withdrawal Event) is preserved in the player's `turn_history`. **Do not reset context.** This maximizes provider-level caching (e.g., for ChatGPT 5.2) and ensures the player "remembers" why the previous attempt failed.
+* **Rotation Fix**: If a proposal is withdrawn and the policy is `FORFEIT` (or retries are exhausted), `GameLoop.run_turn()` must explicitly call `_advance_turn_state()` before returning.
+* **Engine Orchestration**: Update `GameLoop.run_turn()` in `src/nomic_engine/core/game_loop.py` to wrap Steps 1-3 in a retry loop based on these new settings.
 
-* **Task:** `JudgeDecisions.veto_response` and `score_response` are typed as `Any` despite having well-defined TypedDict shapes (`JudgeVetoResponse` and `JudgeScoreResponse`).
-* **Status:** ✅ Completed
-* **Fix:** Replace `Any` with the proper TypedDict types. Remove `ConfigDict(arbitrary_types_allowed=True)` once `Any` is gone.
-* **Tests:** Existing tests should continue to pass; mypy will now catch misuse.
 
-### 3. Remove Unreachable Code in `run_turn`
+* **Example 1: The Forfeit (Move 15, current player ChatGPT 5.2)**
+* **Action**: ChatGPT 5.2 withdraws proposal. Policy is `FORFEIT`.
+* **Result**: Turn ends. `move_number` increments to 16. `current_player_name` advances to Gemini 2.0.
 
-* **Task:** `GameLoop.run_turn()` has an unreachable `return False` after the try/except block. Every path through the try already returns, and the except re-raises.
-* **Status:** ✅ Completed
-* **Fix:** Delete the dead `return False`.
 
-### 4. Clean Up Empty / Dead Files
+* **Example 2: The Pivot (Move 15, current player Gemini 2.0)**
+* **Action**: Gemini 2.0 withdraws. Policy is `RETRY`.
+* **Result**: Engine restarts Step 1. Gemini 2.0 receives a prompt appended to its existing history similar to: *"Your previous proposal was withdrawn. Based on the discussions above, please propose a different rule change."*.
 
-* **Task:** Remove empty placeholder files that are no longer needed:
-  * `src/nomic_engine/utils/api_clients.py` (empty — logic lives in `llm/api_clients.py`)
-  * `src/nomic_engine/utils/prompt_builder.py` (empty — logic lives in `llm/prompt_builder.py`)
-* **Status:** ✅ Completed
-* **Fix:** Deleted the files, verified no imports reference them, and ran `make ci`.
 
-### 5. Fix Prompt Inconsistencies
 
-* **Task:** Two minor prompt issues that can confuse LLMs:
-  1. `JSON_FORMAT_ENFORCEMENT` threatens "your vote = ABSTAIN" but this text is injected into proposal, discussion, and revision contexts where ABSTAIN doesn't apply. Make the threat text generic or context-specific.
-  2. Proposal examples in `INSTRUCTION_PROPOSE` use multi-line strings inside JSON values (literal newlines). Some models produce invalid JSON with actual newline characters. Switch examples to single-line values.
-* **Status:** ✅ Completed
-* **Fix:** Updated `prompts.py` templates with generic rejection text and single-line JSON example values.
-* **Tests:** Verified via `make ci`.
+### Integration Note for Developer
 
-### 6. Fix Duplicate Step Comments in Parsers
-
-* **Task:** Several parser functions in `llm/parsers.py` have duplicate `# Step 2` comments from copy-paste drift (e.g., `parse_vote_response`, `parse_discussion_response`, `parse_proposal_response`).
-* **Status:** ✅ Completed
-* **Fix:** Renumbered parser step comments sequentially.
-
-### 7. Add Fallback Logging in `data_models._get_schema_defaults`
-
-* **Task:** If `flag_schema.json` is broken or missing, `_get_schema_defaults()` silently falls back to a hardcoded dict with no logging.
-* **Status:** ✅ Completed
-* **Fix:** Added a `logging.warning()` in the except branch so silent schema failures are visible in logs.
-
-This task for the `ROADMAP.md` formalizes the implementation of a dedicated score assessment method within the `PromptBuilder` to improve LLM strategic reasoning.
-
-### 8. Smart Player Context (Strategic standing Assessment)
-
-* **Goal:** Mitigate LLM math errors and "temporal confusion" (first-mover advantage) by providing a plain-language strategic summary of the leaderboard.
-* **Status:** ✅ Completed
-* **Implementation:** Create a dedicated method `PromptBuilder._build_leaderboard_context()` in `src/nomic_engine/llm/prompt_builder.py`.
-* **Logic Requirements:**
-* **Rank & Tie Detection:** Identify the player's current rank. Explicitly state if they are in a tie and with whom.
-* **Full Leaderboard Display:** Generate a list of all players and their current scores in descending order.
-* **Proximity to Victory:** Calculate the points remaining until the `target_score` is reached, or a note that there is no target score if it is null.
-* **Turn Parity Calculation:** Use the `move_number` and `turn_order` length to determine how many turns the current player has completed versus the other okayers.
-
-* **Integration:** Inject the resulting string into the `GAME_STATE` block of the player's prompt.
-* **Fix:** Added `_build_leaderboard_context()` and `_format_rank()` to generate rank/tie detection, sorted leaderboard text, target-score proximity messaging, and turn parity based on `move_number` + `turn_order`. Updated `GAME_STATE_BLOCK` to include this strategic context.
-* **Tests:** Added PromptBuilder unit tests for leaderboard context content (ranking, ties, goal messaging, turn parity) and verified prompt game-state integration. Confirmed via `make ci`.
-
-#### Example 1:
-
-> **LEADERBOARD CONTEXT:**
-> **Rank:** 3rd.
-> **Leaderboard:** 1. Claude (45), 2. Gemini (42), 3. GPT-4o (38).
-> **Goal:** 12 points required to reach the target score of 50.
-> **Turn Parity:** This is your 4th turn. Claude has completed 4 turns. Gemini has completed 4 turns.
-
-#### Example 2:
-
-> **LEADERBOARD CONTEXT:**
-> **Rank:** 1st (Tied with Gemini).
-> **Leaderboard:** 1. Claude (48), 2. Gemini (48), 3. GPT-4o (40).
-> **Goal:** 52 points required to reach the target score of 100.
-> **Turn Parity:** This is your 5th turn. Gemini has completed 5 turns. GPT-4o has completed 4 turns.
+The preservation of context is critical for cost-efficiency. Since the application currently runs as a single turn execution, ensure that the `turn_history` list is maintained across the retry loop iterations within `run_turn` and passed back into the `propose` method if a pivot is triggered.
 
 ## Future Work
 
