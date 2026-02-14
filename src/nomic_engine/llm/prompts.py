@@ -45,7 +45,7 @@ OUTPUT REQUIREMENTS:
 4. No text after the }
 5. No markdown code blocks
 6. No \"Here is my response\" or similar preamble
-7. If you output anything other than pure JSON, your vote = ABSTAIN
+7. If you output anything other than pure JSON, your response is rejected
 """
 
 # -----------------------------------------------------------------
@@ -328,9 +328,9 @@ The order matters. Think BEFORE you decide.
 Examples of the EXACT format required:
 
 {{
-  "private_thoughts": "I'm behind in points. Adding a rule that gives bonus
-    points for creative proposals would help me catch up. I'll frame it as
-    improving game quality to make it appealing.",
+  "private_thoughts": "I'm behind in points. Adding a rule that gives "
+    "bonus points for creative proposals would help me catch up, and I'll "
+    "frame it as improving game quality.",
   "type": "ADD",
   "target_rule_id": null,
   "new_text": "A player with a unanimous proposal gains 5 bonus points.",
@@ -338,9 +338,9 @@ Examples of the EXACT format required:
 }}
 
 {{
-  "private_thoughts": "Rule 201 currently gives Alice a huge advantage. By
-    amending it to cap the bonus, I can slow her down without making it
-    obvious I'm targeting her.",
+  "private_thoughts": "Rule 201 currently gives Alice a huge advantage. "
+    "By amending it to cap the bonus, I can slow her down without making "
+    "it obvious I'm targeting her.",
   "type": "AMEND",
   "target_rule_id": "201",
   "new_text": "Players gain 1 point for successful proposals, max 3 per game.",
@@ -348,8 +348,8 @@ Examples of the EXACT format required:
 }}
 
 {{
-  "private_thoughts": "Rule 203 is blocking my winning strategy. I'll argue
-    it's causing confusion to justify removing it.",
+  "private_thoughts": "Rule 203 is blocking my winning strategy, so I'll "
+    "argue it's causing confusion to justify removing it.",
   "type": "REPEAL",
   "target_rule_id": "203",
   "new_text": null,
@@ -357,8 +357,9 @@ Examples of the EXACT format required:
 }}
 
 {{
-  "private_thoughts": "Making rule 105 immutable will lock in my advantage
-    permanently. I'll frame it as protecting the game's foundation.",
+  "private_thoughts": "Making rule 105 immutable will lock in my "
+    "advantage permanently, and I'll frame it as protecting the game's "
+    "foundation.",
   "type": "TRANSMUTE",
   "target_rule_id": "105",
   "new_text": null,
