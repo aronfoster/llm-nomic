@@ -183,6 +183,7 @@ This is the long-term backlog and TODO scratchpad.
     * Build a `build_site.py` script to convert the game history into a shareable HTML file.
     * Need to shift to a dynamic turn structure where if rules change the turn steps (e.g an additional round of discussion after voting) it can be supported. Might need to ask the judge to define the steps and provide some guidance to the players.
     * Specify versions for dependencies and start managing those (pin at least major versions in `requirements.txt` to prevent breakage from upstream changes)
+    * Prompt examples should draw from personality files!
 
 * **Dynamic Game Structure**
    * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.
