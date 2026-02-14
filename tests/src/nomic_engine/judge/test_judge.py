@@ -243,7 +243,7 @@ def test_get_scores_from_judge_applies_score_changes(
 ) -> None:
     """Test get_scores_from_judge applies score changes correctly."""
     judge = HumanJudge()
-    judge.assess_scores(
+    response = judge.assess_scores(
         mock_game_manager,
         mock_players,
         mock_proposal,
@@ -251,10 +251,24 @@ def test_get_scores_from_judge_applies_score_changes(
         mock_discussions,
     )
 
-    # Verify scores were updated
-    assert mock_game_state.scores["Alice"] == 10
-    assert mock_game_state.scores["Bob"] == 5
-    assert mock_game_state.scores["Charlie"] == -2
+    assert response["score_adjustments"] == [
+        {
+            "player": "Alice",
+            "delta": 10,
+            "reason": "Manual score entry by human judge.",
+        },
+        {
+            "player": "Bob",
+            "delta": 5,
+            "reason": "Manual score entry by human judge.",
+        },
+        {
+            "player": "Charlie",
+            "delta": -2,
+            "reason": "Manual score entry by human judge.",
+        },
+    ]
+    assert mock_game_state.scores == {"Alice": 0, "Bob": 0, "Charlie": 0}
 
     # Verify input was called 3 times (once per player)
     assert mock_input.call_count == 3
@@ -272,13 +286,19 @@ def test_get_scores_from_judge_handles_zero_scores(
 ) -> None:
     """Test get_scores_from_judge handles zero score changes."""
     judge = HumanJudge()
-    judge.assess_scores(
+    response = judge.assess_scores(
         mock_game_manager,
         mock_players,
         mock_proposal,
         mock_votes,
         mock_discussions,
     )
+
+    assert [adj["delta"] for adj in response["score_adjustments"]] == [
+        0,
+        0,
+        0,
+    ]
 
     # Verify scores remain unchanged (all zeros)
     assert mock_game_state.scores["Alice"] == 0
@@ -300,7 +320,7 @@ def test_get_scores_from_judge_retries_on_invalid_input(
 ) -> None:
     """Test get_scores_from_judge retries on non-integer input."""
     judge = HumanJudge()
-    judge.assess_scores(
+    response = judge.assess_scores(
         mock_game_manager,
         mock_players,
         mock_proposal,
@@ -308,10 +328,10 @@ def test_get_scores_from_judge_retries_on_invalid_input(
         mock_discussions,
     )
 
-    # Verify scores were updated (first invalid input was retried)
-    assert mock_game_state.scores["Alice"] == 10
-    assert mock_game_state.scores["Bob"] == 5
-    assert mock_game_state.scores["Charlie"] == -2
+    assert response["score_adjustments"][0]["delta"] == 10
+    assert response["score_adjustments"][1]["delta"] == 5
+    assert response["score_adjustments"][2]["delta"] == -2
+    assert mock_game_state.scores == {"Alice": 0, "Bob": 0, "Charlie": 0}
 
     # Verify input was called 4 times (1 invalid + 3 valid)
     assert mock_input.call_count == 4
@@ -329,7 +349,7 @@ def test_get_scores_from_judge_handles_negative_scores(
 ) -> None:
     """Test get_scores_from_judge handles negative scores."""
     judge = HumanJudge()
-    judge.assess_scores(
+    response = judge.assess_scores(
         mock_game_manager,
         mock_players,
         mock_proposal,
@@ -337,10 +357,10 @@ def test_get_scores_from_judge_handles_negative_scores(
         mock_discussions,
     )
 
-    # Verify scores were updated with negative values
-    assert mock_game_state.scores["Alice"] == -10
-    assert mock_game_state.scores["Bob"] == 3
-    assert mock_game_state.scores["Charlie"] == 3
+    assert response["score_adjustments"][0]["delta"] == -10
+    assert response["score_adjustments"][1]["delta"] == 3
+    assert response["score_adjustments"][2]["delta"] == 3
+    assert mock_game_state.scores == {"Alice": 0, "Bob": 0, "Charlie": 0}
 
     assert mock_input.call_count == 3
 
@@ -362,7 +382,7 @@ def test_get_scores_from_judge_accumulates_scores(
     mock_game_state.scores["Charlie"] = 0
 
     judge = HumanJudge()
-    judge.assess_scores(
+    response = judge.assess_scores(
         mock_game_manager,
         mock_players,
         mock_proposal,
@@ -370,10 +390,12 @@ def test_get_scores_from_judge_accumulates_scores(
         mock_discussions,
     )
 
-    # Verify scores were accumulated (added to existing scores)
-    assert mock_game_state.scores["Alice"] == 15  # 10 + 5
-    assert mock_game_state.scores["Bob"] == 0  # -5 + 5
-    assert mock_game_state.scores["Charlie"] == 5  # 0 + 5
+    assert response["score_adjustments"][0]["delta"] == 5
+    assert response["score_adjustments"][1]["delta"] == 5
+    assert response["score_adjustments"][2]["delta"] == 5
+    assert mock_game_state.scores["Alice"] == 10
+    assert mock_game_state.scores["Bob"] == -5
+    assert mock_game_state.scores["Charlie"] == 0
 
     assert mock_input.call_count == 3
 
@@ -390,7 +412,7 @@ def test_get_scores_from_judge_handles_large_score_changes(
 ) -> None:
     """Test get_scores_from_judge handles large score changes."""
     judge = HumanJudge()
-    judge.assess_scores(
+    response = judge.assess_scores(
         mock_game_manager,
         mock_players,
         mock_proposal,
@@ -398,8 +420,9 @@ def test_get_scores_from_judge_handles_large_score_changes(
         mock_discussions,
     )
 
-    assert mock_game_state.scores["Alice"] == 100
-    assert mock_game_state.scores["Bob"] == -50
-    assert mock_game_state.scores["Charlie"] == 25
+    assert response["score_adjustments"][0]["delta"] == 100
+    assert response["score_adjustments"][1]["delta"] == -50
+    assert response["score_adjustments"][2]["delta"] == 25
+    assert mock_game_state.scores == {"Alice": 0, "Bob": 0, "Charlie": 0}
 
     assert mock_input.call_count == 3

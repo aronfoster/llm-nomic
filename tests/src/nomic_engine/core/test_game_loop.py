@@ -621,7 +621,6 @@ def test_step_5_resolve_triggers_game_over(
     ]
 
     def assess_scores_side_effect(*_args, **_kwargs):
-        mock_game_state.scores["Alice"] += 5
         return {
             "private_thoughts": None,
             "score_adjustments": [
@@ -786,8 +785,9 @@ def test_step_5_resolve_judge_veto(
     assert mock_game_state.scores["Bob"] == 0
     assert mock_game_state.scores["Charlie"] == 0
 
-    # CRITICAL: Verify next_proposal_id was NOT incremented (vetoed)
-    assert mock_game_state.next_proposal_id == initial_proposal_id
+    # CRITICAL: Verify next_proposal_id increments for valid proposals,
+    # including vetoed outcomes
+    assert mock_game_state.next_proposal_id == initial_proposal_id + 1
 
 
 @patch(
@@ -845,8 +845,9 @@ def test_step_5_resolve_failed_proposal_score_penalty(
     assert mock_game_state.current_player_name == "Bob"
     assert mock_game_state.move_number == 2
 
-    # CRITICAL: Verify next_proposal_id was NOT incremented (failed)
-    assert mock_game_state.next_proposal_id == initial_proposal_id
+    # CRITICAL: Verify next_proposal_id increments for valid proposals,
+    # including failed votes
+    assert mock_game_state.next_proposal_id == initial_proposal_id + 1
 
 
 @patch(
@@ -1881,6 +1882,67 @@ def test_apply_turn_mutations_passed_proposal(
     assert game_over is False
 
 
+def test_apply_turn_mutations_applies_score_adjustments(
+    game_loop: GameLoop,
+    mock_game_state: GameState,
+) -> None:
+    """_apply_turn_mutations should apply judge-provided score deltas."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Test rule.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="NO"),
+        Vote(player_name="Charlie", vote="NO"),
+    ]
+
+    vote_result = VoteResult(
+        yes_count=1,
+        no_count=2,
+        abstain_count=0,
+        total_voters=3,
+        passed=False,
+        vote_mode="unanimous",
+    )
+
+    judge_decisions = JudgeDecisions(
+        veto_response={
+            "veto": False,
+            "reason": None,
+            "private_thoughts": None,
+        },
+        score_response={
+            "private_thoughts": None,
+            "score_adjustments": [
+                {"player": "Alice", "delta": 4, "reason": "Good rationale"},
+                {
+                    "player": "Bob",
+                    "delta": -1,
+                    "reason": "Weak voting rationale",
+                },
+            ],
+        },
+        judge_approved=False,
+    )
+
+    game_loop._apply_turn_mutations(
+        proposal,
+        votes,
+        discussions=[],
+        vote_result=vote_result,
+        judge_decisions=judge_decisions,
+    )
+
+    assert mock_game_state.scores["Alice"] == 4
+    assert mock_game_state.scores["Bob"] == -1
+    assert mock_game_state.scores["Charlie"] == 0
+
+
 def test_apply_turn_mutations_failed_proposal(
     game_loop: GameLoop,
     mock_game_manager: Mock,
@@ -1932,8 +1994,8 @@ def test_apply_turn_mutations_failed_proposal(
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()
     # Verify rules were NOT saved
     mock_game_manager.save_rules.assert_not_called()
-    # Verify proposal ID was NOT incremented
-    assert mock_game_state.next_proposal_id == initial_proposal_id
+    # Verify proposal ID was incremented for valid proposal
+    assert mock_game_state.next_proposal_id == initial_proposal_id + 1
     # Verify turn still advanced
     assert mock_game_state.current_player_name == "Bob"
     assert mock_game_state.move_number == 2
@@ -1996,8 +2058,8 @@ def test_apply_turn_mutations_vetoed_proposal(
     mock_game_manager.rules_manager.apply_proposal.assert_not_called()
     # Verify rules were NOT saved
     mock_game_manager.save_rules.assert_not_called()
-    # Verify proposal ID was NOT incremented
-    assert mock_game_state.next_proposal_id == initial_proposal_id
+    # Verify proposal ID was incremented for valid proposal
+    assert mock_game_state.next_proposal_id == initial_proposal_id + 1
     # Verify turn still advanced
     assert mock_game_state.current_player_name == "Bob"
     assert mock_game_state.move_number == 2

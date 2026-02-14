@@ -11,7 +11,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
+
+from .judge_contracts import JudgeScoreResponse, JudgeVetoResponse
 
 # --- Enums ---
 
@@ -293,11 +295,11 @@ class JudgeDecisions(BaseModel):
     returned by _get_judge_decisions.
     """
 
-    veto_response: Any = Field(
+    veto_response: JudgeVetoResponse = Field(
         ...,
         description="The judge's veto decision response (JudgeVetoResponse)",
     )
-    score_response: Any = Field(
+    score_response: JudgeScoreResponse = Field(
         ...,
         description=(
             "The judge's score assessment response (JudgeScoreResponse)"
@@ -306,5 +308,3 @@ class JudgeDecisions(BaseModel):
     judge_approved: bool = Field(
         ..., description="Whether the judge approved (not vetoed)"
     )
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)

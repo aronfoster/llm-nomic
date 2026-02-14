@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
@@ -11,34 +11,11 @@ if TYPE_CHECKING:
     from ..players.base_player import BasePlayer
 
 
-class JudgeVetoResponse(TypedDict):
-    """Standard structure for judge veto decisions."""
-
-    veto: bool
-    reason: str | None
-    private_thoughts: str | None
-
-
-class ScoreAdjustment(TypedDict):
-    """Represents a single player score adjustment."""
-
-    player: str
-    delta: int
-    reason: str
-
-
-class JudgeScoreResponse(TypedDict):
-    """Standard structure for judge score assessments."""
-
-    private_thoughts: str | None
-    score_adjustments: list[ScoreAdjustment]
-
-
-class StateUpdates(TypedDict, total=False):
-    """Container for updates the Judge wants to apply to GameState."""
-
-    flags: dict[str, Any]
-    target_score: int | None
+from ..judge_contracts import (
+    JudgeScoreResponse,
+    JudgeVetoResponse,
+    StateUpdates,
+)
 
 
 class BaseJudge(ABC):
