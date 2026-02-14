@@ -34,7 +34,7 @@ Our architecture is built on these principles:
 
 * **Task:** Proposal IDs must increment for every properly-proposed rule change, whether or not it passes. Per Rule 108: "each rule-change proposed in the proper way shall receive the next successive integer, whether or not the proposal is adopted."
 * **Current behavior:** `next_proposal_id` only increments inside the `if judge_decisions.judge_approved` block in `_apply_turn_mutations`.
-* **Fix:** Move the `next_proposal_id += 1` increment outside the `judge_approved` conditional so it fires for all proposals that reach the vote phase.
+* **Fix:** Move the `next_proposal_id += 1` increment outside the `judge_approved` conditional so it fires for all proposals that reach the vote phase. Ensure game state is saved appropriately, in the expected method, and not as a side effect of another method.
 * **Tests:** Add test cases for failed proposals and vetoed proposals verifying ID increments.
 
 ### 2. Fix Google Gemini System Message Handling
