@@ -30,39 +30,45 @@ Our architecture is built on these principles:
 
 **Goal:** Fix correctness bugs and type safety issues identified during code review. Clean up dead code.
 
-### 1. Fix Proposal ID Increment (Default Rules Violation)
+You can replace the existing Sprint 27, Task 1 with the following consolidated task. This refactor centralizes all state changes within the `_apply_turn_mutations` method, turning it into the engine's authoritative "State Committer".
 
-* **Task:** Proposal IDs must increment for every properly-proposed rule change, whether or not it passes. Per Rule 108: "each rule-change proposed in the proper way shall receive the next successive integer, whether or not the proposal is adopted."
-* **Current behavior:** `next_proposal_id` only increments inside the `if judge_decisions.judge_approved` block in `_apply_turn_mutations`.
-* **Fix:** Move the `next_proposal_id += 1` increment outside the `judge_approved` conditional so it fires for all proposals that reach the vote phase. Ensure game state is saved appropriately, in the expected method, and not as a side effect of another method.
-* **Tests:** Add test cases for failed proposals and vetoed proposals verifying ID increments.
+### 1. Centralize State Mutations & Fix Proposal ID Tracking
 
-### 2. Fix Google Gemini System Message Handling
+* **Task:** Refactor `GameLoop._apply_turn_mutations` to be the exclusive point of state modification and fix the non-sequential Proposal ID bug. This involves decoupling the scoring logic from the Judge and ensuring compliance with Rule 108.
+* **Current behavior:** * `next_proposal_id` only increments if a proposal is adopted, which violates Rule 108 ("each rule-change... shall receive the next successive integer, whether or not the proposal is adopted").
+* `LLMJudge.assess_scores` directly mutates `game_manager.game_state.scores`, creating a hidden side effect and a dependency where `_detect_victory` only works because the Judge already changed the state.
 
-* **Status:** ✅ DONE
-* **Task:** In `api_clients.py`, system messages are currently sent as `{"role": "user", ...}` to Gemini. If a real user message follows, Gemini receives two consecutive `user` role messages, which can cause errors or degraded output.
-* **Fix:** Use Gemini's `system_instruction` parameter for system messages, or concatenate the system content into the first user message with a clear delimiter.
-* **Tests:** Unit test verifying message construction for Gemini provider with system + user message sequences.
 
-### 3. Type `JudgeDecisions` Fields Properly
+* **Fix:**
+* **Unconditional ID Increment:** Move the `next_proposal_id += 1` logic in `src/nomic_engine/core/game_loop.py` outside the `judge_approved` conditional so it fires for all valid proposals.
+* **Score Decoupling:** Update the `BaseJudge.assess_scores` interface in `src/nomic_engine/judge/base_judge.py` to be side-effect-free. It should only return a `JudgeScoreResponse` containing the intended deltas.
+* **State Committer Pattern:** Modify `_apply_turn_mutations` to take the deltas from the Judge's response and apply them to `game_state.scores` directly.
+* **Strict Typing:** Replace `Any` types in the `JudgeDecisions` and `JudgeScoreResponse` models within `src/nomic_engine/data_models.py` with the specific TypedDict shapes defined in the base judge class.
+
+
+* **Tests:** * Add test cases verifying `next_proposal_id` increments for failed votes and vetoed proposals.
+* Add unit tests for `_apply_turn_mutations` to ensure scores are updated correctly based on Judge-provided deltas.
+* Verify that `_detect_victory` correctly identifies a winner after the engine (not the Judge) updates the scores.
+
+### 2. Type `JudgeDecisions` Fields Properly
 
 * **Task:** `JudgeDecisions.veto_response` and `score_response` are typed as `Any` despite having well-defined TypedDict shapes (`JudgeVetoResponse` and `JudgeScoreResponse`).
 * **Fix:** Replace `Any` with the proper TypedDict types. Remove `ConfigDict(arbitrary_types_allowed=True)` once `Any` is gone.
 * **Tests:** Existing tests should continue to pass; mypy will now catch misuse.
 
-### 4. Remove Unreachable Code in `run_turn`
+### 3. Remove Unreachable Code in `run_turn`
 
 * **Task:** `GameLoop.run_turn()` has an unreachable `return False` after the try/except block. Every path through the try already returns, and the except re-raises.
 * **Fix:** Delete the dead `return False`.
 
-### 5. Clean Up Empty / Dead Files
+### 4. Clean Up Empty / Dead Files
 
 * **Task:** Remove empty placeholder files that are no longer needed:
   * `src/nomic_engine/utils/api_clients.py` (empty — logic lives in `llm/api_clients.py`)
   * `src/nomic_engine/utils/prompt_builder.py` (empty — logic lives in `llm/prompt_builder.py`)
 * **Fix:** Delete the files, verify no imports reference them, run `make ci`.
 
-### 6. Fix Prompt Inconsistencies
+### 5. Fix Prompt Inconsistencies
 
 * **Task:** Two minor prompt issues that can confuse LLMs:
   1. `JSON_FORMAT_ENFORCEMENT` threatens "your vote = ABSTAIN" but this text is injected into proposal, discussion, and revision contexts where ABSTAIN doesn't apply. Make the threat text generic or context-specific.
@@ -70,17 +76,17 @@ Our architecture is built on these principles:
 * **Fix:** Update `prompts.py` templates.
 * **Tests:** Verify existing parser tests still pass with updated examples.
 
-### 7. Fix Duplicate Step Comments in Parsers
+### 6. Fix Duplicate Step Comments in Parsers
 
 * **Task:** Several parser functions in `llm/parsers.py` have duplicate `# Step 2` comments from copy-paste drift (e.g., `parse_vote_response`, `parse_discussion_response`, `parse_proposal_response`).
 * **Fix:** Renumber comments sequentially.
 
-### 8. Add Fallback Logging in `data_models._get_schema_defaults`
+### 7. Add Fallback Logging in `data_models._get_schema_defaults`
 
 * **Task:** If `flag_schema.json` is broken or missing, `_get_schema_defaults()` silently falls back to a hardcoded dict with no logging.
 * **Fix:** Add a `logging.warning()` in the except branch so silent schema failures are visible in logs.
 
-### 3. Smart Player Context (Bug Mitigation)
+### 8. Smart Player Context (Bug Mitigation)
 
 * **Task:** Add plain-language score/rank descriptions to mitigate LLM math errors.
 * **Status:** PLANNED
@@ -108,7 +114,7 @@ This is the long-term backlog and TODO scratchpad.
   * Currently, missing API keys aren't discovered until a player's first turn — potentially hours into a game with multiple providers.
   * Add a validation step in `create_game.py` or at `main.py` startup that checks all required env vars for configured players and the judge before gameplay begins.
 
-* **Decouple Score Mutation from Judge Methods:**
+* **Decouple Score Mutation from Judge Methods:** - Integrated into Sprint 27 task 1.
   * `LLMJudge.assess_scores` directly mutates `game_manager.game_state.scores`. This creates a hidden dependency: `_detect_victory` only works correctly because the judge's side effect already happened.
   * Consider having the judge *return* score deltas, with `_apply_turn_mutations` being the sole method that writes to game state. This matches the existing architecture's intent.
 
