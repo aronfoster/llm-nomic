@@ -96,6 +96,7 @@ This task for the `ROADMAP.md` formalizes the implementation of a dedicated scor
 ### 8. Smart Player Context (Strategic standing Assessment)
 
 * **Goal:** Mitigate LLM math errors and "temporal confusion" (first-mover advantage) by providing a plain-language strategic summary of the leaderboard.
+* **Status:** ✅ Completed
 * **Implementation:** Create a dedicated method `PromptBuilder._build_leaderboard_context()` in `src/nomic_engine/llm/prompt_builder.py`.
 * **Logic Requirements:**
 * **Rank & Tie Detection:** Identify the player's current rank. Explicitly state if they are in a tie and with whom.
@@ -104,6 +105,8 @@ This task for the `ROADMAP.md` formalizes the implementation of a dedicated scor
 * **Turn Parity Calculation:** Use the `move_number` and `turn_order` length to determine how many turns the current player has completed versus the other okayers.
 
 * **Integration:** Inject the resulting string into the `GAME_STATE` block of the player's prompt.
+* **Fix:** Added `_build_leaderboard_context()` and `_format_rank()` to generate rank/tie detection, sorted leaderboard text, target-score proximity messaging, and turn parity based on `move_number` + `turn_order`. Updated `GAME_STATE_BLOCK` to include this strategic context.
+* **Tests:** Added PromptBuilder unit tests for leaderboard context content (ranking, ties, goal messaging, turn parity) and verified prompt game-state integration. Confirmed via `make ci`.
 
 #### Example 1:
 

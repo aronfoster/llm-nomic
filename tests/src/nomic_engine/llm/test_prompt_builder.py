@@ -116,6 +116,57 @@ class TestPromptBuilder(unittest.TestCase):
         result = self.builder._format_scores({})
         self.assertEqual(result, "No scores yet.")
 
+    def test_build_leaderboard_context_rank_goal_and_parity(self):
+        """Leaderboard context should include rank, goal, and turn parity."""
+        state = GameState(
+            scores={"Claude": 45, "Gemini": 42, "GPT-4o": 38},
+            target_score=50,
+            current_player_name="GPT-4o",
+            move_number=11,
+            turn_order=["Claude", "Gemini", "GPT-4o"],
+            next_proposal_id=312,
+        )
+
+        context = self.builder._build_leaderboard_context(state, "GPT-4o")
+
+        self.assertIn("LEADERBOARD CONTEXT:", context)
+        self.assertIn("Rank: 3rd.", context)
+        self.assertIn(
+            "Leaderboard: 1. Claude (45), 2. Gemini (42), 3. GPT-4o (38).",
+            context,
+        )
+        self.assertIn(
+            "Goal: 12 points required to reach the target score of 50.",
+            context,
+        )
+        self.assertIn("This is your 4th turn.", context)
+        self.assertIn("Claude has completed 4 turns", context)
+        self.assertIn("Gemini has completed 3 turns", context)
+
+    def test_build_leaderboard_context_tie_and_no_target(self):
+        """Leaderboard context should call out ties and missing target."""
+        state = GameState(
+            scores={"Claude": 48, "Gemini": 48, "GPT-4o": 40},
+            target_score=None,
+            current_player_name="Claude",
+            move_number=14,
+            turn_order=["Claude", "Gemini", "GPT-4o"],
+            next_proposal_id=318,
+        )
+
+        context = self.builder._build_leaderboard_context(state, "Claude")
+
+        self.assertIn("Rank: 1st (Tied with Gemini).", context)
+        self.assertIn("Goal: No target score is configured.", context)
+
+    def test_format_game_state_block_includes_leaderboard_context(self):
+        """GAME_STATE block should embed strategic leaderboard context."""
+        block = self.builder._format_game_state_block(self.game_state, "Alice")
+
+        self.assertIn("LEADERBOARD CONTEXT:", block)
+        self.assertIn("Rank:", block)
+        self.assertIn("Turn Parity:", block)
+
     def test_format_discussions(self):
         """Test _format_discussions correctly formats discussion tuples."""
         result = self.builder._format_discussions(self.discussions)
