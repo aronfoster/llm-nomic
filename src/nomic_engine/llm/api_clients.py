@@ -197,16 +197,21 @@ class ApiClient:
                 return None
 
             elif self.model_config.provider == "google":
-                # Google Gemini requires converting to their format
+                # Google Gemini requires system prompts to be sent via
+                # system_instruction (not as a user role message).
+                system_messages = [
+                    msg.content for msg in messages if msg.role == "system"
+                ]
+                system_instruction = (
+                    "\n\n".join(system_messages) if system_messages else None
+                )
+
                 gemini_messages: list[dict[str, Any]] = []
                 for msg in messages:
                     # Map roles: 'assistant' -> 'model', keep 'user'
-                    # System messages prepended to first user message
                     if msg.role == "system":
-                        # Prepend system message to the conversation
-                        gemini_messages.append(
-                            {"role": "user", "parts": [msg.content]}
-                        )
+                        # System messages are sent via system_instruction.
+                        continue
                     elif msg.role == "assistant":
                         gemini_messages.append(
                             {"role": "model", "parts": [msg.content]}
@@ -226,6 +231,11 @@ class ApiClient:
                 google_response = self._google_client.models.generate_content(
                     model=self.model_id_for_api,
                     contents=gemini_messages,
+                    config=(
+                        {"system_instruction": system_instruction}
+                        if system_instruction
+                        else None
+                    ),
                 )
                 return str(google_response.text)
 
