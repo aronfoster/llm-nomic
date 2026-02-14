@@ -99,9 +99,9 @@ This task for the `ROADMAP.md` formalizes the implementation of a dedicated scor
 * **Implementation:** Create a dedicated method `PromptBuilder._build_leaderboard_context()` in `src/nomic_engine/llm/prompt_builder.py`.
 * **Logic Requirements:**
 * **Rank & Tie Detection:** Identify the player's current rank. Explicitly state if they are in a tie and with whom.
-* **Distance to Leader/Follower:** Calculate the point gap to the person immediately ahead and the absolute leader.
-* **Proximity to Victory:** Calculate the points remaining until the `target_score` is reached.
-* **Turn Parity Calculation:** Use the `move_number` and `turn_order` length to determine how many turns the current player has completed versus the leader.
+* **Full Leaderboard Display:** Generate a list of all players and their current scores in descending order.
+* **Proximity to Victory:** Calculate the points remaining until the `target_score` is reached, or a note that there is no target score if it is null.
+* **Turn Parity Calculation:** Use the `move_number` and `turn_order` length to determine how many turns the current player has completed versus the other okayers.
 
 * **Integration:** Inject the resulting string into the `GAME_STATE` block of the player's prompt.
 
