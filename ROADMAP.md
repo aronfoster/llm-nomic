@@ -30,8 +30,6 @@ Our architecture is built on these principles:
 
 **Goal:** Fix correctness bugs and type safety issues identified during code review. Clean up dead code.
 
-You can replace the existing Sprint 27, Task 1 with the following consolidated task. This refactor centralizes all state changes within the `_apply_turn_mutations` method, turning it into the engine's authoritative "State Committer".
-
 ### 1. Centralize State Mutations & Fix Proposal ID Tracking
 
 * **Task:** Refactor `GameLoop._apply_turn_mutations` to be the exclusive point of state modification and fix the non-sequential Proposal ID bug. This involves decoupling the scoring logic from the Judge and ensuring compliance with Rule 108.
@@ -93,13 +91,35 @@ You can replace the existing Sprint 27, Task 1 with the following consolidated t
 * **Status:** ✅ Completed
 * **Fix:** Added a `logging.warning()` in the except branch so silent schema failures are visible in logs.
 
-### 8. Smart Player Context (Bug Mitigation)
+This task for the `ROADMAP.md` formalizes the implementation of a dedicated score assessment method within the `PromptBuilder` to improve LLM strategic reasoning.
 
-* **Task:** Add plain-language score/rank descriptions to mitigate LLM math errors.
-* **Status:** PLANNED
-* **Logic:**
-* Modify `PromptBuilder._format_game_state_block` in `src/nomic_engine/llm/prompt_builder.py` to include a "Leaderboard Context" line (e.g., "You are in 2nd place, 5 points behind the leader").
-  * Would listing the number of turns each player has had be valuable? Humans understand how going first confers an advantage, and it seems like LLMs don't understand that on early turns. Is that a problem?
+### 8. Smart Player Context (Strategic standing Assessment)
+
+* **Goal:** Mitigate LLM math errors and "temporal confusion" (first-mover advantage) by providing a plain-language strategic summary of the leaderboard.
+* **Implementation:** Create a dedicated method `PromptBuilder._build_leaderboard_context()` in `src/nomic_engine/llm/prompt_builder.py`.
+* **Logic Requirements:**
+* **Rank & Tie Detection:** Identify the player's current rank. Explicitly state if they are in a tie and with whom.
+* **Distance to Leader/Follower:** Calculate the point gap to the person immediately ahead and the absolute leader.
+* **Proximity to Victory:** Calculate the points remaining until the `target_score` is reached.
+* **Turn Parity Calculation:** Use the `move_number` and `turn_order` length to determine how many turns the current player has completed versus the leader.
+
+* **Integration:** Inject the resulting string into the `GAME_STATE` block of the player's prompt.
+
+#### Example 1:
+
+> **LEADERBOARD CONTEXT:**
+> **Rank:** 3rd.
+> **Leaderboard:** 1. Claude (45), 2. Gemini (42), 3. GPT-4o (38).
+> **Goal:** 12 points required to reach the target score of 50.
+> **Turn Parity:** This is your 4th turn. Claude has completed 4 turns. Gemini has completed 4 turns.
+
+#### Example 2:
+
+> **LEADERBOARD CONTEXT:**
+> **Rank:** 1st (Tied with Gemini).
+> **Leaderboard:** 1. Claude (48), 2. Gemini (48), 3. GPT-4o (40).
+> **Goal:** 52 points required to reach the target score of 100.
+> **Turn Parity:** This is your 5th turn. Gemini has completed 5 turns. GPT-4o has completed 4 turns.
 
 ## Future Work
 
