@@ -21,6 +21,7 @@ Our architecture is built on these principles:
 * Proposals that pass but that are judge vetoed should still award points as if they passed; the rule change just doesn't get applied to the rule list.
   * NOTE (code review): The engine logic may actually be correct here — `assess_scores` runs independently of veto status. The bug is likely in the judge *prompt* rather than the engine: the LLM judge sees the veto and decides not to award points. Verify with a test case targeting this scenario.
 * After game victory, running another turn should immediately exit rather than running another turn.
+* THe game does not automatically switch from unanimous to majority after 2 complete cycles (from base rules)
 
 ### Low Priority
 
