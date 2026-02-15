@@ -5,6 +5,7 @@ Unit tests for the ApiClient class.
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.genai import types as google_types
 from openai import OpenAIError
 
 from src.nomic_engine.data_models import ChatMessage, ModelDefinition
@@ -466,9 +467,18 @@ def test_get_completion_google_success(monkeypatch):
         # Verify message format conversion and API call
         call_args = mock_client.models.generate_content.call_args
         expected_messages = [
-            {"role": "user", "parts": ["Hello!"]},
-            {"role": "model", "parts": ["Hi there!"]},
-            {"role": "user", "parts": ["How are you?"]},
+            google_types.Content(
+                role="user",
+                parts=[google_types.Part(text="Hello!")],
+            ),
+            google_types.Content(
+                role="model",
+                parts=[google_types.Part(text="Hi there!")],
+            ),
+            google_types.Content(
+                role="user",
+                parts=[google_types.Part(text="How are you?")],
+            ),
         ]
         assert call_args.kwargs["model"] == "gemini-2.5-pro"
         assert call_args.kwargs["contents"] == expected_messages
@@ -540,9 +550,56 @@ def test_get_completion_google_system_messages_use_system_instruction(
 
         call_args = mock_client.models.generate_content.call_args
         assert call_args.kwargs["contents"] == [
-            {"role": "user", "parts": ["First user message"]}
+            google_types.Content(
+                role="user",
+                parts=[google_types.Part(text="First user message")],
+            ),
         ]
         assert call_args.kwargs["config"] == {
             "system_instruction": "System 1\n\nSystem 2"
         }
+        assert result == "Google response"
+
+
+def test_get_completion_google_system_only_falls_back_to_user_message(
+    monkeypatch,
+):
+    """Test Google falls back when only system messages exist."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="gemini-2.5-pro",
+        provider="google",
+        api_model_id="gemini-2.5-pro",
+        env_key_name="GOOGLE_API_KEY",
+    )
+
+    mock_response = MagicMock()
+    mock_response.text = "Google response"
+
+    with patch(
+        "src.nomic_engine.llm.api_clients.genai.Client"
+    ) as mock_client_class:
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
+
+        api_client = ApiClient(mock_model_def)
+
+        messages = [
+            ChatMessage(role="system", content="You are a helpful assistant."),
+        ]
+
+        result = api_client.get_completion(messages)
+
+        call_args = mock_client.models.generate_content.call_args
+        # System content should be moved to a user message
+        assert call_args.kwargs["contents"] == [
+            google_types.Content(
+                role="user",
+                parts=[google_types.Part(text="You are a helpful assistant.")],
+            ),
+        ]
+        # system_instruction should be None (cleared)
+        assert call_args.kwargs["config"] is None
         assert result == "Google response"
