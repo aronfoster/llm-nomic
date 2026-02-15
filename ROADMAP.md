@@ -24,7 +24,10 @@ Our architecture is built on these principles:
 
 ### Low Priority
 
-* None
+* Allow numbers or text (e.g. 2 or llm) in each prompt of create_game.py
+* Print the command to run the game after create_game.py
+* Fix markdown at the start of game transcript md (the first section is all bunched together)
+* Final text has the wrong turn number 
 
 ## Sprint 28: Withdrawal Improvement
 

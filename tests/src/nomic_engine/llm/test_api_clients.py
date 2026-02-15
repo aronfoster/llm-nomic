@@ -116,22 +116,23 @@ def test_api_client_xai_provider(monkeypatch):
         assert api_client.model_config == mock_model_def
 
 
-# TODO: Ensure all unit tests use mocked env. variables.
-# def test_api_client_xai_provider_missing_key(monkeypatch):
-#     """Test xai provider raises ValueError when API key is missing."""
-#     monkeypatch.delenv("XAI_API_KEY", raising=False)
-#
-#     mock_model_def = ModelDefinition(
-#         id="grok-4-1-fast-reasoning",
-#         provider="xai",
-#         api_model_id="grok-4-1-fast-reasoning",
-#         env_key_name="XAI_API_KEY",
-#     )
-#
-#     with pytest.raises(ValueError) as exc_info:
-#         ApiClient(mock_model_def)
-#
-#     assert "API key for provider xai not found" in str(exc_info.value)
+def test_api_client_xai_provider_missing_key(monkeypatch):
+    """Test xai provider raises ValueError when API key is missing."""
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+
+    mock_model_def = ModelDefinition(
+        id="grok-4-1-fast-reasoning",
+        provider="xai",
+        api_model_id="grok-4-1-fast-reasoning",
+        env_key_name="XAI_API_KEY",
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        ApiClient(mock_model_def)
+
+    assert "API key 'XAI_API_KEY' not found in environment variables" in str(
+        exc_info.value
+    )
 
 
 def test_api_client_unknown_provider_raises_error():
