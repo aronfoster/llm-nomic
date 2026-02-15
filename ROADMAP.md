@@ -28,6 +28,7 @@ Our architecture is built on these principles:
 * Print the command to run the game after create_game.py
 * Fix markdown at the start of game transcript md (the first section is all bunched together)
 * Final text has the wrong turn number 
+* Add the model and personality to each player as a label when their turn is on the screen (Deepti (Machiavellian/Deepseek) is thinking...)
 
 ## Sprint 28: Withdrawal Improvement
 
