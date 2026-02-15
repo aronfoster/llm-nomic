@@ -129,7 +129,7 @@ def test_api_client_xai_provider_missing_key(monkeypatch):
     with pytest.raises(ValueError) as exc_info:
         ApiClient(mock_model_def)
 
-    assert "API key for provider xai not found" in str(exc_info.value)
+    assert "API key 'XAI_API_KEY' not found in environment variables" in str(exc_info.value)
 
 
 def test_api_client_unknown_provider_raises_error():
