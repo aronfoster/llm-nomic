@@ -24,7 +24,7 @@ Our architecture is built on these principles:
 
 ### Low Priority
 
-* None
+* Allow numbers or text (e.g. 2 or llm) in each prompt of create_game.py
 
 ## Sprint 28: Withdrawal Improvement
 
