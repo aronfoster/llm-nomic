@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, cast
+from typing import Iterable, cast
 
 import anthropic
 import anthropic.types
 from google import genai
+from google.genai import types as google_types
 from openai import OpenAI, OpenAIError
 from openai.types.chat import ChatCompletionMessageParam
 
@@ -145,6 +146,18 @@ class ApiClient:
                             msg.role,
                         )
 
+                # Anthropic requires at least one user message.
+                # If all messages were system-role, use the system prompt
+                # as a user message instead.
+                if not anthropic_messages and system_prompt:
+                    anthropic_messages = [
+                        cast(
+                            anthropic.types.MessageParam,
+                            {"role": "user", "content": system_prompt},
+                        )
+                    ]
+                    system_prompt = None
+
                 # Create message with Anthropic client
                 client = self._anthropic_client
                 anthropic_response: anthropic.types.Message
@@ -178,7 +191,7 @@ class ApiClient:
                     "\n\n".join(system_messages) if system_messages else None
                 )
 
-                gemini_messages: list[dict[str, Any]] = []
+                gemini_messages: list[google_types.Content] = []
                 for msg in messages:
                     # Map roles: 'assistant' -> 'model', keep 'user'
                     if msg.role == "system":
@@ -186,11 +199,17 @@ class ApiClient:
                         continue
                     elif msg.role == "assistant":
                         gemini_messages.append(
-                            {"role": "model", "parts": [msg.content]}
+                            google_types.Content(
+                                role="model",
+                                parts=[google_types.Part(text=msg.content)],
+                            )
                         )
                     elif msg.role == "user":
                         gemini_messages.append(
-                            {"role": "user", "parts": [msg.content]}
+                            google_types.Content(
+                                role="user",
+                                parts=[google_types.Part(text=msg.content)],
+                            )
                         )
                     else:
                         # Unexpected role - log warning and skip
@@ -198,6 +217,18 @@ class ApiClient:
                             "Unexpected role '%s' for Google, skipping",
                             msg.role,
                         )
+
+                # Google requires at least one content message.
+                # If all messages were system-role, use the system
+                # instruction as a user message instead.
+                if not gemini_messages and system_instruction:
+                    gemini_messages = [
+                        google_types.Content(
+                            role="user",
+                            parts=[google_types.Part(text=system_instruction)],
+                        )
+                    ]
+                    system_instruction = None
 
                 # Generate content using the new google.genai SDK
                 google_response = self._google_client.models.generate_content(

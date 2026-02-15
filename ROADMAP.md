@@ -11,7 +11,7 @@ Our architecture is built on these principles:
 3.  **Authoritative Data:** The Game Instance is the sole authority on game state. `rules.jsonl` and `game_state.json` are the sources of truth.
 4.  **Stand alone PRs:** All PRs are small enough to understand, `make ci` passes, and contain unit tests that cover new code
 
-## Bug List
+## Bug List Game Engine
 
 ### HIGH PRIORITY
 
@@ -28,6 +28,7 @@ Our architecture is built on these principles:
 * Print the command to run the game after create_game.py
 * Fix markdown at the start of game transcript md (the first section is all bunched together)
 * Final text has the wrong turn number 
+* Add the model and personality to each player as a label when their turn is on the screen (Deepti (Machiavellian/Deepseek) is thinking...)
 
 ## Sprint 28: Withdrawal Improvement
 
@@ -130,10 +131,21 @@ This is the long-term backlog and TODO scratchpad.
     * **Rule 111 Word Limit Enforcement:** Rule 111 caps discussion comments at 75 words, but the engine doesn't validate this. Decide whether to enforce in the engine (truncate/reject) or in the prompt (and accept the risk of LLM non-compliance). Document the decision either way.
 
 * **Tooling & Features:**
-    * Build a `build_site.py` script to convert the game history into a shareable HTML file.
     * Need to shift to a dynamic turn structure where if rules change the turn steps (e.g an additional round of discussion after voting) it can be supported. Might need to ask the judge to define the steps and provide some guidance to the players.
     * Specify versions for dependencies and start managing those (pin at least major versions in `requirements.txt` to prevent breakage from upstream changes)
     * Prompt examples should draw from personality files!
 
 * **Dynamic Game Structure**
    * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.
+
+### Visualization (Web app)
+
+* Plan out a end state for visualizing individual game, all games, rules, profiles for player (slice by model and personality), leaaderboard
+* Have badges or awards for players (models)
+* Maybe: Build a `build_site.py` script to convert the game history into a shareable HTML file.
+
+### Graphical UI
+
+* Have a GUI for running the game in Electron (?)
+
+

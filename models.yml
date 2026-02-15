@@ -13,9 +13,9 @@ models:
     api_model_id: "claude-sonnet-4-5"
     env_key_name: "ANTHROPIC_API_KEY"
 
-  - id: "gpt-5.1"
+  - id: "gpt-5.2"
     provider: "openai"
-    api_model_id: "gpt-5.1"
+    api_model_id: "gpt-5.2"
     env_key_name: "OPENAI_API_KEY"
 
   - id: "gpt-5-mini"
@@ -53,22 +53,22 @@ models:
     api_model_id: "grok-4-1-fast-non-reasoning"
     env_key_name: "XAI_API_KEY"
 
-  - id: "deepseek-r1:8b"
+  - id: "deepseek-r1:32b"
     provider: "local"
     api_model_id: "http://localhost:11434/v1" # Ollama
     env_key_name: null
 
-  - id: "deepseek-r1-64k"
+  - id: "qwen3:32b"
     provider: "local"
     api_model_id: "http://localhost:11434/v1" # Ollama
     env_key_name: null
 
-  - id: "gemma3-4b-128k:latest"
+  - id: "gemma3:27b"
     provider: "local"
     api_model_id: "http://localhost:11434/v1" # Ollama
     env_key_name: null
 
-  - id: "gemma3-12b-20k:latest"
+  - id: "qwq:latest"
     provider: "local"
     api_model_id: "http://localhost:11434/v1" # Ollama
     env_key_name: null
