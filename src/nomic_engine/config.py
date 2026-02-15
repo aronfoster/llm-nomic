@@ -26,7 +26,7 @@ def get_api_key_from_env(env_key_name: str) -> str:
         ValueError: If the required API key is not found.
     """
     api_key = os.getenv(env_key_name)
-    if not api_key:
+    if not api_key or api_key == "YOUR_KEY_HERE":
         raise ValueError(
             f"API key '{env_key_name}' not found in environment "
             f"variables. Please check your .env file."

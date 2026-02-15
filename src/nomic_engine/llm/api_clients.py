@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Iterable, cast
 
 import anthropic
@@ -12,6 +11,7 @@ from google import genai
 from openai import OpenAI, OpenAIError
 from openai.types.chat import ChatCompletionMessageParam
 
+from ..config import get_api_key_from_env
 from ..data_models import ChatMessage, ModelDefinition
 
 logger = logging.getLogger(__name__)
@@ -48,14 +48,7 @@ class ApiClient:
             if api_key_name is None:
                 raise ValueError("env_key_name must be set for xai provider")
 
-            api_key = os.getenv(api_key_name)
-            if not api_key:
-                raise ValueError(
-                    (
-                        "API key for provider xai not found in environment "
-                        f"variable {api_key_name}"
-                    )
-                )
+            api_key = get_api_key_from_env(api_key_name)
 
             self._openai_client = OpenAI(
                 base_url="https://api.x.ai/v1", api_key=api_key
@@ -68,14 +61,7 @@ class ApiClient:
                     "env_key_name must be set for openai provider"
                 )
 
-            api_key = os.getenv(api_key_name)
-            if not api_key:
-                raise ValueError(
-                    (
-                        "API key for provider openai not found in environment "
-                        f"variable {api_key_name}"
-                    )
-                )
+            api_key = get_api_key_from_env(api_key_name)
 
             self._openai_client = OpenAI(api_key=api_key)
             self.model_id_for_api = self.model_config.api_model_id
@@ -86,14 +72,7 @@ class ApiClient:
                     "env_key_name must be set for anthropic provider"
                 )
 
-            api_key = os.getenv(api_key_name)
-            if not api_key:
-                raise ValueError(
-                    (
-                        "API key for provider anthropic not found in "
-                        f"environment variable {api_key_name}"
-                    )
-                )
+            api_key = get_api_key_from_env(api_key_name)
 
             self._anthropic_client: anthropic.Anthropic = anthropic.Anthropic(
                 api_key=api_key
@@ -106,14 +85,7 @@ class ApiClient:
                     "env_key_name must be set for google provider"
                 )
 
-            api_key = os.getenv(api_key_name)
-            if not api_key:
-                raise ValueError(
-                    (
-                        "API key for provider google not found in environment "
-                        f"variable {api_key_name}"
-                    )
-                )
+            api_key = get_api_key_from_env(api_key_name)
 
             # Create Google GenAI client
             self._google_client = genai.Client(api_key=api_key)
