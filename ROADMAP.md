@@ -15,8 +15,7 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-* Judge on lower quality models isn't scoring appropriately. Improve prompt to show vote totals in addition to vote/discussion. Reduce rule list to only those with 'point' or 'score' in them.
-  * TODO: check if this is still an issue
+* Judge on lower quality models isn't scoring appropriately. Improve prompt to show vote totals in addition to vote/discussion. Reduce rule list to only those with 'point' or 'score' in them. Add a clear description of whether the vote passes or fails.
 * Lower quality LLM players are interpreting turn order as rank in the game. Maybe add some smart text to say "It's a 3-way tie" or "You are in last place by 8 points" or some other set of plain-language descriptions of the score situation since LLMs don't do great at math.
 * Proposals that pass but that are judge vetoed should still award points as if they passed; the rule change just doesn't get applied to the rule list.
   * NOTE (code review): The engine logic may actually be correct here — `assess_scores` runs independently of veto status. The bug is likely in the judge *prompt* rather than the engine: the LLM judge sees the veto and decides not to award points. Verify with a test case targeting this scenario.
