@@ -39,9 +39,7 @@ Our architecture is built on these principles:
 ### Prioritized Tasks
 
 1. **Judge scoring improvements**  
-   - Judge scoring prompt clearly expresses whether the proposal passes or fails  
-   - Verify/fix veto + scoring interaction: When proposal passes votes but is vetoed → confirm scores **are** awarded per the proposed rule
-     - Still needs targeted test case or log inspection (no full veto observed yet).  
+   - Judge scoring prompt clearly expresses whether the proposal passes or fails 
    - Ensure scoring of proposed rule does **not** apply this turn if Rule 205 remains unchanged (clarify in prompt if needed).
 
 2. **Post-victory turn handling**  
