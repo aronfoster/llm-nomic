@@ -2163,3 +2163,170 @@ def test_apply_turn_mutations_vetoed_proposal(
     assert mock_game_state.move_number == 2
     # Verify game did not end
     assert game_over is False
+
+
+def test_check_existing_victory_detects_completed_game(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test check_existing_victory correctly identifies a completed game."""
+    mock_game_state.scores = {"Alice": 105, "Bob": 50, "Charlie": 30}
+    mock_game_state.target_score = 100
+
+    victory, winners, winning_score = game_loop.check_existing_victory()
+
+    assert victory is True
+    assert winners == ["Alice"]
+    assert winning_score == 105
+
+
+def test_check_existing_victory_no_winner(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test check_existing_victory returns no victory for in-progress game."""
+    mock_game_state.scores = {"Alice": 50, "Bob": 30, "Charlie": 20}
+    mock_game_state.target_score = 100
+
+    victory, winners, winning_score = game_loop.check_existing_victory()
+
+    assert victory is False
+    assert winners == []
+    assert winning_score == 0
+
+
+def test_check_existing_victory_with_tie(
+    game_loop: GameLoop, mock_game_state: GameState
+) -> None:
+    """Test check_existing_victory handles ties correctly."""
+    mock_game_state.scores = {"Alice": 100, "Bob": 100, "Charlie": 50}
+    mock_game_state.target_score = 100
+
+    victory, winners, winning_score = game_loop.check_existing_victory()
+
+    assert victory is True
+    assert set(winners) == {"Alice", "Bob"}
+    assert winning_score == 100
+
+
+def test_format_victory_summary_single_winner(game_loop: GameLoop) -> None:
+    """Test _format_victory_summary produces correct format for winner."""
+    winners = ["Alice"]
+    winning_score = 105
+    scores = {"Alice": 105, "Bob": 50, "Charlie": 30}
+    target_score = 100
+    total_turns = 15
+
+    output = game_loop._format_victory_summary(
+        winners, winning_score, scores, target_score, total_turns
+    )
+
+    # Check key elements are present
+    assert "GAME OVER" in output
+    assert "VICTORY ACHIEVED" in output
+    assert "Winner: Alice" in output
+    assert "Winning Score: 105" in output
+    assert "Target Score: 100" in output
+    assert "Total Turns Completed: 15" in output
+    assert "Alice: 105" in output
+    assert "Bob: 50" in output
+    assert "Charlie: 30" in output
+    assert "transcript" in output.lower()
+
+
+def test_format_victory_summary_multiple_winners(
+    game_loop: GameLoop,
+) -> None:
+    """Test _format_victory_summary produces correct format for ties."""
+    winners = ["Alice", "Bob"]
+    winning_score = 100
+    scores = {"Alice": 100, "Bob": 100, "Charlie": 30}
+    target_score = 100
+    total_turns = 12
+
+    output = game_loop._format_victory_summary(
+        winners, winning_score, scores, target_score, total_turns
+    )
+
+    # Check tie handling
+    assert "Winners (tie):" in output
+    assert "Alice" in output
+    assert "Bob" in output
+    assert "Winning Score: 100" in output
+    assert "Total Turns Completed: 12" in output
+
+
+def test_format_victory_summary_scores_sorted(game_loop: GameLoop) -> None:
+    """Test _format_victory_summary sorts scores in descending order."""
+    winners = ["Alice"]
+    winning_score = 100
+    scores = {"Bob": 30, "Alice": 100, "Charlie": 50}
+    target_score = 100
+    total_turns = 10
+
+    output = game_loop._format_victory_summary(
+        winners, winning_score, scores, target_score, total_turns
+    )
+
+    # Find positions of player names in output
+    alice_pos = output.find("Alice: 100")
+    charlie_pos = output.find("Charlie: 50")
+    bob_pos = output.find("Bob: 30")
+
+    # Verify descending order (method handles sorting internally)
+    assert alice_pos < charlie_pos < bob_pos
+
+
+def test_log_game_over_includes_turn_count_in_transcript(
+    game_loop: GameLoop,
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
+) -> None:
+    """Test _log_game_over includes turn count in transcript."""
+    mock_game_state.scores = {"Alice": 105, "Bob": 50}
+    mock_game_state.target_score = 100
+    mock_game_state.move_number = 20
+
+    winners = ["Alice"]
+    winning_score = 105
+
+    game_loop._log_game_over(winners, winning_score)
+
+    # Verify transcript was logged
+    transcript_call = mock_game_manager.logger.log_transcript.call_args
+    transcript_text = transcript_call[0][0]
+
+    # Check that transcript includes turn count and game over banner
+    assert "Total Turns Completed: 20" in transcript_text
+    assert "GAME OVER" in transcript_text
+    assert "VICTORY ACHIEVED" in transcript_text
+
+
+def test_log_game_over_sorts_scores_in_transcript(
+    game_loop: GameLoop,
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
+) -> None:
+    """Test _log_game_over sorts scores in descending order in transcript."""
+    mock_game_state.scores = {
+        "Charlie": 30,
+        "Alice": 105,
+        "Bob": 50,
+    }
+    mock_game_state.target_score = 100
+    mock_game_state.move_number = 15
+
+    winners = ["Alice"]
+    winning_score = 105
+
+    game_loop._log_game_over(winners, winning_score)
+
+    # Verify transcript was logged
+    transcript_call = mock_game_manager.logger.log_transcript.call_args
+    transcript_text = transcript_call[0][0]
+
+    # Find positions of players in transcript
+    alice_pos = transcript_text.find("Alice")
+    bob_pos = transcript_text.find("Bob")
+    charlie_pos = transcript_text.find("Charlie")
+
+    # Verify descending order (Alice 105, Bob 50, Charlie 30)
+    assert alice_pos < bob_pos < charlie_pos

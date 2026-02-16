@@ -213,12 +213,36 @@ def main() -> None:
         logger.error(f"Error initializing game loop: {e}")
         sys.exit(1)
 
+    # Check if game has already been completed
+    try:
+        victory_exists, winners, winning_score = (
+            game_loop.check_existing_victory()
+        )
+
+        if victory_exists:
+            logger.info("Game already completed, displaying victory summary")
+            # Game finished - display summary and exit without new turn
+            # (Don't log - that was done when victory first occurred)
+            assert manager.game_state is not None
+            victory_summary = game_loop._format_victory_summary(
+                winners=winners,
+                winning_score=winning_score,
+                scores=manager.game_state.scores,
+                target_score=manager.game_state.target_score or 0,
+                total_turns=manager.game_state.move_number,
+            )
+            print(victory_summary)
+            logger.info("Exiting: game already completed")
+            sys.exit(0)
+    except Exception as e:
+        logger.error(f"Error checking victory status: {e}", exc_info=True)
+        sys.exit(1)
+
     # Run single turn
     try:
         logger.info("Starting turn execution")
         game_over = game_loop.run_turn()
         if game_over:
-            print("\n Game complete. Victory condition reached.")
             logger.info("Game ended due to target score.")
         else:
             print("\n Turn complete. State saved.")
