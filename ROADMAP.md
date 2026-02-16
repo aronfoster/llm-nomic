@@ -97,6 +97,8 @@ This is the long-term backlog and TODO scratchpad.
 ### Engine Features
 
 * **Improve `LLMPlayer`:**
+  * Prompt examples should draw from personality!
+    * Consider moving personalities into individual files
   * Implement advanced token-saving strategies, especially context caching
   * Implement async behavior (per model provider?)
   * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
@@ -114,20 +116,21 @@ This is the long-term backlog and TODO scratchpad.
         * **Data Model:** Expand `VoteMode` enum in `data_models.py` to include `UNANIMOUS_STRICT`, `CONSENSUS`, `MAJORITY_TOTAL`, and `MAJORITY_VOTING`.
         * **Engine Logic:** Update `GameLoop._tally_votes` to implement the specific denominator logic for each named mode.
         * **LLM Awareness:** Update `PromptBuilder` to dynamically inject a plain-language explanation of the current `vote_mode` into player prompts, ensuring players understand the tactical weight of an "ABSTAIN" vote.
+    * Improve initial ruleset: reduce superfluous, add clarity (e.g. rule 205 as it relates to scoring), consider including enging limitations
     * Allow `create_game.py` to select from multiple initial ruleset files.
     * Create more personalities: chaos monkey, showman
-    * Allow custom model config per game (e.g., for new/local models not in `models.yml`).
-    * Query provider APIs to get a list of available models?
+    * Think more about the llm model picker
+      * Should we allow custom model config per game (e.g., for new/local models not in `models.yml`)?
+      * Shoudl we query provider APIs to get a list of available models?
     * **Rule 111 Word Limit Enforcement:** Rule 111 caps discussion comments at 75 words, but the engine doesn't validate this. Decide whether to enforce in the engine (truncate/reject) or in the prompt (and accept the risk of LLM non-compliance). Document the decision either way.
 
 * **Tooling & Features:**
-    * Need to shift to a dynamic turn structure where if rules change the turn steps (e.g an additional round of discussion after voting) it can be supported. Might need to ask the judge to define the steps and provide some guidance to the players.
     * Specify versions for dependencies and start managing those (pin at least major versions in `requirements.txt` to prevent breakage from upstream changes)
-    * Prompt examples should draw from personality files!
     * Add `make fix` to Makefile
 
 * **Dynamic Game Structure**
-   * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.
+  * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.
+    * Therefore if rules change the turn steps (e.g an additional round of discussion after voting) it can be supported. Might need to ask the judge to define the steps and provide some guidance to the players.
 
 ### Visualization (Web app)
 
