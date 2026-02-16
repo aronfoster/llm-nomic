@@ -143,6 +143,7 @@ This is the long-term backlog and TODO scratchpad.
 * Plan out a end state for visualizing individual game, all games, rules, profiles for player (slice by model and personality), leaaderboard
 * Have badges or awards for players (models)
 * Maybe: Build a `build_site.py` script to convert the game history into a shareable HTML file.
+* Include a rating based on cost per running model. Perhaps cost per game? Cost per ELO score point?
 
 ### Graphical UI
 
