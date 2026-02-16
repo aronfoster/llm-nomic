@@ -1008,12 +1008,80 @@ class GameLoop:
 
         return True, top_winners, top_score
 
+    def check_existing_victory(self) -> tuple[bool, list[str], int]:
+        """
+        Check if victory has already been achieved in the loaded game state.
+
+        This method is used to detect if a game has already ended before
+        starting a new turn. It wraps _detect_victory() for external use.
+
+        Returns:
+            tuple[bool, list[str], int]: A tuple containing:
+                - bool: True if victory condition is met, False otherwise
+                - list[str]: List of winner names (empty if no victory)
+                - int: Winning score (0 if no victory)
+        """
+        return self._detect_victory()
+
+    def _print_victory_summary(
+        self,
+        winners: list[str],
+        winning_score: int,
+        all_scores: dict[str, int],
+        target_score: int,
+        total_turns: int,
+    ) -> None:
+        """
+        Print a comprehensive victory summary to the console.
+
+        Args:
+            winners: List of player names who won
+            winning_score: The winning score achieved
+            all_scores: Dictionary of all player scores
+            target_score: The target score that was reached
+            total_turns: Total number of completed turns
+        """
+        # Sort scores in descending order
+        sorted_scores = sorted(
+            all_scores.items(), key=lambda x: x[1], reverse=True
+        )
+
+        # Print victory banner
+        print("\n" + "=" * 70)
+        print("🏁 GAME OVER - VICTORY ACHIEVED! 🏁")
+        print("=" * 70)
+
+        # Print winner(s)
+        if len(winners) == 1:
+            print(f"\nWinner: {winners[0]}")
+        else:
+            winners_text = ", ".join(winners)
+            print(f"\nWinners (tie): {winners_text}")
+        print(f"Winning Score: {winning_score}")
+        print(f"Target Score: {target_score}")
+
+        # Print final scores
+        print("\nFinal Scores:")
+        for player_name, score in sorted_scores:
+            marker = " 👑" if player_name in winners else ""
+            print(f"  {player_name}: {score}{marker}")
+
+        # Print game statistics
+        print(f"\nTotal Turns Completed: {total_turns}")
+
+        # Print instructions
+        print("\nThe game has concluded. To review the complete game history,")
+        print("please see the transcript file in the game directory.")
+        print("To start a new game, create a fresh game directory.")
+        print("=" * 70 + "\n")
+
     def _log_game_over(self, winners: list[str], winning_score: int) -> None:
         """Log a GAME OVER event to the history and transcript."""
 
         assert self.game_manager.game_state is not None
 
         target_score = self.game_manager.game_state.target_score
+        assert target_score is not None  # Victory requires target_score
         scores = self.game_manager.game_state.scores
         winners_text = ", ".join(winners)
 
@@ -1030,6 +1098,11 @@ class GameLoop:
         label = "Winners" if len(winners) > 1 else "Winner"
         winner_line = f"{label}: {winners_text} (score: {winning_score})"
 
+        # Sort scores for transcript (descending order)
+        sorted_scores = sorted(
+            scores.items(), key=lambda x: x[1], reverse=True
+        )
+
         lines = [
             "# GAME OVER",
             f"Target score: {target_score}",
@@ -1038,14 +1111,24 @@ class GameLoop:
             "## Final Scores",
         ]
 
-        for player_name, score in scores.items():
+        for player_name, score in sorted_scores:
             lines.append(f"- **{player_name}:** {score}")
+
+        lines.append("")
+        lines.append(
+            f"Game completed after {self.game_manager.game_state.move_number} "
+            f"turn(s)."
+        )
 
         self.game_manager.logger.log_transcript("\n".join(lines))
 
-        print(
-            "\n🏁 GAME OVER! "
-            f"{winners_text} reached the target score of {target_score}."
+        # Print comprehensive victory summary to console
+        self._print_victory_summary(
+            winners=winners,
+            winning_score=winning_score,
+            all_scores=scores,
+            target_score=target_score,
+            total_turns=self.game_manager.game_state.move_number,
         )
 
     def _resolve_turn(
