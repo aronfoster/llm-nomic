@@ -223,10 +223,15 @@ def main() -> None:
             logger.info("Game already completed, displaying victory summary")
             # Game already finished - display summary and exit without new turn
             assert manager.game_state is not None
+            sorted_scores = sorted(
+                manager.game_state.scores.items(),
+                key=lambda x: x[1],
+                reverse=True,
+            )
             game_loop._print_victory_summary(
                 winners=winners,
                 winning_score=winning_score,
-                all_scores=manager.game_state.scores,
+                sorted_scores=sorted_scores,
                 target_score=manager.game_state.target_score or 0,
                 total_turns=manager.game_state.move_number,
             )

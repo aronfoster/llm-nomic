@@ -2214,11 +2214,14 @@ def test_print_victory_summary_single_winner(
     winners = ["Alice"]
     winning_score = 105
     all_scores = {"Alice": 105, "Bob": 50, "Charlie": 30}
+    sorted_scores = sorted(
+        all_scores.items(), key=lambda x: x[1], reverse=True
+    )
     target_score = 100
     total_turns = 15
 
     game_loop._print_victory_summary(
-        winners, winning_score, all_scores, target_score, total_turns
+        winners, winning_score, sorted_scores, target_score, total_turns
     )
 
     captured = capsys.readouterr()
@@ -2244,11 +2247,14 @@ def test_print_victory_summary_multiple_winners(
     winners = ["Alice", "Bob"]
     winning_score = 100
     all_scores = {"Alice": 100, "Bob": 100, "Charlie": 30}
+    sorted_scores = sorted(
+        all_scores.items(), key=lambda x: x[1], reverse=True
+    )
     target_score = 100
     total_turns = 12
 
     game_loop._print_victory_summary(
-        winners, winning_score, all_scores, target_score, total_turns
+        winners, winning_score, sorted_scores, target_score, total_turns
     )
 
     captured = capsys.readouterr()
@@ -2269,11 +2275,14 @@ def test_print_victory_summary_scores_sorted(
     winners = ["Alice"]
     winning_score = 100
     all_scores = {"Bob": 30, "Alice": 100, "Charlie": 50}
+    sorted_scores = sorted(
+        all_scores.items(), key=lambda x: x[1], reverse=True
+    )
     target_score = 100
     total_turns = 10
 
     game_loop._print_victory_summary(
-        winners, winning_score, all_scores, target_score, total_turns
+        winners, winning_score, sorted_scores, target_score, total_turns
     )
 
     captured = capsys.readouterr()

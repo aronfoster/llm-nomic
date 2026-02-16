@@ -1027,7 +1027,7 @@ class GameLoop:
         self,
         winners: list[str],
         winning_score: int,
-        all_scores: dict[str, int],
+        sorted_scores: list[tuple[str, int]],
         target_score: int,
         total_turns: int,
     ) -> None:
@@ -1037,14 +1037,11 @@ class GameLoop:
         Args:
             winners: List of player names who won
             winning_score: The winning score achieved
-            all_scores: Dictionary of all player scores
+            sorted_scores: List of (player_name, score) tuples in descending
+                          order by score
             target_score: The target score that was reached
             total_turns: Total number of completed turns
         """
-        # Sort scores in descending order
-        sorted_scores = sorted(
-            all_scores.items(), key=lambda x: x[1], reverse=True
-        )
 
         # Print victory banner
         print("\n" + "=" * 70)
@@ -1072,7 +1069,7 @@ class GameLoop:
         # Print instructions
         print("\nThe game has concluded. To review the complete game history,")
         print("please see the transcript file in the game directory.")
-        print("To start a new game, create a fresh game directory.")
+        print("To start a new game, run create_game.py.")
         print("=" * 70 + "\n")
 
     def _log_game_over(self, winners: list[str], winning_score: int) -> None:
@@ -1084,6 +1081,11 @@ class GameLoop:
         assert target_score is not None  # Victory requires target_score
         scores = self.game_manager.game_state.scores
         winners_text = ", ".join(winners)
+
+        # Sort scores once for both transcript and console (descending order)
+        sorted_scores = sorted(
+            scores.items(), key=lambda x: x[1], reverse=True
+        )
 
         self.game_manager.logger.log_event(
             "game_over",
@@ -1097,11 +1099,6 @@ class GameLoop:
 
         label = "Winners" if len(winners) > 1 else "Winner"
         winner_line = f"{label}: {winners_text} (score: {winning_score})"
-
-        # Sort scores for transcript (descending order)
-        sorted_scores = sorted(
-            scores.items(), key=lambda x: x[1], reverse=True
-        )
 
         lines = [
             "# GAME OVER",
@@ -1122,11 +1119,11 @@ class GameLoop:
 
         self.game_manager.logger.log_transcript("\n".join(lines))
 
-        # Print comprehensive victory summary to console
+        # Print comprehensive victory summary to console (reuse sorted scores)
         self._print_victory_summary(
             winners=winners,
             winning_score=winning_score,
-            all_scores=scores,
+            sorted_scores=sorted_scores,
             target_score=target_score,
             total_turns=self.game_manager.game_state.move_number,
         )
