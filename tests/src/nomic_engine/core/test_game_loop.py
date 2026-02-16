@@ -2211,15 +2211,12 @@ def test_format_victory_summary_single_winner(game_loop: GameLoop) -> None:
     """Test _format_victory_summary produces correct format for winner."""
     winners = ["Alice"]
     winning_score = 105
-    all_scores = {"Alice": 105, "Bob": 50, "Charlie": 30}
-    sorted_scores = sorted(
-        all_scores.items(), key=lambda x: x[1], reverse=True
-    )
+    scores = {"Alice": 105, "Bob": 50, "Charlie": 30}
     target_score = 100
     total_turns = 15
 
     output = game_loop._format_victory_summary(
-        winners, winning_score, sorted_scores, target_score, total_turns
+        winners, winning_score, scores, target_score, total_turns
     )
 
     # Check key elements are present
@@ -2241,15 +2238,12 @@ def test_format_victory_summary_multiple_winners(
     """Test _format_victory_summary produces correct format for ties."""
     winners = ["Alice", "Bob"]
     winning_score = 100
-    all_scores = {"Alice": 100, "Bob": 100, "Charlie": 30}
-    sorted_scores = sorted(
-        all_scores.items(), key=lambda x: x[1], reverse=True
-    )
+    scores = {"Alice": 100, "Bob": 100, "Charlie": 30}
     target_score = 100
     total_turns = 12
 
     output = game_loop._format_victory_summary(
-        winners, winning_score, sorted_scores, target_score, total_turns
+        winners, winning_score, scores, target_score, total_turns
     )
 
     # Check tie handling
@@ -2261,18 +2255,15 @@ def test_format_victory_summary_multiple_winners(
 
 
 def test_format_victory_summary_scores_sorted(game_loop: GameLoop) -> None:
-    """Test _format_victory_summary displays scores in descending order."""
+    """Test _format_victory_summary sorts scores in descending order."""
     winners = ["Alice"]
     winning_score = 100
-    all_scores = {"Bob": 30, "Alice": 100, "Charlie": 50}
-    sorted_scores = sorted(
-        all_scores.items(), key=lambda x: x[1], reverse=True
-    )
+    scores = {"Bob": 30, "Alice": 100, "Charlie": 50}
     target_score = 100
     total_turns = 10
 
     output = game_loop._format_victory_summary(
-        winners, winning_score, sorted_scores, target_score, total_turns
+        winners, winning_score, scores, target_score, total_turns
     )
 
     # Find positions of player names in output
@@ -2280,7 +2271,7 @@ def test_format_victory_summary_scores_sorted(game_loop: GameLoop) -> None:
     charlie_pos = output.find("Charlie: 50")
     bob_pos = output.find("Bob: 30")
 
-    # Verify descending order
+    # Verify descending order (method handles sorting internally)
     assert alice_pos < charlie_pos < bob_pos
 
 

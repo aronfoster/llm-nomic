@@ -1027,7 +1027,7 @@ class GameLoop:
         self,
         winners: list[str],
         winning_score: int,
-        sorted_scores: list[tuple[str, int]],
+        scores: dict[str, int],
         target_score: int,
         total_turns: int,
     ) -> str:
@@ -1037,14 +1037,18 @@ class GameLoop:
         Args:
             winners: List of player names who won
             winning_score: The winning score achieved
-            sorted_scores: List of (player_name, score) tuples in descending
-                          order by score
+            scores: Dictionary mapping player names to their scores
             target_score: The target score that was reached
             total_turns: Total number of completed turns
 
         Returns:
             Formatted victory summary string
         """
+        # Sort scores in descending order for display
+        sorted_scores = sorted(
+            scores.items(), key=lambda x: x[1], reverse=True
+        )
+
         lines = [
             "",
             "=" * 70,
@@ -1094,11 +1098,6 @@ class GameLoop:
         assert target_score is not None  # Victory requires target_score
         scores = self.game_manager.game_state.scores
 
-        # Sort scores once for both transcript and console (descending order)
-        sorted_scores = sorted(
-            scores.items(), key=lambda x: x[1], reverse=True
-        )
-
         # Log structured event for programmatic access
         self.game_manager.logger.log_event(
             "game_over",
@@ -1111,10 +1110,11 @@ class GameLoop:
         )
 
         # Generate victory summary (used for both transcript and console)
+        # Note: _format_victory_summary handles sorting internally
         victory_summary = self._format_victory_summary(
             winners=winners,
             winning_score=winning_score,
-            sorted_scores=sorted_scores,
+            scores=scores,
             target_score=target_score,
             total_turns=self.game_manager.game_state.move_number,
         )

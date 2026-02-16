@@ -224,15 +224,10 @@ def main() -> None:
             # Game finished - display summary and exit without new turn
             # (Don't log - that was done when victory first occurred)
             assert manager.game_state is not None
-            sorted_scores = sorted(
-                manager.game_state.scores.items(),
-                key=lambda x: x[1],
-                reverse=True,
-            )
             victory_summary = game_loop._format_victory_summary(
                 winners=winners,
                 winning_score=winning_score,
-                sorted_scores=sorted_scores,
+                scores=manager.game_state.scores,
                 target_score=manager.game_state.target_score or 0,
                 total_turns=manager.game_state.move_number,
             )
