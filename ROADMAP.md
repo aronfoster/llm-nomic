@@ -40,11 +40,12 @@ Our architecture is built on these principles:
 
 1. **Judge scoring improvements**  
    - Judge scoring prompt clearly expresses whether the proposal passes or fails 
-   - Ensure scoring of proposed rule does **not** apply this turn if Rule 205 remains unchanged (clarify in prompt if needed).
+   - Explore rule filtering so only the ones containing "point" and "score" are sent to the scoring judge
+   - Ensure it is clear that points in the proposed rule do not apply to this round's scoring (unless rule 205 is changed?)
 
-2. **Post-victory turn handling**  
-   - After victory detected, further turn attempts should immediately exit with clear log/message.
-     - Consider game summary, with victor, scores, turns, etc.
+2. **COMPLETED** ~~Post-victory turn handling~~  
+   - ~~After victory detected, further turn attempts should immediately exit with clear log/message.~~
+     - ~~Consider game summary, with victor, scores, turns, etc.~~
 
 3. **Unanimous → Majority rule transition failure**  
    - Base rules require switch to majority after 2 complete cycles → engine does not currently enforce.  
