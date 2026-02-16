@@ -28,7 +28,12 @@ class BasePlayer(ABC):
         self.player_name = player_name
 
     @abstractmethod
-    def propose(self, game_state: GameState, rules: list[Rule]) -> Proposal:
+    def propose(
+        self,
+        game_state: GameState,
+        rules: list[Rule],
+        continue_turn: bool = False,
+    ) -> Proposal:
         """
         Generate a proposal for a rule change.
 
@@ -76,6 +81,16 @@ class BasePlayer(ABC):
             A complete Vote object representing the player's vote.
         """
         pass
+
+    def note_withdrawal_for_retry(
+        self,
+        discussions: list[Discussion],
+        withdrawal_attempt: int,
+        max_withdrawal_retries: int,
+    ) -> None:
+        """Optional hook to preserve cumulative context for proposal pivots."""
+
+        return None
 
     @abstractmethod
     def revise(

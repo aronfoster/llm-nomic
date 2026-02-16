@@ -15,6 +15,7 @@ from ..data_models import (
     Rule,
     Vote,
     VoteResult,
+    WithdrawalPolicy,
 )
 from ..judge import BaseJudge
 from ..judge.human_judge import HumanJudge
@@ -101,33 +102,76 @@ class GameLoop:
             # Get current player
             current_player = self._get_current_player()
 
-            # Step 1: Propose (with validation)
-            proposal = self._get_and_validate_proposal(current_player)
-            if proposal is None:
-                logger.warning("Turn ended due to illegal proposal")
+            max_withdrawal_retries = 2
+            withdrawal_policy = WithdrawalPolicy.FORFEIT
+            if self.game_manager.game_config is not None:
+                max_withdrawal_retries = (
+                    self.game_manager.game_config.max_withdrawal_retries
+                )
+                withdrawal_policy = (
+                    self.game_manager.game_config.withdrawal_policy
+                )
+
+            proposal: Proposal | None = None
+            discussions: list[Discussion] = []
+            turn_ready_for_vote = False
+
+            # Loop covers initial attempt plus configured withdrawal pivots.
+            for withdrawal_attempt in range(max_withdrawal_retries + 1):
+                # Step 1: Propose (with validation)
+                proposal = self._get_and_validate_proposal(
+                    current_player,
+                    continue_turn=withdrawal_attempt > 0,
+                )
+                if proposal is None:
+                    logger.warning("Turn ended due to illegal proposal")
+                    break
+
+                # Step 2: Discuss
+                discussions = self._collect_discussions(proposal, self.players)
+
+                # Step 3: Revise
+                revised_proposal = self._handle_revision(
+                    current_player, proposal, discussions
+                )
+
+                if revised_proposal is not None:
+                    proposal = revised_proposal
+                    turn_ready_for_vote = True
+                    break
+
+                logger.warning(
+                    "Proposal %s withdrawn by %s",
+                    proposal.proposal_id,
+                    current_player.player_name,
+                )
+
+                retries_exhausted = (
+                    withdrawal_attempt >= max_withdrawal_retries
+                )
+                if (
+                    withdrawal_policy != WithdrawalPolicy.RETRY
+                    or retries_exhausted
+                ):
+                    self._advance_turn_state()
+                    self.game_manager.save_game_state()
+                    break
+
+                current_player.note_withdrawal_for_retry(
+                    discussions=discussions,
+                    withdrawal_attempt=withdrawal_attempt + 1,
+                    max_withdrawal_retries=max_withdrawal_retries,
+                )
+                logger.info(
+                    "Retrying proposal after withdrawal: attempt %d/%d",
+                    withdrawal_attempt + 1,
+                    max_withdrawal_retries,
+                )
+
+            if not turn_ready_for_vote:
                 return False
 
-            # Step 2: Discuss
-            discussions: list[Discussion] = self._collect_discussions(
-                proposal, self.players
-            )
-
-            # Step 3: Revise
-            revised_proposal = self._handle_revision(
-                current_player, proposal, discussions
-            )
-
-            # Check if proposal was withdrawn
-            if revised_proposal is None:
-                logger.warning(
-                    f"Proposal {proposal.proposal_id} withdrawn by "
-                    f"{current_player.player_name}"
-                )
-                # TODO: Log this withdrawal to the transcript
-                return False  # End the turn
-
-            # If not withdrawn, use the revised proposal for voting
-            proposal = revised_proposal
+            assert proposal is not None
 
             # Step 4: Vote
             votes = self._collect_votes(proposal, self.players)
@@ -232,7 +276,7 @@ class GameLoop:
         self.game_manager.logger.log_transcript(transcript_entry)
 
     def _get_and_validate_proposal(
-        self, current_player: BasePlayer
+        self, current_player: BasePlayer, continue_turn: bool = False
     ) -> Proposal | None:
         """
         Get proposal from current player and validate it.
@@ -258,6 +302,7 @@ class GameLoop:
         proposal = current_player.propose(
             game_state=self.game_manager.game_state,
             rules=self.game_manager.rules_manager.rules,
+            continue_turn=continue_turn,
         )
 
         logger.debug(

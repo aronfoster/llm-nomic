@@ -246,6 +246,24 @@ Remember:
 
 No other text. Just the JSON object:"""
 
+
+WITHDRAWAL_RETRY_TEMPLATE = (
+    """Your previous proposal was withdrawn after discussion.
+
+"""
+    """Pivot and propose a DIFFERENT rule change that addresses the """
+    """concerns above.
+Use the full turn context already in this """
+    """conversation (proposal, discussion,
+and withdrawal) before """
+    """you respond.
+
+"""
+    """Attempt: {withdrawal_attempt}/{max_withdrawal_retries}
+"""
+    """Return only valid JSON using the standard proposal schema."""
+)
+
 # =====================================================================
 # ATOMIZED PROMPT BLOCKS (Sprint 6 - Stateful Context)
 # These composable blocks are used by PromptBuilder for stateful contexts.

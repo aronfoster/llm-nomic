@@ -1898,3 +1898,72 @@ class TestLLMPlayerStatefulHistory:
         assert len(player.turn_history) == 2
         assert player.turn_history[0].role == "system"
         assert player.turn_history[0].content == "New proposer system prompt"
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_continue_turn_preserves_history(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Test pivot propose keeps history when continue_turn=True."""
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        proposer_system = ChatMessage(
+            role="system", content="Proposer system prompt"
+        )
+        (
+            mock_prompt_builder_instance.build_proposer_system_message.return_value
+        ) = proposer_system
+
+        valid_response = (
+            '{"private_thoughts":"p","type":"Add",'
+            '"target_rule_id":null,"new_text":"Pivot","rationale":"r"}'
+        )
+        mock_api_instance.get_completion.return_value = valid_response
+        mock_parse.return_value = {
+            "private_thoughts": "p",
+            "type": "Add",
+            "target_rule_id": None,
+            "new_text": "Pivot",
+            "rationale": "r",
+        }
+
+        player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Existing proposer system"),
+            ChatMessage(role="assistant", content="First proposal"),
+            ChatMessage(role="user", content="Withdrawal pivot instruction"),
+        ]
+
+        player.propose(game_state, rules, continue_turn=True)
+
+        assert len(player.turn_history) == 4
+        assert player.turn_history[0].content == "Existing proposer system"
+        assert player.turn_history[-1].role == "assistant"
+
+    def test_note_withdrawal_for_retry_appends_pivot_instruction(
+        self,
+        model_config,
+    ):
+        """Test withdrawal retry hook appends a user pivot message."""
+        player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [ChatMessage(role="system", content="S")]
+
+        player.note_withdrawal_for_retry(
+            discussions=[Discussion(player_name="Bob", text="Too vague")],
+            withdrawal_attempt=1,
+            max_withdrawal_retries=2,
+        )
+
+        assert len(player.turn_history) == 2
+        assert player.turn_history[-1].role == "user"
+        assert "withdrawn" in player.turn_history[-1].content.lower()
