@@ -26,7 +26,12 @@ class HumanPlayer(BasePlayer):
     decision point using the standard input() function.
     """
 
-    def propose(self, game_state: GameState, rules: list[Rule]) -> Proposal:
+    def propose(
+        self,
+        game_state: GameState,
+        rules: list[Rule],
+        continue_turn: bool = False,
+    ) -> Proposal:
         """
         Interactively gather a proposal from the human player.
 
@@ -43,7 +48,13 @@ class HumanPlayer(BasePlayer):
         Returns:
             A complete Proposal object based on user input.
         """
-        print(f"\n--- {self.player_name}'s Turn: Making a Proposal ---")
+        if continue_turn:
+            print(
+                f"\n--- {self.player_name}'s Turn: "
+                "Pivoting After Withdrawal ---"
+            )
+        else:
+            print(f"\n--- {self.player_name}'s Turn: Making a Proposal ---")
 
         # Get proposal type
         while True:

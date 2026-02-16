@@ -79,7 +79,12 @@ class LLMPlayer(BasePlayer):
         """
         self.turn_history = [system_message]
 
-    def propose(self, game_state: GameState, rules: list[Rule]) -> Proposal:
+    def propose(
+        self,
+        game_state: GameState,
+        rules: list[Rule],
+        continue_turn: bool = False,
+    ) -> Proposal:
         """
         Generate a proposal using an LLM.
 
@@ -107,8 +112,13 @@ class LLMPlayer(BasePlayer):
             personality=self.personality.value,
         )
 
-        # Reset history for new turn
-        self._reset_history(system_message)
+        # Reset history for a fresh turn, unless this is a pivot retry.
+        if not continue_turn:
+            self._reset_history(system_message)
+        elif not self.turn_history:
+            # Defensive fallback: initialize context if history is unexpectedly
+            # empty even though caller requested a cumulative retry.
+            self._reset_history(system_message)
 
         # Retry loop with maximum attempts
         max_proposal_retries = self.tuning.max_propose_retries
@@ -425,6 +435,23 @@ class LLMPlayer(BasePlayer):
             player_name=self.player_name,
             vote="ABSTAIN",
             reason="LLM Error: Failed to generate valid vote.",
+        )
+
+    def note_withdrawal_for_retry(
+        self,
+        discussions: list[Discussion],
+        withdrawal_attempt: int,
+        max_withdrawal_retries: int,
+    ) -> None:
+        """Append a pivot prompt while preserving full turn context."""
+        del discussions
+
+        pivot_message = prompts.WITHDRAWAL_RETRY_TEMPLATE.format(
+            withdrawal_attempt=withdrawal_attempt,
+            max_withdrawal_retries=max_withdrawal_retries,
+        )
+        self.turn_history.append(
+            ChatMessage(role="user", content=pivot_message)
         )
 
     def revise(

@@ -25,6 +25,7 @@ from src.nomic_engine.data_models import (
     RuleStatus,
     Vote,
     VoteResult,
+    WithdrawalPolicy,
 )
 from src.nomic_engine.players.base_player import BasePlayer
 
@@ -83,6 +84,10 @@ def mock_game_manager(
     # Mock save methods
     manager.save_game_state = Mock()
     manager.save_rules = Mock()
+
+    manager.game_config = Mock()
+    manager.game_config.withdrawal_policy = WithdrawalPolicy.FORFEIT
+    manager.game_config.max_withdrawal_retries = 2
 
     return manager
 
@@ -1291,42 +1296,135 @@ def test_run_turn_handles_exceptions(
         game_loop.run_turn()
 
 
-def test_run_turn_stops_if_proposal_withdrawn(
-    game_loop: GameLoop, mock_players: list[Mock], mock_game_manager: Mock
+def test_run_turn_forfeits_and_advances_if_proposal_withdrawn(
+    game_loop: GameLoop,
+    mock_players: list[Mock],
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
 ) -> None:
-    """Test run_turn stops early if proposal is withdrawn during revision."""
+    """Test withdrawn proposal forfeits turn and advances rotation."""
     alice = mock_players[0]
 
-    # Mock the player's revise method to return None (withdrawal)
+    # Default policy is FORFEIT in fixture
     alice.revise = Mock(return_value=None)
 
     game_loop.run_turn()
 
-    # Alice proposed
     alice.propose.assert_called_once()
-
-    # CRITICAL: Alice (proposer) should NOT be prompted for discussion
-    # Only Bob and Charlie should be prompted (discussion happens before
-    # revision)
     alice.discuss.assert_not_called()
     mock_players[1].discuss.assert_called_once()
     mock_players[2].discuss.assert_called_once()
-
-    # Alice was given chance to revise
     alice.revise.assert_called_once()
 
-    # But no voting should happen for any player (proposal was withdrawn)
+    # No voting or judge resolution when withdrawn
+    alice.vote.assert_not_called()
+    mock_players[1].vote.assert_not_called()
+    mock_players[2].vote.assert_not_called()
+    mock_game_manager.rules_manager.apply_proposal.assert_not_called()
+    mock_game_manager.save_rules.assert_not_called()
+
+    # Turn state should advance and be persisted
+    assert mock_game_state.current_player_name == "Bob"
+    assert mock_game_state.move_number == 2
+    mock_game_manager.save_game_state.assert_called_once()
+
+    # Transcript should not be logged for withdrawn proposals
+    mock_game_manager.logger.log_transcript.assert_not_called()
+
+
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
+@patch("builtins.input", side_effect=["n", "0", "0", "0"])
+def test_run_turn_retries_withdrawal_when_policy_retry(
+    mock_input: Mock,
+    mock_maintain_state: Mock,
+    game_loop: GameLoop,
+    mock_players: list[Mock],
+    mock_game_manager: Mock,
+) -> None:
+    """Test RETRY policy pivots proposal and preserves turn ownership."""
+    alice = mock_players[0]
+    mock_game_manager.game_config.withdrawal_policy = WithdrawalPolicy.RETRY
+    mock_game_manager.game_config.max_withdrawal_retries = 2
+
+    first = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        new_text="First proposal",
+        rationale="Attempt one",
+    )
+    second = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        new_text="Second proposal",
+        rationale="Attempt two",
+    )
+
+    alice.propose.side_effect = [first, second]
+    alice.revise = Mock(side_effect=[None, second])
+
+    game_loop.run_turn()
+    assert mock_input.call_count == 4
+    mock_maintain_state.assert_called_once()
+
+    assert alice.propose.call_count == 2
+    alice.note_withdrawal_for_retry.assert_called_once()
+    assert mock_players[1].discuss.call_count == 2
+    assert mock_players[2].discuss.call_count == 2
+
+    # Voting proceeds after successful pivot
+    alice.vote.assert_called_once()
+    mock_players[1].vote.assert_called_once()
+    mock_players[2].vote.assert_called_once()
+
+
+def test_run_turn_advances_when_retry_budget_exhausted(
+    game_loop: GameLoop,
+    mock_players: list[Mock],
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
+) -> None:
+    """Test RETRY policy eventually forfeits when retries are exhausted."""
+    alice = mock_players[0]
+    mock_game_manager.game_config.withdrawal_policy = WithdrawalPolicy.RETRY
+    mock_game_manager.game_config.max_withdrawal_retries = 1
+
+    alice.propose.side_effect = [
+        Proposal(
+            proposer_name="Alice",
+            move_number=1,
+            type=ProposalType.ADD,
+            new_text="Retry one",
+            rationale="Attempt one",
+        ),
+        Proposal(
+            proposer_name="Alice",
+            move_number=1,
+            type=ProposalType.ADD,
+            new_text="Retry two",
+            rationale="Attempt two",
+        ),
+    ]
+    alice.revise = Mock(return_value=None)
+
+    game_loop.run_turn()
+
+    # Initial proposal + one retry
+    assert alice.propose.call_count == 2
+    alice.note_withdrawal_for_retry.assert_called_once()
+
+    # No voting after exhausting retries
     alice.vote.assert_not_called()
     mock_players[1].vote.assert_not_called()
     mock_players[2].vote.assert_not_called()
 
-    # No judge interaction should happen
-    mock_game_manager.rules_manager.apply_proposal.assert_not_called()
-    mock_game_manager.save_game_state.assert_not_called()
-    mock_game_manager.save_rules.assert_not_called()
-
-    # Transcript should not be logged for withdrawn proposals
-    mock_game_manager.logger.log_transcript.assert_not_called()
+    assert mock_game_state.current_player_name == "Bob"
+    assert mock_game_state.move_number == 2
+    mock_game_manager.save_game_state.assert_called_once()
 
 
 # --- Tests for Transcript Formatting ---

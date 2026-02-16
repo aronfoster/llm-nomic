@@ -58,6 +58,13 @@ class VoteMode(str, Enum):
     MAJORITY = "majority"
 
 
+class WithdrawalPolicy(str, Enum):
+    """Enum for withdrawn proposal handling behavior."""
+
+    FORFEIT = "forfeit"
+    RETRY = "retry"
+
+
 # --- Rule Data Model (for rules.jsonl) ---
 
 
@@ -159,6 +166,21 @@ class GameConfig(BaseModel):
     tuning: EngineTuningConfig = Field(
         default_factory=EngineTuningConfig,
         description="Centralized retry and threshold tuning values.",
+    )
+    withdrawal_policy: WithdrawalPolicy = Field(
+        default=WithdrawalPolicy.FORFEIT,
+        description=(
+            "Behavior when the proposer withdraws after discussion: "
+            "forfeit turn or retry with cumulative context."
+        ),
+    )
+    max_withdrawal_retries: int = Field(
+        default=2,
+        ge=0,
+        description=(
+            "Maximum number of proposal pivots after withdrawal when "
+            "withdrawal_policy is retry."
+        ),
     )
 
 

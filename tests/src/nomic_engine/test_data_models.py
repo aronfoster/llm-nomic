@@ -17,6 +17,7 @@ from src.nomic_engine.data_models import (
     Proposal,
     Rule,
     Vote,
+    WithdrawalPolicy,
 )
 from src.nomic_engine.judge.base_judge import StateUpdates
 
@@ -408,3 +409,25 @@ def test_game_config_allows_tuning_override():
     assert config.tuning.max_judge_veto_retries == 7
     assert config.tuning.max_judge_score_retries == 8
     assert config.tuning.max_judge_maintain_state_retries == 9
+
+
+def test_game_config_withdrawal_defaults():
+    """Test GameConfig defaults to forfeit withdrawal policy."""
+    config = GameConfig(
+        players=[PlayerConfig(name="Alice", model_id="gpt-4o")]
+    )
+
+    assert config.withdrawal_policy == WithdrawalPolicy.FORFEIT
+    assert config.max_withdrawal_retries == 2
+
+
+def test_game_config_withdrawal_override():
+    """Test GameConfig accepts withdrawal policy overrides."""
+    config = GameConfig(
+        players=[PlayerConfig(name="Alice", model_id="gpt-4o")],
+        withdrawal_policy=WithdrawalPolicy.RETRY,
+        max_withdrawal_retries=3,
+    )
+
+    assert config.withdrawal_policy == WithdrawalPolicy.RETRY
+    assert config.max_withdrawal_retries == 3

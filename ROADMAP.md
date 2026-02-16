@@ -53,12 +53,13 @@ Our architecture is built on these principles:
 
 ### 2. Dynamic Withdrawal & Cumulative Pivot Logic
 
-* **Goal**: Implement a configurable policy for handled withdrawn proposals that uses "Cumulative Context" to improve retry quality and ensure proper turn rotation.
-* **Configuration**: Add `withdrawal_policy` (`FORFEIT` or `RETRY`) and `max_withdrawal_retries` (default 2) to `GameConfig`.
-* **Implementation Logic**:
-* **Cumulative Context Requirement**: The developer must ensure that when a player pivots (retries a proposal), the **entire previous turn history** (Initial Proposal -> All Peer Discussions -> Withdrawal Event) is preserved in the player's `turn_history`. **Do not reset context.** This maximizes provider-level caching (e.g., for ChatGPT 5.2) and ensures the player "remembers" why the previous attempt failed.
-* **Rotation Fix**: If a proposal is withdrawn and the policy is `FORFEIT` (or retries are exhausted), `GameLoop.run_turn()` must explicitly call `_advance_turn_state()` before returning.
-* **Engine Orchestration**: Update `GameLoop.run_turn()` in `src/nomic_engine/core/game_loop.py` to wrap Steps 1-3 in a retry loop based on these new settings.
+* ✅ **Completed**: Dynamic withdrawal handling now supports policy-driven forfeit/retry behavior with cumulative pivot context.
+* **Implemented**:
+  * Added `withdrawal_policy` (`forfeit` or `retry`) and `max_withdrawal_retries` (default `2`) to `GameConfig`.
+  * Updated `GameLoop.run_turn()` to wrap Steps 1-3 in a withdrawal retry loop.
+  * Enforced rotation fix: withdrawn proposals now explicitly advance turn state and persist `game_state` when policy is `FORFEIT` or retry budget is exhausted.
+  * Added cumulative-context pivot hook (`note_withdrawal_for_retry`) so LLM players preserve full `turn_history` across retries and append a targeted pivot prompt instead of resetting proposal context.
+  * Added/updated unit tests for forfeit behavior, retry pivots, retry exhaustion, and new config fields.
 
 
 * **Example 1: The Forfeit (Move 15, current player ChatGPT 5.2)**
