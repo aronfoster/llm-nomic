@@ -221,20 +221,22 @@ def main() -> None:
 
         if victory_exists:
             logger.info("Game already completed, displaying victory summary")
-            # Game already finished - display summary and exit without new turn
+            # Game finished - display summary and exit without new turn
+            # (Don't log - that was done when victory first occurred)
             assert manager.game_state is not None
             sorted_scores = sorted(
                 manager.game_state.scores.items(),
                 key=lambda x: x[1],
                 reverse=True,
             )
-            game_loop._print_victory_summary(
+            victory_summary = game_loop._format_victory_summary(
                 winners=winners,
                 winning_score=winning_score,
                 sorted_scores=sorted_scores,
                 target_score=manager.game_state.target_score or 0,
                 total_turns=manager.game_state.move_number,
             )
+            print(victory_summary)
             logger.info("Exiting: game already completed")
             sys.exit(0)
     except Exception as e:

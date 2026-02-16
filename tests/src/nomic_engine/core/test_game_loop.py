@@ -2207,10 +2207,8 @@ def test_check_existing_victory_with_tie(
     assert winning_score == 100
 
 
-def test_print_victory_summary_single_winner(
-    game_loop: GameLoop, capsys
-) -> None:
-    """Test _print_victory_summary displays correct format for winner."""
+def test_format_victory_summary_single_winner(game_loop: GameLoop) -> None:
+    """Test _format_victory_summary produces correct format for winner."""
     winners = ["Alice"]
     winning_score = 105
     all_scores = {"Alice": 105, "Bob": 50, "Charlie": 30}
@@ -2220,12 +2218,9 @@ def test_print_victory_summary_single_winner(
     target_score = 100
     total_turns = 15
 
-    game_loop._print_victory_summary(
+    output = game_loop._format_victory_summary(
         winners, winning_score, sorted_scores, target_score, total_turns
     )
-
-    captured = capsys.readouterr()
-    output = captured.out
 
     # Check key elements are present
     assert "GAME OVER" in output
@@ -2240,10 +2235,10 @@ def test_print_victory_summary_single_winner(
     assert "transcript" in output.lower()
 
 
-def test_print_victory_summary_multiple_winners(
-    game_loop: GameLoop, capsys
+def test_format_victory_summary_multiple_winners(
+    game_loop: GameLoop,
 ) -> None:
-    """Test _print_victory_summary displays correct format for tied winners."""
+    """Test _format_victory_summary produces correct format for ties."""
     winners = ["Alice", "Bob"]
     winning_score = 100
     all_scores = {"Alice": 100, "Bob": 100, "Charlie": 30}
@@ -2253,12 +2248,9 @@ def test_print_victory_summary_multiple_winners(
     target_score = 100
     total_turns = 12
 
-    game_loop._print_victory_summary(
+    output = game_loop._format_victory_summary(
         winners, winning_score, sorted_scores, target_score, total_turns
     )
-
-    captured = capsys.readouterr()
-    output = captured.out
 
     # Check tie handling
     assert "Winners (tie):" in output
@@ -2268,10 +2260,8 @@ def test_print_victory_summary_multiple_winners(
     assert "Total Turns Completed: 12" in output
 
 
-def test_print_victory_summary_scores_sorted(
-    game_loop: GameLoop, capsys
-) -> None:
-    """Test _print_victory_summary displays scores in descending order."""
+def test_format_victory_summary_scores_sorted(game_loop: GameLoop) -> None:
+    """Test _format_victory_summary displays scores in descending order."""
     winners = ["Alice"]
     winning_score = 100
     all_scores = {"Bob": 30, "Alice": 100, "Charlie": 50}
@@ -2281,12 +2271,9 @@ def test_print_victory_summary_scores_sorted(
     target_score = 100
     total_turns = 10
 
-    game_loop._print_victory_summary(
+    output = game_loop._format_victory_summary(
         winners, winning_score, sorted_scores, target_score, total_turns
     )
-
-    captured = capsys.readouterr()
-    output = captured.out
 
     # Find positions of player names in output
     alice_pos = output.find("Alice: 100")
@@ -2316,9 +2303,10 @@ def test_log_game_over_includes_turn_count_in_transcript(
     transcript_call = mock_game_manager.logger.log_transcript.call_args
     transcript_text = transcript_call[0][0]
 
-    # Check that transcript includes turn count
-    assert "20 turn(s)" in transcript_text
-    assert "# GAME OVER" in transcript_text
+    # Check that transcript includes turn count and game over banner
+    assert "Total Turns Completed: 20" in transcript_text
+    assert "GAME OVER" in transcript_text
+    assert "VICTORY ACHIEVED" in transcript_text
 
 
 def test_log_game_over_sorts_scores_in_transcript(
