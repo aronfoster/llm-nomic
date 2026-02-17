@@ -984,39 +984,32 @@ class GameLoop:
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
 
-        # Check if vote_mode is already majority (idempotent)
         current_vote_mode = self.game_manager.game_state.flags.get(
             "vote_mode", "unanimous"
         )
         if current_vote_mode == "majority":
             return
 
-        # Check if Rule 203 still exists (not amended)
         rule_203 = self.game_manager.rules_manager._find_rule_by_id("203")
         if rule_203 is None:
-            # Rule 203 has been amended, so don't apply automatic transition
+            # Rule 203 has been amended, don't apply automatic transition
             return
 
-        # Calculate completed circuits
         # A complete circuit = all players taking one turn
-        # Circuit completes at the end of each multiple of N turns
+        # Completes at the end of each multiple of N turns
         move_number = self.game_manager.game_state.move_number
         num_players = len(self.game_manager.game_state.turn_order)
         completed_circuits = (move_number - 1) // num_players
 
-        # Transition if exactly 2 circuits have been completed
         if completed_circuits >= 2:
-            # Apply the transition
             self.game_manager.game_state.flags["vote_mode"] = "majority"
 
-            # Log INFO message
             logger.info(
                 "Automatic Rule 203 transition: vote_mode changed from "
                 "'unanimous' to 'majority' after %d complete circuits",
                 completed_circuits,
             )
 
-            # Add transcript entry
             transcript_entry = (
                 "[ENGINE] Automatic transition: Rule 203 has been in "
                 f"effect for {completed_circuits} complete circuits "
