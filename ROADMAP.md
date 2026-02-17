@@ -29,7 +29,7 @@ Our architecture is built on these principles:
 - Final text has the wrong turn number
 - Add the model and personality to each player as a label when their turn is on the screen
   - Read from config.yml
-- Rule 205 edge case: if a rule awarding points passes this turn, it may or may not apply to this turn's scoring depending on interpretation. Currently unhandled. Needs rules-layer + engine decision.
+- Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
 
 ## Sprint 29: Reliable Judge & Clean Exits (Bug-Fix & Polish focused)
 
