@@ -18,7 +18,7 @@ Our architecture is built on these principles:
 - ~~Judge on lower quality models isn't scoring appropriately~~ → Partially addressed via prompt improvements in Sprint 28/29. Still verify veto/scoring edge case.
 - ~~Proposals that pass but are judge vetoed should still award points~~ → Engine likely correct; confirm via log/prompt fix
 - After game victory, running another turn should immediately exit
-- The game does not automatically switch from unanimous to majority after 2 complete cycles
+- ~~The game does not automatically switch from unanimous to majority after 2 complete cycles~~ → COMPLETED
 - Ensure revision can correctly change type (e.g. TRANSMUTE to AMEND)
 
 ### Low Priority
@@ -49,10 +49,10 @@ Our architecture is built on these principles:
    - ~~After victory detected, further turn attempts should immediately exit with clear log/message.~~
      - ~~Consider game summary, with victor, scores, turns, etc.~~
 
-3. **Unanimous → Majority rule transition failure**  
-   - Base rules require switch to majority after 2 complete cycles → engine does not currently enforce.  
-   - Implement automatic rule amendment / state update.  
-   - Add small test suite for cycle counting and vote_mode switching.
+3. **COMPLETED** ~~Unanimous → Majority rule transition failure~~
+   - ~~Base rules require switch to majority after 2 complete cycles → engine does not currently enforce.~~
+   - ~~Implement automatic rule amendment / state update.~~
+   - ~~Add small test suite for cycle counting and vote_mode switching.~~
 
 4. **Revision type changes**  
    - **Implement**: Revisions should now be permitted to change proposal type (e.g., TRANSMUTE → AMEND).  
@@ -113,6 +113,7 @@ This is the long-term backlog and TODO scratchpad.
   * Add per-turn and per-game token/cost tracking. Log token counts from API responses. Consider adding configurable per-turn cost limits.
   
 * **Game State & Rules:**
+    * **Rule 203 Automatic Transition Limitation:** Engine has no general mechanism for rules that trigger future state changes (e.g. "switch to consensus after 3 circuits"). Rule 203 transition is the only hard-coded automatic transition. Any player-amended version of Rule 203 will not be honored by the engine. The engine only detects if the original Rule 203 (rule_id="203") has been amended (removed from ruleset) and stops enforcing the transition in that case.
     * Enhanced Voting Architecture
         * **Task:** Replace binary vote logic with named "Abstention-Aware" modes.
         * **Data Model:** Expand `VoteMode` enum in `data_models.py` to include `UNANIMOUS_STRICT`, `CONSENSUS`, `MAJORITY_TOTAL`, and `MAJORITY_VOTING`.
