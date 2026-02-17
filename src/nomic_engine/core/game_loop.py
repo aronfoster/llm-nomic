@@ -930,6 +930,7 @@ class GameLoop:
         - Finds the next player in turn order
         - Updates current_player_name
         - Increments move_number
+        - Checks for automatic rule transitions
         """
         assert self.game_manager.game_state is not None
 
@@ -947,6 +948,75 @@ class GameLoop:
             f"Advanced to move {self.game_manager.game_state.move_number}, "
             f"next player: {next_player_name}"
         )
+
+        # Check for automatic rule transitions after turn state is updated
+        self._check_automatic_transitions()
+
+    def _check_automatic_transitions(self) -> None:
+        """
+        Check and apply automatic engine-enforced rule transitions.
+
+        This method is the single location for all automatic transitions
+        enforced by the engine. Currently implements:
+        - Rule 203: unanimous → majority voting after 2 complete circuits
+
+        Future automatic transitions should be added as focused private
+        methods called from here.
+        """
+        self._check_rule_203_transition()
+
+    def _check_rule_203_transition(self) -> None:
+        """
+        Check and apply Rule 203 automatic unanimous → majority transition.
+
+        Rule 203 states: "If this rule is not amended by the end of the
+        second complete circuit of turns, it automatically changes to
+        require only a simple majority."
+
+        This method:
+        - Does nothing if vote_mode is already "majority" (idempotent)
+        - Does nothing if Rule 203 has been amended (no rule_id="203" exists)
+        - Calculates completed circuits from move_number and turn_order
+        - If exactly 2 complete circuits have been completed, transitions
+          vote_mode from "unanimous" to "majority"
+        - Logs the transition and adds a transcript entry
+        """
+        assert self.game_manager.game_state is not None
+        assert self.game_manager.rules_manager is not None
+
+        current_vote_mode = self.game_manager.game_state.flags.get(
+            "vote_mode", "unanimous"
+        )
+        if current_vote_mode == "majority":
+            return
+
+        rule_203 = self.game_manager.rules_manager._find_rule_by_id("203")
+        if rule_203 is None:
+            # Rule 203 has been amended, don't apply automatic transition
+            return
+
+        # A complete circuit = all players taking one turn
+        # Completes at the end of each multiple of N turns
+        move_number = self.game_manager.game_state.move_number
+        num_players = len(self.game_manager.game_state.turn_order)
+        completed_circuits = (move_number - 1) // num_players
+
+        if completed_circuits >= 2:
+            self.game_manager.game_state.flags["vote_mode"] = "majority"
+
+            logger.info(
+                "Automatic Rule 203 transition: vote_mode changed from "
+                "'unanimous' to 'majority' after %d complete circuits",
+                completed_circuits,
+            )
+
+            transcript_entry = (
+                "[ENGINE] Automatic transition: Rule 203 has been in "
+                f"effect for {completed_circuits} complete circuits "
+                "without amendment. vote_mode changed from 'unanimous' "
+                "to 'majority'."
+            )
+            self.game_manager.logger.log_transcript(transcript_entry)
 
     def _log_and_save_turn(
         self,
