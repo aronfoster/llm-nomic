@@ -39,6 +39,7 @@ class BaseJudge(ABC):
         proposal: "Proposal",
         votes: list["Vote"],
         discussions: list["Discussion"],
+        proposal_passed: bool,
     ) -> JudgeScoreResponse:
         """Allow the judge to update scores for the current turn."""
 

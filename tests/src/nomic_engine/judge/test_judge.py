@@ -249,6 +249,7 @@ def test_get_scores_from_judge_applies_score_changes(
         mock_proposal,
         mock_votes,
         mock_discussions,
+        proposal_passed=True,
     )
 
     assert response["score_adjustments"] == [
@@ -292,6 +293,7 @@ def test_get_scores_from_judge_handles_zero_scores(
         mock_proposal,
         mock_votes,
         mock_discussions,
+        proposal_passed=True,
     )
 
     assert [adj["delta"] for adj in response["score_adjustments"]] == [
@@ -326,6 +328,7 @@ def test_get_scores_from_judge_retries_on_invalid_input(
         mock_proposal,
         mock_votes,
         mock_discussions,
+        proposal_passed=True,
     )
 
     assert response["score_adjustments"][0]["delta"] == 10
@@ -355,6 +358,7 @@ def test_get_scores_from_judge_handles_negative_scores(
         mock_proposal,
         mock_votes,
         mock_discussions,
+        proposal_passed=True,
     )
 
     assert response["score_adjustments"][0]["delta"] == -10
@@ -388,6 +392,7 @@ def test_get_scores_from_judge_accumulates_scores(
         mock_proposal,
         mock_votes,
         mock_discussions,
+        proposal_passed=True,
     )
 
     assert response["score_adjustments"][0]["delta"] == 5
@@ -418,6 +423,7 @@ def test_get_scores_from_judge_handles_large_score_changes(
         mock_proposal,
         mock_votes,
         mock_discussions,
+        proposal_passed=True,
     )
 
     assert response["score_adjustments"][0]["delta"] == 100

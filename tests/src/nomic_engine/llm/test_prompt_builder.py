@@ -212,12 +212,13 @@ class TestPromptBuilder(unittest.TestCase):
     def test_build_judge_score_prompt_enforces_json(self):
         """Score prompt should include examples and JSON enforcement."""
 
-        message = self.builder.build_judge_score_prompt()
+        message = self.builder.build_judge_score_prompt(proposal_passed=True)
 
         self.assertEqual(message.role, "user")
         self.assertIn("Assign score changes for this move", message.content)
         self.assertIn("score_adjustments", message.content)
         self.assertIn("OUTPUT REQUIREMENTS", message.content)
+        self.assertIn("PASSED", message.content)
 
     def test_format_discussions_empty(self):
         """Test that _format_discussions handles empty discussion lists."""

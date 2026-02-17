@@ -81,6 +81,8 @@ Respond with EXACTLY one JSON object with these keys IN THIS ORDER:
 
 JUDGE_SCORE_TEMPLATE = """Assign score changes for this move.
 
+The proposal **{proposal_outcome}** the vote.
+
 Base your decision strictly on the current rules and the provided turn
 context (proposal, votes, and discussions). If no points should change,
 return an empty list for score_adjustments.

@@ -48,7 +48,9 @@ def test_get_veto_returns_bool(mock_game_manager):
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_context_message.return_value = (
+        context_message
+    )
     prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
         role="user", content="veto"
     )
@@ -74,7 +76,9 @@ def test_assess_scores_returns_adjustments_without_mutation(mock_game_manager):
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_context_message.return_value = (
+        context_message
+    )
     prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
         role="user", content="score"
     )
@@ -89,13 +93,15 @@ def test_assess_scores_returns_adjustments_without_mutation(mock_game_manager):
         Mock(), prompt_builder=prompt_builder, api_client=api_client
     )
 
-    response = judge.assess_scores(mock_game_manager, [], Mock(), [], [])
+    response = judge.assess_scores(
+        mock_game_manager, [], Mock(), [], [], proposal_passed=True
+    )
 
     assert response["score_adjustments"] == [
         {"player": "Alice", "delta": 2, "reason": "bonus"}
     ]
     assert mock_game_manager.game_state.scores["Alice"] == 0
-    prompt_builder.build_judge_context_message.assert_called_once()
+    prompt_builder.build_judge_score_context_message.assert_called_once()
     api_client.get_completion.assert_called_once()
 
 
@@ -109,7 +115,9 @@ def test_get_veto_retries_on_malformed_json(mock_game_manager):
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_context_message.return_value = (
+        context_message
+    )
     prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
         role="user", content="veto"
     )
@@ -137,7 +145,9 @@ def test_get_veto_raises_after_max_retries(mock_game_manager):
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_context_message.return_value = (
+        context_message
+    )
     prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
         role="user", content="veto"
     )
@@ -167,7 +177,9 @@ def test_get_veto_retries_on_api_error(mock_game_manager):
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_context_message.return_value = (
+        context_message
+    )
     prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
         role="user", content="veto"
     )
@@ -195,7 +207,9 @@ def test_get_veto_raises_on_missing_required_key(mock_game_manager):
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_context_message.return_value = (
+        context_message
+    )
     prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
         role="user", content="veto"
     )
@@ -221,7 +235,9 @@ def test_assess_scores_retries_on_malformed_json(mock_game_manager):
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_context_message.return_value = (
+        context_message
+    )
     prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
         role="user", content="score"
     )
@@ -238,7 +254,9 @@ def test_assess_scores_retries_on_malformed_json(mock_game_manager):
         Mock(), prompt_builder=prompt_builder, api_client=api_client
     )
 
-    response = judge.assess_scores(mock_game_manager, [], Mock(), [], [])
+    response = judge.assess_scores(
+        mock_game_manager, [], Mock(), [], [], proposal_passed=True
+    )
 
     assert response["score_adjustments"] == []
     assert api_client.get_completion.call_count == 2
@@ -249,7 +267,9 @@ def test_assess_scores_raises_after_max_retries(mock_game_manager):
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_context_message.return_value = (
+        context_message
+    )
     prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
         role="user", content="score"
     )
@@ -265,7 +285,9 @@ def test_assess_scores_raises_after_max_retries(mock_game_manager):
     with pytest.raises(
         RuntimeError, match="failed to generate a valid score assessment"
     ):
-        judge.assess_scores(mock_game_manager, [], Mock(), [], [])
+        judge.assess_scores(
+            mock_game_manager, [], Mock(), [], [], proposal_passed=True
+        )
 
     # Should retry MAX_SCORE_RETRIES times (default is 2)
     assert (
@@ -279,7 +301,9 @@ def test_assess_scores_no_partial_application_on_failure(mock_game_manager):
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_context_message.return_value = (
+        context_message
+    )
     prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
         role="user", content="score"
     )
@@ -296,7 +320,9 @@ def test_assess_scores_no_partial_application_on_failure(mock_game_manager):
     initial_bob_score = mock_game_manager.game_state.scores["Bob"]
 
     with pytest.raises(RuntimeError):
-        judge.assess_scores(mock_game_manager, [], Mock(), [], [])
+        judge.assess_scores(
+            mock_game_manager, [], Mock(), [], [], proposal_passed=True
+        )
 
     # Scores should remain unchanged
     assert mock_game_manager.game_state.scores["Alice"] == initial_alice_score
@@ -308,7 +334,9 @@ def test_assess_scores_retries_on_invalid_player_name(mock_game_manager):
 
     prompt_builder = Mock()
     context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
+    prompt_builder.build_judge_score_context_message.return_value = (
+        context_message
+    )
     prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
         role="user", content="score"
     )
@@ -327,7 +355,9 @@ def test_assess_scores_retries_on_invalid_player_name(mock_game_manager):
         Mock(), prompt_builder=prompt_builder, api_client=api_client
     )
 
-    response = judge.assess_scores(mock_game_manager, [], Mock(), [], [])
+    response = judge.assess_scores(
+        mock_game_manager, [], Mock(), [], [], proposal_passed=True
+    )
 
     # Should succeed on second attempt
     assert len(response["score_adjustments"]) == 1

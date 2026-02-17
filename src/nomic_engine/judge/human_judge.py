@@ -11,6 +11,7 @@ from ..judge_contracts import (
     ScoreAdjustment,
     StateUpdates,
 )
+from ..utils.rule_filters import filter_scoring_rules
 from .base_judge import BaseJudge
 
 if TYPE_CHECKING:
@@ -57,22 +58,21 @@ class HumanJudge(BaseJudge):
         proposal: "Proposal",
         votes: list["Vote"],
         discussions: list["Discussion"],
+        proposal_passed: bool,
     ) -> JudgeScoreResponse:
         """Prompt the Judge to assign point changes for each player."""
 
         assert game_manager.game_state is not None
         assert game_manager.rules_manager is not None
 
-        point_rules = [
-            r
-            for r in game_manager.rules_manager.rules
-            if "point" in r.text.lower()
-        ]
+        point_rules = filter_scoring_rules(game_manager.rules_manager.rules)
 
+        outcome_text = "PASSED" if proposal_passed else "FAILED"
         print(
             f"\n--- Judge (Scorer), please assess points for Move "
             f"#{game_manager.game_state.move_number} ---"
         )
+        print(f"The proposal {outcome_text} the vote.\n")
 
         print("\nRelevant Point-Scoring Rules:")
         for rule in point_rules:

@@ -29,6 +29,7 @@ Our architecture is built on these principles:
 - Final text has the wrong turn number
 - Add the model and personality to each player as a label when their turn is on the screen
   - Read from config.yml
+- Rule 205 edge case: if a rule awarding points passes this turn, it may or may not apply to this turn's scoring depending on interpretation. Currently unhandled. Needs rules-layer + engine decision.
 
 ## Sprint 29: Reliable Judge & Clean Exits (Bug-Fix & Polish focused)
 
@@ -38,10 +39,11 @@ Our architecture is built on these principles:
 
 ### Prioritized Tasks
 
-1. **Judge scoring improvements**  
-   - Judge scoring prompt clearly expresses whether the proposal passes or fails 
-   - Explore rule filtering so only the ones containing "point" and "score" are sent to the scoring judge
-   - Ensure it is clear that points in the proposed rule do not apply to this round's scoring (unless rule 205 is changed?)
+1. **COMPLETED** ~~Judge scoring improvements~~
+   - ~~Judge scoring prompt clearly expresses whether the proposal passes or fails~~
+   - ~~Explore rule filtering so only the ones containing "point" and "score" are sent to the scoring judge~~
+   - ~~Ensure it is clear that points in the proposed rule do not apply to this round's scoring (unless rule 205 is changed?)~~
+   - See Low Priority bug list for deferred Rule 205 edge case
 
 2. **COMPLETED** ~~Post-victory turn handling~~  
    - ~~After victory detected, further turn attempts should immediately exit with clear log/message.~~
