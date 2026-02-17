@@ -81,9 +81,21 @@ Respond with EXACTLY one JSON object with these keys IN THIS ORDER:
 
 JUDGE_SCORE_TEMPLATE = """Assign score changes for this move.
 
+The proposal **{proposal_outcome}** the vote.
+
 Base your decision strictly on the current rules and the provided turn
 context (proposal, votes, and discussions). If no points should change,
 return an empty list for score_adjustments.
+
+SCORING SCOPE: Apply only rules that were in effect before this turn's
+proposal. Even if the proposal passed and its text introduces or modifies
+a scoring rule, do not apply it to this turn's point calculation; rule
+changes take effect on future turns only, never retroactively on the turn
+they were adopted.
+
+Example: If the passed proposal states "the proposer of any vote earns 500
+bonus points," that rule does NOT award 500 points this turn. Score this
+turn as if that rule does not yet exist.
 
 Respond with EXACTLY one JSON object with these keys IN THIS ORDER:
 1. "private_thoughts" (concise reasoning for the log)

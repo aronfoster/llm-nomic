@@ -645,7 +645,12 @@ class GameLoop:
         # Score assessment always happens
         logger.debug("Consulting judge for score assessment")
         score_response = self.judge.assess_scores(
-            self.game_manager, self.players, proposal, votes, discussions
+            self.game_manager,
+            self.players,
+            proposal,
+            votes,
+            discussions,
+            proposal_passed=vote_result.passed,
         )
         logger.debug(
             f"Judge score assessment complete: "

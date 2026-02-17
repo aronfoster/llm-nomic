@@ -621,11 +621,82 @@ class PromptBuilder:
         )
         return ChatMessage(role="user", content=content)
 
-    def build_judge_score_prompt(self) -> ChatMessage:
-        """Build the instructions for Judge score assessment."""
+    def build_judge_score_context_message(
+        self,
+        rules: list[Rule],
+        game_state: GameState,
+        proposal: Proposal,
+        votes: list[Vote],
+        discussions: list[Discussion],
+        proposal_passed: bool,
+    ) -> ChatMessage:
+        """
+        Assemble the scoring-specific turn context for the Judge.
 
+        Unlike build_judge_context_message, this method accepts a
+        pre-filtered rules list (only scoring-relevant rules) and
+        includes the proposal outcome.
+
+        Args:
+            rules: Pre-filtered list of scoring-relevant rules
+            game_state: Current game state
+            proposal: The proposal being scored
+            votes: List of votes cast
+            discussions: List of discussions
+            proposal_passed: Whether the proposal passed the vote
+
+        Returns:
+            ChatMessage with role="user" containing scoring context
+        """
+        rules_block = prompts.RULES_BLOCK.format(
+            rules_text=self._format_rules(rules)
+        )
+        proposal_block = self._format_proposal(
+            proposal, rules, proposal.proposer_name
+        )
+        discussions_block = prompts.DISCUSSION_BLOCK.format(
+            discussions_text=self._format_discussions(discussions)
+        )
+
+        if votes:
+            vote_lines = []
+            for vote in votes:
+                reason = vote.reason or "No public reason provided."
+                vote_lines.append(
+                    f"- {vote.player_name}: {vote.vote} | Reason: {reason}"
+                )
+            votes_block = "\n".join(vote_lines)
+        else:
+            votes_block = "No votes recorded."
+
+        scores_block = self._format_scores(game_state.scores)
+
+        content = "\n\n".join(
+            [
+                rules_block,
+                proposal_block,
+                discussions_block,
+                f"=== VOTES ===\n{votes_block}",
+                f"=== SCORES ===\n{scores_block}",
+            ]
+        )
+
+        return ChatMessage(role="user", content=content)
+
+    def build_judge_score_prompt(self, proposal_passed: bool) -> ChatMessage:
+        """
+        Build the instructions for Judge score assessment.
+
+        Args:
+            proposal_passed: Whether the proposal passed the vote
+
+        Returns:
+            ChatMessage with role="user" containing score prompt
+        """
+        proposal_outcome = "PASSED" if proposal_passed else "FAILED"
         content = prompts.JUDGE_SCORE_TEMPLATE.format(
-            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT
+            proposal_outcome=proposal_outcome,
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
         )
         return ChatMessage(role="user", content=content)
 

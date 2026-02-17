@@ -18,6 +18,7 @@ from ..llm.parsers import (
     parse_judge_score_response,
     parse_judge_veto_response,
 )
+from ..utils.rule_filters import filter_scoring_rules
 from .base_judge import BaseJudge
 
 if TYPE_CHECKING:
@@ -189,18 +190,39 @@ class LLMJudge(BaseJudge):
         proposal: "Proposal",
         votes: list["Vote"],
         discussions: list["Discussion"],
+        proposal_passed: bool,
     ) -> JudgeScoreResponse:
         assert game_manager.game_state is not None
+        assert game_manager.rules_manager is not None
         _ = players
 
-        base_messages = self._build_messages(
-            game_manager, proposal, votes, discussions
+        # Filter rules to only scoring-relevant ones
+        scoring_rules = filter_scoring_rules(game_manager.rules_manager.rules)
+
+        # Build scoring-specific context (not using _build_messages)
+        system_message = ChatMessage(
+            role="system", content=llm_prompts.JUDGE_SYSTEM_PROMPT
         )
-        base_messages.append(self.prompt_builder.build_judge_score_prompt())
+        context_message = (
+            self.prompt_builder.build_judge_score_context_message(
+                rules=scoring_rules,
+                game_state=game_manager.game_state,
+                proposal=proposal,
+                votes=votes,
+                discussions=discussions,
+                proposal_passed=proposal_passed,
+            )
+        )
+        score_prompt = self.prompt_builder.build_judge_score_prompt(
+            proposal_passed=proposal_passed
+        )
+
+        base_messages = [system_message, context_message, score_prompt]
 
         logger.debug(
-            "Requesting score assessment from model %s",
+            "Requesting score assessment from model %s (proposal %s)",
             self.model_config.api_model_id,
+            "PASSED" if proposal_passed else "FAILED",
         )
 
         # Retry loop with maximum attempts
