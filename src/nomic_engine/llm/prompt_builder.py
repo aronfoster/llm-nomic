@@ -467,6 +467,7 @@ class PromptBuilder:
         )
 
         # Rule 112 Check: Detect UNCLEAR or AMBIGUOUS in discussions
+        # TODO: remove this, as rule v1 no longer has this rule
         constraint_triggered = False
         for discussion in discussions:
             message_upper = discussion.text.upper()

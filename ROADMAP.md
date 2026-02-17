@@ -113,19 +113,18 @@ This is the long-term backlog and TODO scratchpad.
   * Add per-turn and per-game token/cost tracking. Log token counts from API responses. Consider adding configurable per-turn cost limits.
   
 * **Game State & Rules:**
-    * **Rule 203 Automatic Transition Limitation:** Engine has no general mechanism for rules that trigger future state changes (e.g. "switch to consensus after 3 circuits"). Rule 203 transition is the only hard-coded automatic transition. Any player-amended version of Rule 203 will not be honored by the engine. The engine only detects if the original Rule 203 (rule_id="203") has been amended (removed from ruleset) and stops enforcing the transition in that case.
-    * Enhanced Voting Architecture
-        * **Task:** Replace binary vote logic with named "Abstention-Aware" modes.
-        * **Data Model:** Expand `VoteMode` enum in `data_models.py` to include `UNANIMOUS_STRICT`, `CONSENSUS`, `MAJORITY_TOTAL`, and `MAJORITY_VOTING`.
-        * **Engine Logic:** Update `GameLoop._tally_votes` to implement the specific denominator logic for each named mode.
-        * **LLM Awareness:** Update `PromptBuilder` to dynamically inject a plain-language explanation of the current `vote_mode` into player prompts, ensuring players understand the tactical weight of an "ABSTAIN" vote.
-    * Improve initial ruleset: reduce superfluous, add clarity (e.g. rule 205 as it relates to scoring), consider including enging limitations
-    * Allow `create_game.py` to select from multiple initial ruleset files.
-    * Create more personalities: chaos monkey, showman
-    * Think more about the llm model picker
-      * Should we allow custom model config per game (e.g., for new/local models not in `models.yml`)?
-      * Shoudl we query provider APIs to get a list of available models?
-    * **Rule 111 Word Limit Enforcement:** Rule 111 caps discussion comments at 75 words, but the engine doesn't validate this. Decide whether to enforce in the engine (truncate/reject) or in the prompt (and accept the risk of LLM non-compliance). Document the decision either way.
+  * Enhanced Voting Architecture
+      * **Task:** Replace binary vote logic with named "Abstention-Aware" modes.
+      * **Data Model:** Expand `VoteMode` enum in `data_models.py` to include `UNANIMOUS_STRICT`, `CONSENSUS`, `MAJORITY_TOTAL`, and `MAJORITY_VOTING`.
+      * **Engine Logic:** Update `GameLoop._tally_votes` to implement the specific denominator logic for each named mode.
+      * **LLM Awareness:** Update `PromptBuilder` to dynamically inject a plain-language explanation of the current `vote_mode` into player prompts, ensuring players understand the tactical weight of an "ABSTAIN" vote.
+  * Allow `create_game.py` to select from multiple initial ruleset files.
+  * Create more personalities: chaos monkey, showman
+  * Think more about the llm model picker
+    * Should we allow custom model config per game (e.g., for new/local models not in `models.yml`)?
+    * Shoudl we query provider APIs to get a list of available models?
+  * Add the ability of the scoring judge to use random numbers, which would allow Suber's original rule 202 that used a D6 for scoring
+    * Would be ideal to allow arbitary random ranges and math to enable creative scoring rules (e.g. 6 points plus a random 1-6 points)
 
 * **Tooling & Features:**
     * Specify versions for dependencies and start managing those (pin at least major versions in `requirements.txt` to prevent breakage from upstream changes)

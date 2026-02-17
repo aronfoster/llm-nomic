@@ -168,12 +168,13 @@ class GameConfig(BaseModel):
         description="Centralized retry and threshold tuning values.",
     )
     withdrawal_policy: WithdrawalPolicy = Field(
-        default=WithdrawalPolicy.FORFEIT,
+        default=WithdrawalPolicy.RETRY,
         description=(
             "Behavior when the proposer withdraws after discussion: "
             "forfeit turn or retry with cumulative context."
         ),
     )
+    # TODO: Should this be in EngineTuningConfig with the others?
     max_withdrawal_retries: int = Field(
         default=2,
         ge=0,

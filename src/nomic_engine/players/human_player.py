@@ -300,6 +300,7 @@ class HumanPlayer(BasePlayer):
         )
 
         # Build prompt based on Rule 112
+        # TODO: Remove this because rule v1 no longer has this
         if must_revise:
             print(
                 "\n⚠️  Rule 112: A discussion contains 'UNCLEAR' or "

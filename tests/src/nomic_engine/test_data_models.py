@@ -417,7 +417,7 @@ def test_game_config_withdrawal_defaults():
         players=[PlayerConfig(name="Alice", model_id="gpt-4o")]
     )
 
-    assert config.withdrawal_policy == WithdrawalPolicy.FORFEIT
+    assert config.withdrawal_policy == WithdrawalPolicy.RETRY
     assert config.max_withdrawal_retries == 2
 
 
@@ -425,9 +425,9 @@ def test_game_config_withdrawal_override():
     """Test GameConfig accepts withdrawal policy overrides."""
     config = GameConfig(
         players=[PlayerConfig(name="Alice", model_id="gpt-4o")],
-        withdrawal_policy=WithdrawalPolicy.RETRY,
+        withdrawal_policy=WithdrawalPolicy.FORFEIT,
         max_withdrawal_retries=3,
     )
 
-    assert config.withdrawal_policy == WithdrawalPolicy.RETRY
+    assert config.withdrawal_policy == WithdrawalPolicy.FORFEIT
     assert config.max_withdrawal_retries == 3
