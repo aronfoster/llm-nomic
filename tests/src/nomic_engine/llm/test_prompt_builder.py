@@ -204,9 +204,7 @@ class TestPromptBuilder(unittest.TestCase):
         message = self.builder.build_judge_veto_prompt()
 
         self.assertEqual(message.role, "user")
-        self.assertIn(
-            "Review the proposal outcome for legality", message.content
-        )
+        self.assertIn("Review the proposal outcome", message.content)
         self.assertIn("OUTPUT REQUIREMENTS", message.content)
 
     def test_build_judge_score_prompt_enforces_json(self):

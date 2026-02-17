@@ -59,7 +59,7 @@ JUDGE_SYSTEM_PROMPT = (
     "schemas."
 )
 
-JUDGE_VETO_TEMPLATE = """Review the proposal outcome for legality.
+JUDGE_VETO_TEMPLATE = """Review the proposal outcome.
 
 Current Engine Configuration:
 {dynamic_current_flags}
@@ -67,9 +67,8 @@ Current Engine Configuration:
 Supported Engine Capabilities:
 {dynamic_supported_flags}
 
-You should veto proposals that:
-1. Violate an immutable rule, conflict with existing rules, or create a paradox
-2. Require engine capabilities that are not currently supported
+You should veto proposals that require engine capabilities that are not
+currently supported.
 
 Respond with EXACTLY one JSON object with these keys IN THIS ORDER:
 1. "private_thoughts" (your reasoning for internal logging)

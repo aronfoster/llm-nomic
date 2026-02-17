@@ -11,7 +11,7 @@ GAME_LOG_FILE = "game_log.jsonl"
 GAME_TRANSCRIPT_FILE = "game_transcript.md"
 
 # --- Root Files ---
-INITIAL_RULES_FILE = "Nomic_Initial_Ruleset_v0.md"
+INITIAL_RULES_FILE = "Nomic_Initial_Ruleset_v1.md"
 MODEL_LIBRARY_FILE = "models.yml"
 FLAG_SCHEMA_FILE = "flag_schema.json"
 GAMES_DIR = "games"

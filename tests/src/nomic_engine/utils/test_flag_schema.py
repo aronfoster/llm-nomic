@@ -452,7 +452,7 @@ class TestJudgeVetoPromptIntegration:
         assert "Valid values: unanimous, majority" in msg.content
 
     def test_veto_prompt_includes_veto_criteria(self) -> None:
-        """Judge veto prompt includes both veto criteria."""
+        """Judge veto prompt includes veto criteria."""
         from src.nomic_engine.llm.prompt_builder import PromptBuilder
 
         builder = PromptBuilder()
@@ -464,7 +464,6 @@ class TestJudgeVetoPromptIntegration:
             next_proposal_id=301,
         )
         msg = builder.build_judge_veto_prompt(game_state=game_state)
-        assert "Violate an immutable rule" in msg.content
         assert "engine capabilities" in msg.content
 
     def test_veto_prompt_without_game_state(self) -> None:
