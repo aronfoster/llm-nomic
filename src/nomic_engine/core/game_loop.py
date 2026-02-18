@@ -118,17 +118,23 @@ class GameLoop:
 
             # Loop covers initial attempt plus configured withdrawal pivots.
             for withdrawal_attempt in range(max_withdrawal_retries + 1):
+                is_retry = withdrawal_attempt > 0
+
                 # Step 1: Propose (with validation)
                 proposal = self._get_and_validate_proposal(
                     current_player,
-                    continue_turn=withdrawal_attempt > 0,
+                    continue_turn=is_retry,
+                    withdrawal_attempt=withdrawal_attempt,
+                    max_withdrawal_retries=max_withdrawal_retries,
                 )
                 if proposal is None:
                     logger.warning("Turn ended due to illegal proposal")
                     break
 
                 # Step 2: Discuss
-                discussions = self._collect_discussions(proposal, self.players)
+                discussions = self._collect_discussions(
+                    proposal, self.players, is_retry=is_retry
+                )
 
                 # Step 3: Revise
                 revised_proposal = self._handle_revision(
@@ -276,7 +282,11 @@ class GameLoop:
         self.game_manager.logger.log_transcript(transcript_entry)
 
     def _get_and_validate_proposal(
-        self, current_player: BasePlayer, continue_turn: bool = False
+        self,
+        current_player: BasePlayer,
+        continue_turn: bool = False,
+        withdrawal_attempt: int = 0,
+        max_withdrawal_retries: int = 0,
     ) -> Proposal | None:
         """
         Get proposal from current player and validate it.
@@ -286,6 +296,9 @@ class GameLoop:
 
         Args:
             current_player: The player whose turn it is
+            continue_turn: True when retrying after a withdrawal
+            withdrawal_attempt: The current withdrawal attempt number
+            max_withdrawal_retries: The maximum number of withdrawal retries
 
         Returns:
             Proposal object if valid, None if illegal
@@ -303,6 +316,8 @@ class GameLoop:
             game_state=self.game_manager.game_state,
             rules=self.game_manager.rules_manager.rules,
             continue_turn=continue_turn,
+            withdrawal_attempt=withdrawal_attempt,
+            max_withdrawal_retries=max_withdrawal_retries,
         )
 
         logger.debug(
@@ -342,7 +357,10 @@ class GameLoop:
             return None
 
     def _collect_discussions(
-        self, proposal: Proposal, players: list[BasePlayer]
+        self,
+        proposal: Proposal,
+        players: list[BasePlayer],
+        is_retry: bool = False,
     ) -> list[Discussion]:
         """
         Collect discussion from all players.
@@ -351,9 +369,17 @@ class GameLoop:
         rationale from the proposal serves as their discussion contribution,
         so they are not prompted again.
 
+        Before each non-proposing player's ``discuss()`` call this method
+        calls ``player.begin_discussion_turn()`` to initialise their context.
+        On withdrawal-retry rounds where ``retain_discusser_history_on_retry``
+        is True this initialisation is skipped so LLM players retain the
+        discussion history they accumulated in previous rounds.
+
         Args:
             proposal: The proposal to discuss
             players: List of all players
+            is_retry: True when this discussion round follows a withdrawal
+                retry (i.e. not the first proposal attempt this turn).
 
         Returns:
             List of Discussion objects from all players (includes abstentions)
@@ -362,6 +388,14 @@ class GameLoop:
         assert self.game_manager.rules_manager is not None
 
         logger.info("Step 2: Discussion phase")
+
+        # When True, skip begin_discussion_turn() so non-proposers retain
+        # their accumulated discussion history from the previous round.
+        skip_init = (
+            is_retry
+            and self.game_manager.game_config is not None
+            and self.game_manager.game_config.retain_discusser_history_on_retry
+        )
 
         discussions: list[Discussion] = []
 
@@ -387,6 +421,14 @@ class GameLoop:
         for player in players:
             if player.player_name == proposal.proposer_name:
                 continue  # Skip the proposer
+
+            # Initialise discussion context unless we are retaining history.
+            if not skip_init:
+                player.begin_discussion_turn(
+                    proposal=proposal,
+                    game_state=self.game_manager.game_state,
+                    rules=self.game_manager.rules_manager.rules,
+                )
 
             discussion = player.discuss(
                 proposal=proposal,

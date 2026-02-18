@@ -54,11 +54,11 @@ Our architecture is built on these principles:
    - ~~Implement automatic rule amendment / state update.~~
    - ~~Add small test suite for cycle counting and vote_mode switching.~~
 
-4. **Withdrawal UX improvements**
-   - Update proposer prompt to include withdrawal attempt number, max retries, 
-     and instruction to WITHDRAW if they want to change proposal type or target rule
-   - Add `retain_discusser_history_on_retry` config flag so non-proposers can 
-     optionally retain discussion context across withdrawal retries
+4. **COMPLETED** ~~Withdrawal UX improvements~~
+   - ~~Update proposer prompt to include withdrawal attempt number, max retries,~~
+     ~~and instruction to WITHDRAW if they want to change proposal type or target rule~~
+   - ~~Add `retain_discusser_history_on_retry` config flag so non-proposers can~~
+     ~~optionally retain discussion context across withdrawal retries~~
 
 5. **Small bug & polish wrap-up**  
    - Fix markdown bunching at start of `game_transcript.md`  

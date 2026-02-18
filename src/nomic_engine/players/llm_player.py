@@ -84,6 +84,8 @@ class LLMPlayer(BasePlayer):
         game_state: GameState,
         rules: list[Rule],
         continue_turn: bool = False,
+        withdrawal_attempt: int = 0,
+        max_withdrawal_retries: int = 0,
     ) -> Proposal:
         """
         Generate a proposal using an LLM.
@@ -203,15 +205,47 @@ class LLMPlayer(BasePlayer):
             f"{max_proposal_retries} attempts."
         )
 
+    def begin_discussion_turn(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> None:
+        """
+        Initialise the discusser's conversation history for a new round.
+
+        Builds the system message that establishes the player's context
+        (rules, game state, proposal) and resets conversation history.
+        Called by ``GameLoop._collect_discussions()`` before ``discuss()``
+        on each fresh discussion round; skipped on retry rounds when the
+        ``retain_discusser_history_on_retry`` flag is True.
+
+        Args:
+            proposal: The proposal being discussed.
+            game_state: The current state of the game.
+            rules: The current list of all rules.
+        """
+        system_message = self.prompt_builder.build_discusser_system_message(
+            proposal=proposal,
+            rules=rules,
+            game_state=game_state,
+            player_name=self.player_name,
+            personality=self.personality.value,
+        )
+        self._reset_history(system_message)
+
     def discuss(
-        self, proposal: Proposal, game_state: GameState, rules: list[Rule]
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
     ) -> Discussion:
         """
         Provide discussion/commentary on a proposal using an LLM.
 
-        This method starts a new turn for discussers by resetting the
-        conversation history. It implements a retry loop to handle the
-        non-deterministic nature of LLMs.
+        ``begin_discussion_turn()`` must be called before this method on the
+        first discussion call of each round to initialise conversation history.
+        This method does not perform any history initialisation itself.
 
         Args:
             proposal: The proposal being discussed.
@@ -222,18 +256,6 @@ class LLMPlayer(BasePlayer):
             A Discussion object containing the player's discussion.
             If the player abstains, Discussion.text will be empty.
         """
-        # Build system message for discusser (starts new turn for this player)
-        system_message = self.prompt_builder.build_discusser_system_message(
-            proposal=proposal,
-            rules=rules,
-            game_state=game_state,
-            player_name=self.player_name,
-            personality=self.personality.value,
-        )
-
-        # Reset history for new turn
-        self._reset_history(system_message)
-
         # Retry loop with maximum attempts
         max_discussion_retries = self.tuning.max_discuss_retries
         for attempt in range(max_discussion_retries):

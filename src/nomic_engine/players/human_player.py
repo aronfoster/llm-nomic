@@ -31,6 +31,8 @@ class HumanPlayer(BasePlayer):
         game_state: GameState,
         rules: list[Rule],
         continue_turn: bool = False,
+        withdrawal_attempt: int = 0,
+        max_withdrawal_retries: int = 0,
     ) -> Proposal:
         """
         Interactively gather a proposal from the human player.
@@ -44,6 +46,9 @@ class HumanPlayer(BasePlayer):
         Args:
             game_state: The current state of the game.
             rules: The current list of all rules.
+            continue_turn: True when retrying after a withdrawal.
+            withdrawal_attempt: The current withdrawal attempt number.
+            max_withdrawal_retries: The maximum number of withdrawal retries.
 
         Returns:
             A complete Proposal object based on user input.
@@ -51,7 +56,19 @@ class HumanPlayer(BasePlayer):
         if continue_turn:
             print(
                 f"\n--- {self.player_name}'s Turn: "
-                "Pivoting After Withdrawal ---"
+                f"Pivoting After Withdrawal "
+                f"(attempt {withdrawal_attempt} of {max_withdrawal_retries})"
+                " ---"
+            )
+            print(
+                "You may now submit a fresh proposal with any type or "
+                "target rule."
+            )
+            print(
+                "NOTE: If during the revision phase you want to change the "
+                "proposal TYPE or TARGET RULE, choose WITHDRAW — not MODIFY. "
+                "Withdrawing there will give you another proposal opportunity "
+                "(if retries remain)."
             )
         else:
             print(f"\n--- {self.player_name}'s Turn: Making a Proposal ---")
@@ -117,8 +134,29 @@ class HumanPlayer(BasePlayer):
             private_thoughts=None,
         )
 
+    def begin_discussion_turn(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> None:
+        """
+        No-op for human players.
+
+        Human players manage their own memory; no context initialisation
+        is required before ``discuss()``.
+
+        Args:
+            proposal: The proposal being discussed (unused).
+            game_state: The current state of the game (unused).
+            rules: The current list of all rules (unused).
+        """
+
     def discuss(
-        self, proposal: Proposal, game_state: GameState, rules: list[Rule]
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
     ) -> Discussion:
         """
         Allow the human player to discuss a proposal.

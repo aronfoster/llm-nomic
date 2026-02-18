@@ -33,6 +33,8 @@ class BasePlayer(ABC):
         game_state: GameState,
         rules: list[Rule],
         continue_turn: bool = False,
+        withdrawal_attempt: int = 0,
+        max_withdrawal_retries: int = 0,
     ) -> Proposal:
         """
         Generate a proposal for a rule change.
@@ -40,6 +42,12 @@ class BasePlayer(ABC):
         Args:
             game_state: The current state of the game.
             rules: The current list of all rules.
+            continue_turn: True when retrying after a withdrawal so the
+                player can preserve cumulative context.
+            withdrawal_attempt: The current withdrawal attempt number
+                (0 on the first attempt, 1+ on retries).
+            max_withdrawal_retries: The maximum number of withdrawal retries
+                configured for this game.
 
         Returns:
             A complete Proposal object representing the player's
@@ -48,11 +56,43 @@ class BasePlayer(ABC):
         pass
 
     @abstractmethod
+    def begin_discussion_turn(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> None:
+        """
+        Initialise the player's discussion context for a new round.
+
+        This method is called by ``GameLoop._collect_discussions()`` before
+        the player's first ``discuss()`` call each round.  It is the sole
+        location where discussion history is reset/initialised.
+
+        ``GameLoop._collect_discussions()`` skips this call on withdrawal-
+        retry rounds when ``retain_discusser_history_on_retry`` is True,
+        allowing non-proposing LLM players to retain accumulated context.
+
+        Args:
+            proposal: The proposal being discussed.
+            game_state: The current state of the game.
+            rules: The current list of all rules.
+        """
+        pass
+
+    @abstractmethod
     def discuss(
-        self, proposal: Proposal, game_state: GameState, rules: list[Rule]
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
     ) -> Discussion:
         """
         Provide discussion/commentary on a proposal.
+
+        ``begin_discussion_turn()`` must be called before this method on
+        the first discussion call of each round; this method must not
+        perform any history initialisation itself.
 
         Args:
             proposal: The proposal being discussed.

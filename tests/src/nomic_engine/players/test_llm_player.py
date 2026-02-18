@@ -715,7 +715,7 @@ class TestLLMPlayerDiscuss:
         proposal,
         rules,
     ):
-        """Test that PromptBuilder is called with correct arguments."""
+        """Test that begin_discussion_turn() calls PromptBuilder correctly."""
         # Setup mocks
         mock_api_instance = MagicMock()
         mock_api_client_class.return_value = mock_api_instance
@@ -729,18 +729,9 @@ class TestLLMPlayerDiscuss:
         pb = mock_prompt_builder_instance
         pb.build_discusser_system_message.return_value = mock_system_message
 
-        # Mock successful API response
-        mock_api_instance.get_completion.return_value = (
-            '{"private_thoughts":"Analysis","discussion_text":"Comment"}'
-        )
-        mock_parse.return_value = {
-            "private_thoughts": "Analysis",
-            "discussion_text": "Comment",
-        }
-
-        # Create player and discuss
+        # Create player and call begin_discussion_turn (context initialiser)
         player = LLMPlayer("TestPlayer", model_config)
-        player.discuss(proposal, game_state, rules)
+        player.begin_discussion_turn(proposal, game_state, rules)
 
         # Verify PromptBuilder.build_discusser_system_message called correctly
         call = mock_prompt_builder_instance.build_discusser_system_message
@@ -1806,7 +1797,7 @@ class TestLLMPlayerStatefulHistory:
         proposal,
         rules,
     ):
-        """Test discuss() initializes turn_history with [System, Assistant]."""
+        """Test begin_discussion_turn + discuss() give [System, Assistant]."""
         # Setup mocks
         mock_api_instance = MagicMock()
         mock_api_client_class.return_value = mock_api_instance
@@ -1831,17 +1822,18 @@ class TestLLMPlayerStatefulHistory:
             "discussion_text": "I support this",
         }
 
-        # Create player with existing history (should be reset)
+        # Create player with existing history
         player = LLMPlayer("TestPlayer", model_config)
         player.turn_history = [
             ChatMessage(role="system", content="Old history"),
             ChatMessage(role="assistant", content="Old response"),
         ]
 
-        # Call discuss
+        # begin_discussion_turn resets history; discuss() appends the response
+        player.begin_discussion_turn(proposal, game_state, rules)
         player.discuss(proposal, game_state, rules)
 
-        # After discuss, history should be reset to [System, Assistant]
+        # After the pair, history should be [System, Assistant]
         assert len(player.turn_history) == 2
         assert player.turn_history[0].role == "system"
         assert player.turn_history[0].content == "Discusser system prompt"
