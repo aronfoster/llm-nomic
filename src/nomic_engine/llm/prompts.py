@@ -263,14 +263,6 @@ after discussion.
 
 WITHDRAWAL ATTEMPT: {withdrawal_attempt} of {max_withdrawal_retries}
 
-IMPORTANT — proposal type and target rule:
-- You may freely choose any proposal type (ADD, AMEND, REPEAL, TRANSMUTE)
-  and any target rule for this new proposal.
-- Later, during the revision phase, if you decide you want to change the
-  proposal TYPE or TARGET RULE ID, you must choose WITHDRAW (not MODIFY).
-  MODIFY can only update rule text or rationale. Withdrawing at that point
-  will give you another fresh proposal opportunity (if retries remain).
-
 Return only valid JSON using the standard proposal schema."""
 
 # =====================================================================

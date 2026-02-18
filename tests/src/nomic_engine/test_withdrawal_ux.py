@@ -98,33 +98,6 @@ class TestWithdrawalRetryTemplate:
         assert "2" in rendered
         assert "3" in rendered
 
-    def test_template_mentions_withdraw_action(self) -> None:
-        """Template must mention WITHDRAW for type/rule-ID changes."""
-        rendered = prompts.WITHDRAWAL_RETRY_TEMPLATE.format(
-            withdrawal_attempt=1,
-            max_withdrawal_retries=2,
-        )
-        # Must guide the LLM to use WITHDRAW not MODIFY for type/rule changes
-        assert "WITHDRAW" in rendered
-
-    def test_template_mentions_proposal_type_guidance(self) -> None:
-        """Template must mention proposal type or target rule guidance."""
-        rendered = prompts.WITHDRAWAL_RETRY_TEMPLATE.format(
-            withdrawal_attempt=1,
-            max_withdrawal_retries=2,
-        )
-        # Must mention that type or rule ID changes require WITHDRAW
-        lower = rendered.lower()
-        assert "type" in lower or "target" in lower or "rule" in lower
-
-    def test_template_mentions_modify_action(self) -> None:
-        """Template must mention MODIFY so the LLM understands contrast."""
-        rendered = prompts.WITHDRAWAL_RETRY_TEMPLATE.format(
-            withdrawal_attempt=1,
-            max_withdrawal_retries=2,
-        )
-        assert "MODIFY" in rendered
-
 
 # =====================================================================
 # Sub-task A: HumanPlayer.propose() withdrawal display
