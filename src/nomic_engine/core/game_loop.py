@@ -369,10 +369,11 @@ class GameLoop:
         rationale from the proposal serves as their discussion contribution,
         so they are not prompted again.
 
-        When ``is_retry`` is True and the game config has
-        ``retain_discusser_history_on_retry`` enabled, non-proposing LLM
-        players receive ``continue_turn=True`` so they retain accumulated
-        discussion history from previous withdrawal rounds.
+        Before each non-proposing player's ``discuss()`` call this method
+        calls ``player.begin_discussion_turn()`` to initialise their context.
+        On withdrawal-retry rounds where ``retain_discusser_history_on_retry``
+        is True this initialisation is skipped so LLM players retain the
+        discussion history they accumulated in previous rounds.
 
         Args:
             proposal: The proposal to discuss
@@ -388,8 +389,9 @@ class GameLoop:
 
         logger.info("Step 2: Discussion phase")
 
-        # Determine whether to preserve non-proposer history this round.
-        retain_history = (
+        # When True, skip begin_discussion_turn() so non-proposers retain
+        # their accumulated discussion history from the previous round.
+        skip_init = (
             is_retry
             and self.game_manager.game_config is not None
             and self.game_manager.game_config.retain_discusser_history_on_retry
@@ -420,11 +422,18 @@ class GameLoop:
             if player.player_name == proposal.proposer_name:
                 continue  # Skip the proposer
 
+            # Initialise discussion context unless we are retaining history.
+            if not skip_init:
+                player.begin_discussion_turn(
+                    proposal=proposal,
+                    game_state=self.game_manager.game_state,
+                    rules=self.game_manager.rules_manager.rules,
+                )
+
             discussion = player.discuss(
                 proposal=proposal,
                 game_state=self.game_manager.game_state,
                 rules=self.game_manager.rules_manager.rules,
-                continue_turn=retain_history,
             )
 
             discussions.append(discussion)

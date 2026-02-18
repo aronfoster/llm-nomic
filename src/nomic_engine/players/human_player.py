@@ -134,12 +134,29 @@ class HumanPlayer(BasePlayer):
             private_thoughts=None,
         )
 
+    def begin_discussion_turn(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> None:
+        """
+        No-op for human players.
+
+        Human players manage their own memory; no context initialisation
+        is required before ``discuss()``.
+
+        Args:
+            proposal: The proposal being discussed (unused).
+            game_state: The current state of the game (unused).
+            rules: The current list of all rules (unused).
+        """
+
     def discuss(
         self,
         proposal: Proposal,
         game_state: GameState,
         rules: list[Rule],
-        continue_turn: bool = False,
     ) -> Discussion:
         """
         Allow the human player to discuss a proposal.
@@ -150,9 +167,6 @@ class HumanPlayer(BasePlayer):
             proposal: The proposal being discussed.
             game_state: The current state of the game.
             rules: The current list of all rules.
-            continue_turn: Accepted for interface consistency with LLMPlayer.
-                Human players naturally remember prior rounds, so this
-                parameter has no behavioural effect.
 
         Returns:
             A Discussion object containing the player's discussion.

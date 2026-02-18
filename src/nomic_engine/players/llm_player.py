@@ -205,33 +205,26 @@ class LLMPlayer(BasePlayer):
             f"{max_proposal_retries} attempts."
         )
 
-    def discuss(
+    def begin_discussion_turn(
         self,
         proposal: Proposal,
         game_state: GameState,
         rules: list[Rule],
-        continue_turn: bool = False,
-    ) -> Discussion:
+    ) -> None:
         """
-        Provide discussion/commentary on a proposal using an LLM.
+        Initialise the discusser's conversation history for a new round.
 
-        By default this method resets the conversation history so the
-        player starts each discussion round fresh. When ``continue_turn``
-        is True the existing history is preserved, allowing the player to
-        reason about how the proposal evolved across withdrawal retries.
+        Builds the system message that establishes the player's context
+        (rules, game state, proposal) and resets conversation history.
+        Called by ``GameLoop._collect_discussions()`` before ``discuss()``
+        on each fresh discussion round; skipped on retry rounds when the
+        ``retain_discusser_history_on_retry`` flag is True.
 
         Args:
             proposal: The proposal being discussed.
             game_state: The current state of the game.
             rules: The current list of all rules.
-            continue_turn: When True, skip the history reset so accumulated
-                discussion context is retained across withdrawal retries.
-
-        Returns:
-            A Discussion object containing the player's discussion.
-            If the player abstains, Discussion.text will be empty.
         """
-        # Build system message for discusser
         system_message = self.prompt_builder.build_discusser_system_message(
             proposal=proposal,
             rules=rules,
@@ -239,16 +232,30 @@ class LLMPlayer(BasePlayer):
             player_name=self.player_name,
             personality=self.personality.value,
         )
+        self._reset_history(system_message)
 
-        # Reset history for a fresh round unless caller requested continuity.
-        # When continue_turn=True the player retains accumulated discussion
-        # history so it can reason about proposal evolution across withdrawals.
-        if not continue_turn:
-            self._reset_history(system_message)
-        elif not self.turn_history:
-            # Defensive fallback: initialise if history is unexpectedly empty.
-            self._reset_history(system_message)
+    def discuss(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> Discussion:
+        """
+        Provide discussion/commentary on a proposal using an LLM.
 
+        ``begin_discussion_turn()`` must be called before this method on the
+        first discussion call of each round to initialise conversation history.
+        This method does not perform any history initialisation itself.
+
+        Args:
+            proposal: The proposal being discussed.
+            game_state: The current state of the game.
+            rules: The current list of all rules.
+
+        Returns:
+            A Discussion object containing the player's discussion.
+            If the player abstains, Discussion.text will be empty.
+        """
         # Retry loop with maximum attempts
         max_discussion_retries = self.tuning.max_discuss_retries
         for attempt in range(max_discussion_retries):

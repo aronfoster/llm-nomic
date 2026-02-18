@@ -56,24 +56,48 @@ class BasePlayer(ABC):
         pass
 
     @abstractmethod
-    def discuss(
+    def begin_discussion_turn(
         self,
         proposal: Proposal,
         game_state: GameState,
         rules: list[Rule],
-        continue_turn: bool = False,
-    ) -> Discussion:
+    ) -> None:
         """
-        Provide discussion/commentary on a proposal.
+        Initialise the player's discussion context for a new round.
+
+        This method is called by ``GameLoop._collect_discussions()`` before
+        the player's first ``discuss()`` call each round.  It is the sole
+        location where discussion history is reset/initialised.
+
+        ``GameLoop._collect_discussions()`` skips this call on withdrawal-
+        retry rounds when ``retain_discusser_history_on_retry`` is True,
+        allowing non-proposing LLM players to retain accumulated context.
 
         Args:
             proposal: The proposal being discussed.
             game_state: The current state of the game.
             rules: The current list of all rules.
-            continue_turn: When True and retain_discusser_history_on_retry
-                is enabled, LLM players preserve their accumulated discussion
-                history so they can reason about how the proposal evolved
-                across withdrawal retries.
+        """
+        pass
+
+    @abstractmethod
+    def discuss(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> Discussion:
+        """
+        Provide discussion/commentary on a proposal.
+
+        ``begin_discussion_turn()`` must be called before this method on
+        the first discussion call of each round; this method must not
+        perform any history initialisation itself.
+
+        Args:
+            proposal: The proposal being discussed.
+            game_state: The current state of the game.
+            rules: The current list of all rules.
 
         Returns:
             A Discussion object containing the player's discussion.

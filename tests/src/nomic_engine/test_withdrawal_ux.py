@@ -118,7 +118,7 @@ class TestWithdrawalRetryTemplate:
         assert "type" in lower or "target" in lower or "rule" in lower
 
     def test_template_mentions_modify_action(self) -> None:
-        """Template must mention MODIFY so the LLM understands the contrast."""
+        """Template must mention MODIFY so the LLM understands contrast."""
         rendered = prompts.WITHDRAWAL_RETRY_TEMPLATE.format(
             withdrawal_attempt=1,
             max_withdrawal_retries=2,
@@ -231,60 +231,50 @@ class TestHumanPlayerProposeWithdrawalDisplay:
 
 
 # =====================================================================
-# Sub-task A: HumanPlayer.discuss() interface consistency
+# Sub-task A: HumanPlayer.begin_discussion_turn() and discuss()
 # =====================================================================
 
 
-class TestHumanPlayerDiscussContinueTurn:
-    """Tests for HumanPlayer.discuss() accepting continue_turn parameter."""
+class TestHumanPlayerDiscuss:
+    """Tests for HumanPlayer.begin_discussion_turn() and discuss()."""
 
-    def test_discuss_accepts_continue_turn_false(
+    def test_discuss_returns_valid_discussion(
         self,
         proposal: Proposal,
         game_state: GameState,
         rules: list[Rule],
     ) -> None:
-        """discuss() must accept continue_turn=False without error."""
+        """discuss() must return a Discussion with the player's text."""
         player = HumanPlayer("Bob")
         with patch("builtins.input", return_value="My thoughts"):
-            result = player.discuss(
-                proposal, game_state, rules, continue_turn=False
-            )
+            result = player.discuss(proposal, game_state, rules)
         assert result.player_name == "Bob"
         assert result.text == "My thoughts"
 
-    def test_discuss_accepts_continue_turn_true(
+    def test_begin_discussion_turn_is_noop(
         self,
         proposal: Proposal,
         game_state: GameState,
         rules: list[Rule],
     ) -> None:
-        """discuss() must accept continue_turn=True without error."""
+        """begin_discussion_turn() must complete without error or output."""
         player = HumanPlayer("Bob")
-        with patch("builtins.input", return_value="Updated thoughts"):
-            result = player.discuss(
-                proposal, game_state, rules, continue_turn=True
-            )
-        assert result.player_name == "Bob"
-        assert result.text == "Updated thoughts"
+        # Should not raise and should produce no output
+        player.begin_discussion_turn(proposal, game_state, rules)
 
-    def test_discuss_continue_turn_has_no_side_effect(
+    def test_begin_discussion_turn_followed_by_discuss(
         self,
         proposal: Proposal,
         game_state: GameState,
         rules: list[Rule],
     ) -> None:
-        """For human players, continue_turn must not change behaviour."""
+        """Calling begin_discussion_turn() then discuss() must work."""
         player = HumanPlayer("Bob")
-        with patch("builtins.input", return_value="Same text"):
-            r1 = player.discuss(
-                proposal, game_state, rules, continue_turn=False
-            )
-        with patch("builtins.input", return_value="Same text"):
-            r2 = player.discuss(
-                proposal, game_state, rules, continue_turn=True
-            )
-        assert r1.text == r2.text
+        player.begin_discussion_turn(proposal, game_state, rules)
+        with patch("builtins.input", return_value="My comment"):
+            result = player.discuss(proposal, game_state, rules)
+        assert result.player_name == "Bob"
+        assert result.text == "My comment"
 
 
 # =====================================================================
@@ -331,19 +321,17 @@ class TestGameConfigRetainDiscusserHistory:
 
 
 # =====================================================================
-# Sub-task B: LLMPlayer.discuss() continue_turn behaviour
+# Sub-task B: LLMPlayer.begin_discussion_turn() and discuss()
 # =====================================================================
 
 
-class TestLLMPlayerDiscussContinueTurn:
-    """Tests for LLMPlayer.discuss() history management with continue_turn."""
+class TestLLMPlayerBeginDiscussionTurn:
+    """Tests for LLMPlayer.begin_discussion_turn() and discuss()."""
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
-    @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
-    def test_discuss_default_resets_history(
+    def test_begin_discussion_turn_resets_history(
         self,
-        mock_parse: MagicMock,
         mock_api_client_class: MagicMock,
         mock_prompt_builder_class: MagicMock,
         model_config: ModelDefinition,
@@ -351,36 +339,28 @@ class TestLLMPlayerDiscussContinueTurn:
         game_state: GameState,
         rules: list[Rule],
     ) -> None:
-        """Default discuss() (continue_turn=False) resets history."""
-        mock_api = mock_api_client_class.return_value
+        """begin_discussion_turn() must reset history to the new system msg."""
         mock_pb = mock_prompt_builder_class.return_value
         mock_pb.build_discusser_system_message.return_value = ChatMessage(
             role="system", content="New system msg"
         )
-        mock_api.get_completion.return_value = '{"x":"y"}'
-        mock_parse.return_value = {
-            "private_thoughts": "t",
-            "discussion_text": "text",
-        }
 
         player = LLMPlayer("Bob", model_config)
-        # Populate existing history
+        # Populate existing history to confirm it gets overwritten
         player.turn_history = [
             ChatMessage(role="system", content="Old system"),
             ChatMessage(role="assistant", content="Old response"),
-            ChatMessage(role="user", content="Old user msg"),
         ]
 
-        player.discuss(proposal, game_state, rules)
+        player.begin_discussion_turn(proposal, game_state, rules)
 
-        # History should have been reset to [system, assistant]
-        assert len(player.turn_history) == 2
+        assert len(player.turn_history) == 1
         assert player.turn_history[0].content == "New system msg"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
-    def test_discuss_continue_turn_preserves_history(
+    def test_discuss_does_not_reset_history(
         self,
         mock_parse: MagicMock,
         mock_api_client_class: MagicMock,
@@ -390,38 +370,38 @@ class TestLLMPlayerDiscussContinueTurn:
         game_state: GameState,
         rules: list[Rule],
     ) -> None:
-        """discuss(continue_turn=True) must preserve existing history."""
+        """discuss() must not reset history — it uses whatever is in place."""
         mock_api = mock_api_client_class.return_value
         mock_pb = mock_prompt_builder_class.return_value
         mock_pb.build_discusser_system_message.return_value = ChatMessage(
-            role="system", content="New system msg"
+            role="system", content="Should not appear"
         )
         mock_api.get_completion.return_value = '{"x":"y"}'
         mock_parse.return_value = {
             "private_thoughts": "t",
-            "discussion_text": "retained context",
+            "discussion_text": "my take",
         }
 
         player = LLMPlayer("Bob", model_config)
-        # Populate existing history (e.g., from a previous discussion round)
+        # Seed history as begin_discussion_turn() would in normal usage
         prior_history = [
             ChatMessage(role="system", content="Prior system"),
             ChatMessage(role="assistant", content="Prior discussion"),
         ]
         player.turn_history = list(prior_history)
 
-        player.discuss(proposal, game_state, rules, continue_turn=True)
+        player.discuss(proposal, game_state, rules)
 
-        # The prior history should still be at the start
+        # First two entries must be unchanged (history not reset)
         assert player.turn_history[0].content == "Prior system"
         assert player.turn_history[1].content == "Prior discussion"
-        # History grew (assistant response appended)
-        assert len(player.turn_history) > len(prior_history)
+        # History grew by one (the new assistant response)
+        assert len(player.turn_history) == len(prior_history) + 1
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
-    def test_discuss_continue_turn_empty_history_falls_back_to_reset(
+    def test_begin_then_discuss_uses_new_context(
         self,
         mock_parse: MagicMock,
         mock_api_client_class: MagicMock,
@@ -431,32 +411,32 @@ class TestLLMPlayerDiscussContinueTurn:
         game_state: GameState,
         rules: list[Rule],
     ) -> None:
-        """continue_turn=True with empty history falls back to reset."""
+        """begin_discussion_turn() followed by discuss() uses fresh context."""
         mock_api = mock_api_client_class.return_value
         mock_pb = mock_prompt_builder_class.return_value
         mock_pb.build_discusser_system_message.return_value = ChatMessage(
-            role="system", content="Fresh system"
+            role="system", content="Fresh context"
         )
         mock_api.get_completion.return_value = '{"x":"y"}'
         mock_parse.return_value = {
             "private_thoughts": "t",
-            "discussion_text": "ok",
+            "discussion_text": "fresh take",
         }
 
         player = LLMPlayer("Bob", model_config)
-        # History is empty despite continue_turn=True (defensive path)
-        assert player.turn_history == []
+        # begin_discussion_turn initialises history
+        player.begin_discussion_turn(proposal, game_state, rules)
+        assert player.turn_history[0].content == "Fresh context"
 
-        player.discuss(proposal, game_state, rules, continue_turn=True)
-
-        # Should have been initialised with the system message
-        assert player.turn_history[0].role == "system"
-        assert player.turn_history[0].content == "Fresh system"
+        result = player.discuss(proposal, game_state, rules)
+        assert result.text == "fresh take"
+        # History: [system] + [assistant response]
+        assert len(player.turn_history) == 2
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.ApiClient")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
-    def test_discuss_false_produces_identical_behavior_to_original(
+    def test_discuss_without_begin_preserves_prior_rounds(
         self,
         mock_parse: MagicMock,
         mock_api_client_class: MagicMock,
@@ -466,41 +446,37 @@ class TestLLMPlayerDiscussContinueTurn:
         game_state: GameState,
         rules: list[Rule],
     ) -> None:
-        """discuss(continue_turn=False) must behave identically to old code."""
+        """Skipping begin_discussion_turn() retains accumulated history."""
         mock_api = mock_api_client_class.return_value
-        mock_pb = mock_prompt_builder_class.return_value
-        mock_pb.build_discusser_system_message.return_value = ChatMessage(
-            role="system", content="System"
-        )
         mock_api.get_completion.return_value = '{"x":"y"}'
         mock_parse.return_value = {
             "private_thoughts": "t",
-            "discussion_text": "response",
+            "discussion_text": "retained",
         }
 
         player = LLMPlayer("Bob", model_config)
-        player.turn_history = [
-            ChatMessage(role="system", content="Old"),
-            ChatMessage(role="assistant", content="Old resp"),
+        # Simulate history from previous withdrawal round
+        accumulated = [
+            ChatMessage(role="system", content="Round 1 system"),
+            ChatMessage(role="assistant", content="Round 1 discussion"),
         ]
+        player.turn_history = list(accumulated)
 
-        result = player.discuss(
-            proposal, game_state, rules, continue_turn=False
-        )
+        # Do NOT call begin_discussion_turn() — history must be preserved
+        result = player.discuss(proposal, game_state, rules)
 
-        # History should have been reset (old code behaviour)
-        assert player.turn_history[0].content == "System"
-        assert result.text == "response"
-        assert result.player_name == "Bob"
+        assert player.turn_history[0].content == "Round 1 system"
+        assert player.turn_history[1].content == "Round 1 discussion"
+        assert result.text == "retained"
 
 
 # =====================================================================
-# Sub-task B: GameLoop._collect_discussions() with is_retry flag
+# Sub-task B: GameLoop._collect_discussions() lifecycle management
 # =====================================================================
 
 
-class TestCollectDiscussionsRetainHistory:
-    """Tests for _collect_discussions() continue_turn propagation."""
+class TestCollectDiscussionsLifecycle:
+    """Tests for begin_discussion_turn() call/skip in _collect_discussions."""
 
     def _make_game_loop(
         self,
@@ -561,8 +537,8 @@ class TestCollectDiscussionsRetainHistory:
             rationale="Because",
         )
 
-    def test_first_attempt_passes_continue_turn_false(self) -> None:
-        """is_retry=False must pass continue_turn=False to non-proposers."""
+    def test_first_attempt_calls_begin_discussion_turn(self) -> None:
+        """is_retry=False calls begin_discussion_turn() before discuss()."""
         game_loop, _alice, bob = self._make_game_loop(retain_flag=True)
         proposal = self._make_proposal()
 
@@ -570,12 +546,11 @@ class TestCollectDiscussionsRetainHistory:
             proposal, game_loop.players, is_retry=False
         )
 
+        bob.begin_discussion_turn.assert_called_once()
         bob.discuss.assert_called_once()
-        call_kwargs = bob.discuss.call_args[1]
-        assert call_kwargs["continue_turn"] is False
 
-    def test_retry_with_flag_true_passes_continue_turn_true(self) -> None:
-        """is_retry=True + retain=True must pass continue_turn=True."""
+    def test_retry_with_flag_true_skips_begin_discussion_turn(self) -> None:
+        """is_retry=True + retain=True skips begin_discussion_turn()."""
         game_loop, _alice, bob = self._make_game_loop(retain_flag=True)
         proposal = self._make_proposal()
 
@@ -583,12 +558,11 @@ class TestCollectDiscussionsRetainHistory:
             proposal, game_loop.players, is_retry=True
         )
 
+        bob.begin_discussion_turn.assert_not_called()
         bob.discuss.assert_called_once()
-        call_kwargs = bob.discuss.call_args[1]
-        assert call_kwargs["continue_turn"] is True
 
-    def test_retry_with_flag_false_passes_continue_turn_false(self) -> None:
-        """is_retry=True + retain=False must pass continue_turn=False."""
+    def test_retry_with_flag_false_calls_begin_discussion_turn(self) -> None:
+        """is_retry=True + retain=False calls begin_discussion_turn()."""
         game_loop, _alice, bob = self._make_game_loop(retain_flag=False)
         proposal = self._make_proposal()
 
@@ -596,12 +570,11 @@ class TestCollectDiscussionsRetainHistory:
             proposal, game_loop.players, is_retry=True
         )
 
+        bob.begin_discussion_turn.assert_called_once()
         bob.discuss.assert_called_once()
-        call_kwargs = bob.discuss.call_args[1]
-        assert call_kwargs["continue_turn"] is False
 
-    def test_proposer_is_never_called_for_discussion(self) -> None:
-        """Proposer (Alice) should not have discuss() called."""
+    def test_proposer_skipped_for_both_methods(self) -> None:
+        """Proposer must not have begin_discussion_turn() or discuss()."""
         game_loop, alice, _bob = self._make_game_loop()
         proposal = self._make_proposal(proposer="Alice")
 
@@ -609,10 +582,11 @@ class TestCollectDiscussionsRetainHistory:
             proposal, game_loop.players, is_retry=True
         )
 
+        alice.begin_discussion_turn.assert_not_called()
         alice.discuss.assert_not_called()
 
-    def test_no_game_config_passes_continue_turn_false(self) -> None:
-        """If game_config is None, continue_turn must default to False."""
+    def test_no_game_config_calls_begin_discussion_turn(self) -> None:
+        """game_config=None must behave like retain=False (no skip)."""
         from src.nomic_engine.core.game_loop import GameLoop
 
         game_state = GameState(
@@ -657,6 +631,6 @@ class TestCollectDiscussionsRetainHistory:
 
         game_loop._collect_discussions(proposal, [alice, bob], is_retry=True)
 
+        # With no config, skip_init=False, so init IS called
+        bob.begin_discussion_turn.assert_called_once()
         bob.discuss.assert_called_once()
-        call_kwargs = bob.discuss.call_args[1]
-        assert call_kwargs["continue_turn"] is False

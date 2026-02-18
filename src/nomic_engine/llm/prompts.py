@@ -263,11 +263,6 @@ after discussion.
 
 WITHDRAWAL ATTEMPT: {withdrawal_attempt} of {max_withdrawal_retries}
 
-You now have a fresh proposal opportunity. Use the full turn context \
-already in this conversation (proposal, discussion, and withdrawal) \
-before you respond, then propose a DIFFERENT rule change that addresses \
-the concerns raised.
-
 IMPORTANT — proposal type and target rule:
 - You may freely choose any proposal type (ADD, AMEND, REPEAL, TRANSMUTE)
   and any target rule for this new proposal.
