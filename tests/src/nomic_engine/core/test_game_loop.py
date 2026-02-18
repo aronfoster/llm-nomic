@@ -1604,6 +1604,40 @@ def test_format_transcript_shows_abstentions(
     assert "Nothing useful to say" in transcript
 
 
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
+@patch("builtins.input", side_effect=["n", "10", "5", "0"])
+def test_run_turn_logs_completed_turn_before_advance(
+    mock_input: Mock,
+    mock_maintain_state: Mock,
+    game_loop: GameLoop,
+    mock_game_state: GameState,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """
+    'Completed turn X' must report the turn that just finished, not the
+    next turn.  After _advance_turn_state(), move_number is 2, but the
+    log should still say 'Completed turn 1' (Item 4 fix).
+    """
+    import logging
+
+    mock_game_state.move_number = 1
+
+    gl_logger = "src.nomic_engine.core.game_loop"
+    with caplog.at_level(logging.INFO, logger=gl_logger):
+        game_loop.run_turn()
+
+    completed_msgs = [
+        r.message for r in caplog.records if "Completed turn" in r.message
+    ]
+    assert len(completed_msgs) >= 1, "No 'Completed turn' log found"
+    # The completed turn number must be 1, not 2 (off-by-one guard)
+    assert "Completed turn 1" in completed_msgs[0]
+    assert "Completed turn 2" not in completed_msgs[0]
+
+
 # --- Tests for Modular Turn Resolution Methods ---
 
 

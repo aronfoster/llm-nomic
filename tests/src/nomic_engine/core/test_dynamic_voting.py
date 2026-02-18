@@ -65,6 +65,8 @@ def mock_game_manager(
     manager.save_game_state = Mock()
     manager.save_rules = Mock()
 
+    manager.game_config = None
+
     return manager
 
 

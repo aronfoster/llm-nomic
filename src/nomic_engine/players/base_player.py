@@ -27,6 +27,17 @@ class BasePlayer(ABC):
         """
         self.player_name = player_name
 
+    @property
+    def player_label(self) -> str:
+        """
+        Return a formatted label for console/transcript output.
+
+        Subclasses override this to include model and personality info.
+        The default returns the bare player name so callers always have a
+        safe string regardless of player type.
+        """
+        return self.player_name
+
     @abstractmethod
     def propose(
         self,

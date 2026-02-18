@@ -460,7 +460,8 @@ def main() -> None:
     print(f"  - {game_dir / GAME_LOG_FILE}")
     print(f"  - {game_dir / GAME_TRANSCRIPT_FILE}")
     print()
-    print("You can now start playing the game!")
+    print("To start your game, run:")
+    print(f"    python -m src.nomic_engine.main --game_dir {game_dir}")
 
 
 if __name__ == "__main__":

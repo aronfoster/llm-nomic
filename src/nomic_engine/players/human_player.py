@@ -15,10 +15,21 @@ from ..data_models import (
     Rule,
     Vote,
 )
+from ..utils.player_label import assemble_player_label
 from .base_player import BasePlayer
 
 
 class HumanPlayer(BasePlayer):
+    @property
+    def player_label(self) -> str:
+        """Return a label identifying this as a human player."""
+        return assemble_player_label(
+            self.player_name,
+            is_human=True,
+            personality="",
+            model_id="",
+        )
+
     """
     A human player that interacts via command-line input.
 
@@ -55,7 +66,7 @@ class HumanPlayer(BasePlayer):
         """
         if continue_turn:
             print(
-                f"\n--- {self.player_name}'s Turn: "
+                f"\n--- {self.player_label}'s Turn: "
                 f"Pivoting After Withdrawal "
                 f"(attempt {withdrawal_attempt} of {max_withdrawal_retries})"
                 " ---"
@@ -71,7 +82,7 @@ class HumanPlayer(BasePlayer):
                 "(if retries remain)."
             )
         else:
-            print(f"\n--- {self.player_name}'s Turn: Making a Proposal ---")
+            print(f"\n--- {self.player_label}'s Turn: Making a Proposal ---")
 
         # Get proposal type
         while True:
@@ -172,7 +183,7 @@ class HumanPlayer(BasePlayer):
             A Discussion object containing the player's discussion.
             If the player skips, Discussion.text will be empty.
         """
-        print(f"\n--- {self.player_name}'s Turn: Discussion Phase ---")
+        print(f"\n--- {self.player_label}'s Turn: Discussion Phase ---")
         print(f"Proposal by {proposal.proposer_name}:")
         print(f"  Type: {proposal.type.value}")
         if proposal.target_rule_id:
@@ -228,7 +239,7 @@ class HumanPlayer(BasePlayer):
         Returns:
             A Vote object representing the player's vote.
         """
-        print(f"\n--- {self.player_name}'s Turn: Voting Phase ---")
+        print(f"\n--- {self.player_label}'s Turn: Voting Phase ---")
         print(f"Proposal by {proposal.proposer_name}:")
         print(f"  Type: {proposal.type.value}")
         if proposal.target_rule_id:
@@ -310,7 +321,7 @@ class HumanPlayer(BasePlayer):
             The (potentially) revised Proposal object,
             or None if the player chooses to withdraw the proposal.
         """
-        print(f"\n--- {self.player_name}'s Turn: Revision Phase ---")
+        print(f"\n--- {self.player_label}'s Turn: Revision Phase ---")
 
         # Print original proposal details
         print("\nOriginal Proposal:")

@@ -24,18 +24,18 @@ Our architecture is built on these principles:
 ### Low Priority
 
 - Allow numbers or text (e.g. 2 or llm) in each prompt of create_game.py
-- Print the command to run the game after create_game.py
-- Fix markdown at the start of game transcript md (the first section is all bunched together)
-- Final text has the wrong turn number
-- Add the model and personality to each player as a label when their turn is on the screen
-  - Read from config.yml
+- ~~Print the command to run the game after create_game.py~~ → COMPLETED
+- ~~Fix markdown at the start of game transcript md (the first section is all bunched together)~~ → COMPLETED
+- ~~Final text has the wrong turn number~~ → COMPLETED
+- ~~Add the model and personality to each player as a label when their turn is on the screen~~ → COMPLETED
+  - ~~Read from config.yml~~
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
 
 ## Sprint 29: Reliable Judge & Clean Exits (Bug-Fix & Polish focused)
 
 **Goal:** Make judge behavior more consistent/predictable, fix victory & post-victory edge cases, and resolve several HIGH PRIORITY items revealed by recent 2-player playtests. Aim for small, testable, standalone PRs.
 
-**Status:** In progress (started office-break style)
+**Status:** COMPLETED
 
 ### Prioritized Tasks
 
@@ -60,14 +60,11 @@ Our architecture is built on these principles:
    - ~~Add `retain_discusser_history_on_retry` config flag so non-proposers can~~
      ~~optionally retain discussion context across withdrawal retries~~
 
-5. **Small bug & polish wrap-up**  
-   - Fix markdown bunching at start of `game_transcript.md`  
-   - Add player model/personality label on turn start in transcript  
-     e.g., "Deepti (Machiavellian / deepseek-r1) is thinking..."  
-   - Print suggested next command at end of `create_game.py` success  
-     e.g., "To start the game: python -m src.nomic_engine.main --game_dir games/My-Game"  
-   - Fix final transcript text showing wrong turn number  
-     (likely off-by-one; log turn_number-1 for victory message)
+5. **COMPLETED** ~~Small bug & polish wrap-up~~
+   - ~~Fix markdown bunching at start of `game_transcript.md`~~ → `_format_transcript` now uses `"\n\n"` between top-level fields
+   - ~~Add player model/personality label on turn start in transcript~~ → `assemble_player_label`/`format_player_label` helper; `player_label` property on all player types; used in console prints and transcript
+   - ~~Print suggested next command at end of `create_game.py` success~~ → prints `python -m src.nomic_engine.main --game_dir games/<name>`
+   - ~~Fix final transcript text showing wrong turn number~~ → capture `move_number` before `_resolve_turn` (which increments it via `_advance_turn_state`)
 
 ## Future Work
 
