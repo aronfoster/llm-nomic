@@ -258,22 +258,25 @@ Remember:
 No other text. Just the JSON object:"""
 
 
-WITHDRAWAL_RETRY_TEMPLATE = (
-    """Your previous proposal was withdrawn after discussion.
+WITHDRAWAL_RETRY_TEMPLATE = """Your previous proposal was withdrawn \
+after discussion.
 
-"""
-    """Pivot and propose a DIFFERENT rule change that addresses the """
-    """concerns above.
-Use the full turn context already in this """
-    """conversation (proposal, discussion,
-and withdrawal) before """
-    """you respond.
+WITHDRAWAL ATTEMPT: {withdrawal_attempt} of {max_withdrawal_retries}
 
-"""
-    """Attempt: {withdrawal_attempt}/{max_withdrawal_retries}
-"""
-    """Return only valid JSON using the standard proposal schema."""
-)
+You now have a fresh proposal opportunity. Use the full turn context \
+already in this conversation (proposal, discussion, and withdrawal) \
+before you respond, then propose a DIFFERENT rule change that addresses \
+the concerns raised.
+
+IMPORTANT — proposal type and target rule:
+- You may freely choose any proposal type (ADD, AMEND, REPEAL, TRANSMUTE)
+  and any target rule for this new proposal.
+- Later, during the revision phase, if you decide you want to change the
+  proposal TYPE or TARGET RULE ID, you must choose WITHDRAW (not MODIFY).
+  MODIFY can only update rule text or rationale. Withdrawing at that point
+  will give you another fresh proposal opportunity (if retries remain).
+
+Return only valid JSON using the standard proposal schema."""
 
 # =====================================================================
 # ATOMIZED PROMPT BLOCKS (Sprint 6 - Stateful Context)

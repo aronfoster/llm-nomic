@@ -183,6 +183,17 @@ class GameConfig(BaseModel):
             "withdrawal_policy is retry."
         ),
     )
+    retain_discusser_history_on_retry: bool = Field(
+        default=True,
+        description=(
+            "When True, non-proposing LLM players retain their accumulated "
+            "discussion history across withdrawal retries within a single "
+            "run_turn execution. This allows them to reason about how and "
+            "why the proposal evolved across withdrawal attempts. When False, "
+            "each discussion round resets history (identical to pre-flag "
+            "behavior)."
+        ),
+    )
 
 
 # --- Dynamic Game State (for game_state.json) ---

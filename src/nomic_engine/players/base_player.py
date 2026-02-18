@@ -33,6 +33,8 @@ class BasePlayer(ABC):
         game_state: GameState,
         rules: list[Rule],
         continue_turn: bool = False,
+        withdrawal_attempt: int = 0,
+        max_withdrawal_retries: int = 0,
     ) -> Proposal:
         """
         Generate a proposal for a rule change.
@@ -40,6 +42,12 @@ class BasePlayer(ABC):
         Args:
             game_state: The current state of the game.
             rules: The current list of all rules.
+            continue_turn: True when retrying after a withdrawal so the
+                player can preserve cumulative context.
+            withdrawal_attempt: The current withdrawal attempt number
+                (0 on the first attempt, 1+ on retries).
+            max_withdrawal_retries: The maximum number of withdrawal retries
+                configured for this game.
 
         Returns:
             A complete Proposal object representing the player's
@@ -49,7 +57,11 @@ class BasePlayer(ABC):
 
     @abstractmethod
     def discuss(
-        self, proposal: Proposal, game_state: GameState, rules: list[Rule]
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+        continue_turn: bool = False,
     ) -> Discussion:
         """
         Provide discussion/commentary on a proposal.
@@ -58,6 +70,10 @@ class BasePlayer(ABC):
             proposal: The proposal being discussed.
             game_state: The current state of the game.
             rules: The current list of all rules.
+            continue_turn: When True and retain_discusser_history_on_retry
+                is enabled, LLM players preserve their accumulated discussion
+                history so they can reason about how the proposal evolved
+                across withdrawal retries.
 
         Returns:
             A Discussion object containing the player's discussion.
