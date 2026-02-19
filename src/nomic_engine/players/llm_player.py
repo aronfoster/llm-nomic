@@ -29,6 +29,7 @@ from ..llm import (
     parse_vote_response,
     prompts,
 )
+from ..utils.player_label import assemble_player_label
 from .base_player import BasePlayer
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,16 @@ class LLMPlayer(BasePlayer):
         self.prompt_builder = PromptBuilder()
         # Stateful conversation history for the current turn
         self.turn_history: list[ChatMessage] = []
+
+    @property
+    def player_label(self) -> str:
+        """Return a label with personality and model id for display."""
+        return assemble_player_label(
+            self.player_name,
+            is_human=False,
+            personality=self.personality.value,
+            model_id=self.model_config.id,
+        )
 
     def _reset_history(self, system_message: ChatMessage) -> None:
         """
@@ -126,7 +137,7 @@ class LLMPlayer(BasePlayer):
         max_proposal_retries = self.tuning.max_propose_retries
         for attempt in range(max_proposal_retries):
             # Status indicator for UX
-            print(f"\n🤖 {self.player_name} is thinking about a proposal...")
+            print(f"\n🤖 {self.player_label} is thinking about a proposal...")
 
             # Get completion from the LLM using turn history
             response_text = self.api_client.get_completion(self.turn_history)
@@ -260,7 +271,7 @@ class LLMPlayer(BasePlayer):
         max_discussion_retries = self.tuning.max_discuss_retries
         for attempt in range(max_discussion_retries):
             # Status indicator for UX
-            print(f"\n🤖 {self.player_name} is thinking...")
+            print(f"\n🤖 {self.player_label} is thinking...")
 
             # Get completion from the LLM using turn history
             response_text = self.api_client.get_completion(self.turn_history)
@@ -379,7 +390,7 @@ class LLMPlayer(BasePlayer):
         max_vote_retries = self.tuning.max_vote_retries
         for attempt in range(max_vote_retries):
             # Status indicator for UX
-            print(f"\n🤖 {self.player_name} is thinking...")
+            print(f"\n🤖 {self.player_label} is thinking...")
 
             # Get completion from the LLM using turn history
             response_text = self.api_client.get_completion(self.turn_history)
@@ -510,7 +521,7 @@ class LLMPlayer(BasePlayer):
         max_revision_retries = self.tuning.max_revise_retries
         for attempt in range(max_revision_retries):
             # Status indicator for UX
-            print(f"\n🤖 {self.player_name} is reviewing feedback...")
+            print(f"\n🤖 {self.player_label} is reviewing feedback...")
 
             # Get completion from the LLM using turn history
             response_text = self.api_client.get_completion(self.turn_history)
