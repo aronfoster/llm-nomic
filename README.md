@@ -1,4 +1,4 @@
-# LLM Nomic Project
+# LLM Nomic — Play Peter Suber’s Self-Amending Game with Humans + LLMs
 
 ## What is Nomic?
 
