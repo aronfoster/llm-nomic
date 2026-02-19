@@ -1,6 +1,19 @@
 # LLM Nomic Project
 
-This is a Python 3.12 project to create games of Suber's 1982 game Nomic, to be played by human and LLM players.
+## What is Nomic?
+
+**Nomic** is Peter Suber’s 1982 self-amending game: every turn a player proposes a rule change, everyone discusses and votes, and if it passes the ruleset itself evolves. The game is literally *about* changing the rules.
+
+This project runs full games of Nomic with any mix of human and LLM players. The engine is stateless, authoritative game-state files drive everything, and the ruleset is a deliberate, documented adaptation of the 1982 original.
+
+### Key Project Documents
+
+- **[ROADMAP.md](ROADMAP.md)** — High-level plan, current sprint, bug list, refactoring notes, and long-term backlog.  
+  **Developers and Contributors: this is the single file you should read first.**
+
+- **[RULESET_DESIGN.md](RULESET_DESIGN.md)** — Why and how the ruleset differs from Suber’s original (plus a side-by-side table of changes). Essential context for anyone playing or extending the game.
+
+- [Peter Suber’s original 1982 rules](http://legacy.earlham.edu/~peters/writing/nomic.htm) (external reference)
 
 ## Prerequisites
 
