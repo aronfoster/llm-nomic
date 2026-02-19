@@ -6,7 +6,7 @@ This document tracks the high-level plan for the `llm-nomic` project.
 
 Our architecture is built on these principles:
 
-1.  **Security, Structure First:** Having secure, clean (Uncle Bob) code 
+1.  **Security, Structure First:** Code will be secure and clean (ala Uncle Bob)
 2.  **Engine vs. Instance:** The Game Engine is stateless and operates on "Game Instance" directories.
 3.  **Authoritative Data:** The Game Instance is the sole authority on game state. `rules.jsonl` and `game_state.json` are the sources of truth.
 4.  **Stand alone PRs:** All PRs are small enough to understand, `make ci` passes, and contain unit tests that cover new code
@@ -15,56 +15,61 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-- ~~Judge on lower quality models isn't scoring appropriately~~ → Partially addressed via prompt improvements in Sprint 28/29. Still verify veto/scoring edge case.
-- ~~Proposals that pass but are judge vetoed should still award points~~ → Engine likely correct; confirm via log/prompt fix
-- After game victory, running another turn should immediately exit
-- ~~The game does not automatically switch from unanimous to majority after 2 complete cycles~~ → COMPLETED
-- Ensure revision can correctly change type (e.g. TRANSMUTE to AMEND)
+- None
 
 ### Low Priority
 
 - Allow numbers or text (e.g. 2 or llm) in each prompt of create_game.py
-- ~~Print the command to run the game after create_game.py~~ → COMPLETED
-- ~~Fix markdown at the start of game transcript md (the first section is all bunched together)~~ → COMPLETED
-- ~~Final text has the wrong turn number~~ → COMPLETED
-- ~~Add the model and personality to each player as a label when their turn is on the screen~~ → COMPLETED
-  - ~~Read from config.yml~~
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
 
-## Sprint 29: Reliable Judge & Clean Exits (Bug-Fix & Polish focused)
+### Sprint 30: Creative Personalities & Withdrawal Fix
 
-**Goal:** Make judge behavior more consistent/predictable, fix victory & post-victory edge cases, and resolve several HIGH PRIORITY items revealed by recent 2-player playtests. Aim for small, testable, standalone PRs.
+**Goal:** Make LLM players propose creative, personality-driven rules instead of exclusively point-manipulation plays. Fix stale context bug on withdrawal retries.
 
-**Status:** COMPLETED
+### Task 1: Fix discusser stale context after withdrawal retry (BUG — HIGH)
 
-### Prioritized Tasks
+**Problem:** When `retain_discusser_history_on_retry=True`, `_collect_discussions` skips `begin_discussion_turn` on retry rounds to preserve accumulated reasoning. But `begin_discussion_turn` is the only place the PROPOSAL_BLOCK gets injected into the discusser's system message. After a withdrawal + pivot, non-proposer LLMs discuss the *old* proposal.
 
-1. **COMPLETED** ~~Judge scoring improvements~~
-   - ~~Judge scoring prompt clearly expresses whether the proposal passes or fails~~
-   - ~~Explore rule filtering so only the ones containing "point" and "score" are sent to the scoring judge~~
-   - ~~Ensure it is clear that points in the proposed rule do not apply to this round's scoring (unless rule 205 is changed?)~~
-   - See Low Priority bug list for deferred Rule 205 edge case
+**Fix:**
+- When `is_retry=True` and history is being retained, instead of skipping entirely, append a **new user message** to the discusser's existing `turn_history` containing:
+  - Explicit statement: "The proposer has withdrawn their previous proposal and submitted a new one."
+  - The withdrawal attempt number and max retries remaining
+  - The full new PROPOSAL_BLOCK (formatted via `_format_proposal`)
+  - A re-prompt for discussion (reuse `INSTRUCTION_DISCUSS` or a variant)
+- This preserves prior reasoning context while making the new proposal visible.
+- Do NOT reset history or call `begin_discussion_turn` — the point is continuity.
 
-2. **COMPLETED** ~~Post-victory turn handling~~  
-   - ~~After victory detected, further turn attempts should immediately exit with clear log/message.~~
-     - ~~Consider game summary, with victor, scores, turns, etc.~~
+### Task 2: Personality files with phase-specific examples (CORE — LARGE)
 
-3. **COMPLETED** ~~Unanimous → Majority rule transition failure~~
-   - ~~Base rules require switch to majority after 2 complete cycles → engine does not currently enforce.~~
-   - ~~Implement automatic rule amendment / state update.~~
-   - ~~Add small test suite for cycle counting and vote_mode switching.~~
+**Problem:** All personalities share hardcoded examples in `prompts.py`. These examples exclusively demonstrate point-manipulation strategies, anchoring LLMs to propose only numerical advantage plays. The personality blocks themselves are 4 lines of tone-setting that are not effective at differentiating behavior.
 
-4. **COMPLETED** ~~Withdrawal UX improvements~~
-   - ~~Update proposer prompt to include withdrawal attempt number, max retries,~~
-     ~~and instruction to WITHDRAW if they want to change proposal type or target rule~~
-   - ~~Add `retain_discusser_history_on_retry` config flag so non-proposers can~~
-     ~~optionally retain discussion context across withdrawal retries~~
+**Solution:** Create dedicated personality files containing persona description, strategic guidance, and phase-specific examples. Wire PromptBuilder to load them.
 
-5. **COMPLETED** ~~Small bug & polish wrap-up~~
-   - ~~Fix markdown bunching at start of `game_transcript.md`~~ → `_format_transcript` now uses `"\n\n"` between top-level fields
-   - ~~Add player model/personality label on turn start in transcript~~ → `assemble_player_label`/`format_player_label` helper; `player_label` property on all player types; used in console prints and transcript
-   - ~~Print suggested next command at end of `create_game.py` success~~ → prints `python -m src.nomic_engine.main --game_dir games/<name>`
-   - ~~Fix final transcript text showing wrong turn number~~ → capture `move_number` before `_resolve_turn` (which increments it via `_advance_turn_state`)
+**Subtasks:**
+- Create a `personalities/` directory (sibling to `src/`? inside `src/nomic_engine/`? — developer's call) with one file per personality
+  (`machiavellian.md`, `friendly.md`, `none.md`), each containing persona
+  description, strategic guidance, and phase-specific examples (propose,
+  discuss, revise, vote)
+  - Each file contains appropriate sections, e.g. `PERSONA`, `STRATEGIC_GUIDANCE`, `PROPOSE_EXAMPLES`, `DISCUSS_EXAMPLES`, `REVISE_EXAMPLES`, `VOTE_EXAMPLES`
+  - **Use the existing hardcoded examples for these files during development** and they will be modified by the PM later, outside this Developer Task
+- Update PromptBuilder to load personality from file and inject personality-specific examples into appropriate places, e.g. `INSTRUCTION_PROPOSE`,`INSTRUCTION_DISCUSS`, `INSTRUCTION_REVISE`, and `INSTRUCTION_VOTE`
+  templates via a new `{personality_examples}` placeholder
+- Remove inline personality constants from `prompts.py`
+- Update `create_game.py` to discover available personalities from the
+  directory. The game loop should throw an exception and log an error if it attempts to run a turn and finds a player with a personality name that doesn't exist in the directory.
+- Personality names are case-insensitive: normalize to lowercase at input,
+  enforce lowercase filenames as convention
+- Developer seeds personality files using the existing hardcoded examples;
+  PM will iterate on file content post-merge
+
+### Task 3: Remove vestigial Rule 112 UNCLEAR/AMBIGUOUS checks (POLISH — LOW)
+
+**Problem:** Two TODO comments mark dead code from the v0 ruleset. The v1 ruleset's Rule 111 was simplified and no longer has the UNCLEAR/AMBIGUOUS triggering mechanism.
+
+**Fix:**
+- In `prompt_builder.py` `build_revision_instruction`: Remove the Rule 112 loop that checks for "UNCLEAR"/"AMBIGUOUS" in discussions. Always use the unconditional `constraint_message`.
+- In `human_player.py` `revise`: Remove the `must_revise` check and the associated "Rule 112" print/prompt logic. Always show the standard R/S/W prompt.
+- Remove both TODO comments.
 
 ## Future Work
 
@@ -128,7 +133,7 @@ This is the long-term backlog and TODO scratchpad.
 
 * **Tooling & Features:**
     * Specify versions for dependencies and start managing those (pin at least major versions in `requirements.txt` to prevent breakage from upstream changes)
-    * Add `make fix` to Makefile
+    * Add `make fix` to Makefile that does the same thing as `make format`
 
 * **Dynamic Game Structure**
   * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.
