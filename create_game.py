@@ -33,7 +33,6 @@ from src.nomic_engine.data_models import (
     ModelDefinition,
     ModelLibrary,
     PlayerConfig,
-    PlayerPersonality,
 )
 from src.nomic_engine.utils.flag_schema import (
     get_flag_defaults,
@@ -193,17 +192,38 @@ def choose_llm_model(model_library: ModelLibrary) -> str:
             print("Please enter a valid number.")
 
 
-def choose_personality() -> PlayerPersonality:
+def _discover_personalities() -> list[str]:
+    """
+    Return a sorted list of available personality names.
+
+    Discovers personalities by listing ``*.md`` files in the top-level
+    ``personalities/`` directory.  Names are the file stems, normalized
+    to lowercase.
+
+    Returns:
+        Sorted list of personality name strings (e.g. ``["friendly",
+        "machiavellian", "none"]``).
+    """
+    personalities_dir = Path(__file__).resolve().parent / "personalities"
+    return sorted(p.stem.lower() for p in personalities_dir.glob("*.md"))
+
+
+def choose_personality() -> str:
     """
     Display available personalities and let the user choose one.
 
+    Personalities are discovered dynamically from the ``personalities/``
+    directory.  The chosen value is normalized to lowercase.
+
     Returns:
-        The chosen PlayerPersonality enum value.
+        The chosen personality name string (e.g. ``"machiavellian"``).
     """
-    personalities = list(PlayerPersonality)
+    personalities = _discover_personalities()
+    if not personalities:
+        print("Warning: no personality files found in personalities/.")
     print("\nAvailable personalities:")
     for idx, personality in enumerate(personalities, start=1):
-        print(f"  {idx}. {personality.value}")
+        print(f"  {idx}. {personality}")
 
     while True:
         try:
@@ -265,7 +285,7 @@ def configure_players(model_library: ModelLibrary) -> list[PlayerConfig]:
             personality = choose_personality()
         else:
             model_id = "human"
-            personality = PlayerPersonality.FRIENDLY  # Default for human
+            personality = "friendly"  # Default for human players
 
         players.append(
             PlayerConfig(
@@ -277,7 +297,7 @@ def configure_players(model_library: ModelLibrary) -> list[PlayerConfig]:
         if player_type == "llm":
             print(
                 f"Added {name} as {player_type} player using "
-                f"{model_id} with {personality.value} personality"
+                f"{model_id} with {personality} personality"
             )
         else:
             print(f"Added {name} as {player_type} player")

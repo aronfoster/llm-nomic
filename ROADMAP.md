@@ -36,7 +36,7 @@ Our architecture is built on these principles:
 - `HumanPlayer.on_proposal_updated` prints withdrawal notice and new proposal details to console.
 - `GameLoop._collect_discussions` calls `on_proposal_updated` (instead of skipping) on retry rounds when `retain_discusser_history_on_retry=True`.
 
-### Task 2: Personality files with phase-specific examples (CORE — LARGE)
+### ~~Task 2: Personality files with phase-specific examples (CORE — LARGE)~~ ✅ COMPLETE
 
 **Problem:** All personalities share hardcoded examples in `prompts.py`. These examples exclusively demonstrate point-manipulation strategies, anchoring LLMs to propose only numerical advantage plays. The personality blocks themselves are 4 lines of tone-setting that are not effective at differentiating behavior.
 
@@ -87,6 +87,10 @@ This is the long-term backlog and TODO scratchpad.
 * **Validate API Keys at Startup:**
   * Currently, missing API keys aren't discovered until a player's first turn — potentially hours into a game with multiple providers.
   * Add a validation step in `create_game.py` or at `main.py` startup that checks all required env vars for configured players and the judge before gameplay begins.
+
+* **Validate Personality Files at Startup:**
+  * Currently, a missing personality file raises a `FileNotFoundError` at the point of first use (inside `PromptBuilder` during a player's turn), not at startup.
+  * Add a validation step alongside API key validation that checks all player personality files exist in the `personalities/` directory before gameplay begins.
 
 * **Decouple Score Mutation from Judge Methods:** - Integrated into Sprint 27 task 1.
   * `LLMJudge.assess_scores` directly mutates `game_manager.game_state.scores`. This creates a hidden dependency: `_detect_victory` only works correctly because the judge's side effect already happened.

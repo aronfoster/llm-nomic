@@ -23,6 +23,7 @@ from ..utils.flag_schema import (
     format_supported_flags,
 )
 from . import prompts
+from .personality_loader import load_personality
 
 
 class PromptBuilder:
@@ -271,22 +272,30 @@ class PromptBuilder:
 
     def _get_personality_block(self, personality: str) -> str:
         """
-        Get the appropriate personality block based on the personality key.
+        Build the persona block for this personality from the loaded file.
+
+        Combines the PERSONA and STRATEGIC_GUIDANCE sections from the
+        personality file into a single string.  The ``{player_name}``
+        placeholder in PERSONA is left intact; callers must call
+        ``.format(player_name=...)`` on the returned string.
 
         Args:
-            personality: One of "machiavellian", "friendly", or "none"
+            personality: Lowercase personality name (e.g. "machiavellian").
+                         Must correspond to a file in ``personalities/``.
 
         Returns:
-            The appropriate personality template string
+            Combined PERSONA + STRATEGIC_GUIDANCE string with
+            ``{player_name}`` placeholder preserved.
+
+        Raises:
+            FileNotFoundError: If the personality file does not exist.
         """
-        personality_lower = personality.lower()
-        if personality_lower == "machiavellian":
-            return prompts.MACHIAVELLIAN_PERSONALITY
-        elif personality_lower == "none":
-            return prompts.NONE_PERSONALITY
-        else:
-            # Default to friendly for any other value
-            return prompts.FRIENDLY_PERSONALITY
+        sections = load_personality(personality.lower())
+        persona = sections.get("PERSONA", "")
+        guidance = sections.get("STRATEGIC_GUIDANCE", "").strip()
+        if guidance:
+            return f"{persona}\n\n{guidance}"
+        return persona
 
     def _format_game_state_block(
         self, game_state: GameState, player_name: str
@@ -358,9 +367,12 @@ class PromptBuilder:
         rules_text = self._format_rules(rules)
         rules_block = prompts.RULES_BLOCK.format(rules_text=rules_text)
 
-        # Format instruction block
+        # Format instruction block with personality-specific examples
+        personality_sections = load_personality(personality.lower())
+        propose_examples = personality_sections.get("PROPOSE_EXAMPLES", "")
         instruction_block = prompts.INSTRUCTION_PROPOSE.format(
-            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+            personality_examples=propose_examples,
         )
 
         # Assemble the full system message
@@ -423,9 +435,12 @@ class PromptBuilder:
         # Format proposal block
         proposal_block = self._format_proposal(proposal, rules, player_name)
 
-        # Format instruction block
+        # Format instruction block with personality-specific examples
+        personality_sections = load_personality(personality.lower())
+        discuss_examples = personality_sections.get("DISCUSS_EXAMPLES", "")
         instruction_block = prompts.INSTRUCTION_DISCUSS.format(
-            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+            personality_examples=discuss_examples,
         )
 
         # Assemble the full system message
@@ -442,7 +457,9 @@ class PromptBuilder:
         return ChatMessage(role="system", content=content)
 
     def build_revision_instruction(
-        self, discussions: list[Discussion]
+        self,
+        discussions: list[Discussion],
+        personality: str = "friendly",
     ) -> ChatMessage:
         """
         Build the user message with discussion feedback for the Proposer.
@@ -456,6 +473,8 @@ class PromptBuilder:
 
         Args:
             discussions: List of Discussion objects from all players
+            personality: Lowercase personality name used to inject
+                phase-specific revision examples.
 
         Returns:
             A single ChatMessage with role="user"
@@ -487,10 +506,13 @@ class PromptBuilder:
                 "your strategy."
             )
 
-        # Format instruction block
+        # Format instruction block with personality-specific examples
+        personality_sections = load_personality(personality.lower())
+        revise_examples = personality_sections.get("REVISE_EXAMPLES", "")
         instruction_block = prompts.INSTRUCTION_REVISE.format(
             constraint_message=constraint_message,
             json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+            personality_examples=revise_examples,
         )
 
         # Assemble the full user message
@@ -509,6 +531,7 @@ class PromptBuilder:
         discussions: list[Discussion],
         rules: list[Rule],
         player_name: str,
+        personality: str = "friendly",
     ) -> ChatMessage:
         """
         Build the user message presenting the final proposal for voting.
@@ -523,6 +546,8 @@ class PromptBuilder:
             discussions: List of Discussion objects from all players
             rules: All current rules (for original text lookup)
             player_name: The name of the player who is voting
+            personality: Lowercase personality name used to inject
+                phase-specific vote examples.
 
         Returns:
             A single ChatMessage with role="user"
@@ -536,9 +561,12 @@ class PromptBuilder:
             discussions_text=discussions_text
         )
 
-        # Format instruction block
+        # Format instruction block with personality-specific examples
+        personality_sections = load_personality(personality.lower())
+        vote_examples = personality_sections.get("VOTE_EXAMPLES", "")
         instruction_block = prompts.INSTRUCTION_VOTE.format(
-            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+            personality_examples=vote_examples,
         )
 
         # Assemble the full user message
