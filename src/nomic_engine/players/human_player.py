@@ -367,9 +367,7 @@ class HumanPlayer(BasePlayer):
         Allow the human player to revise their proposal based on discussion.
 
         Displays the original proposal, all discussions, and prompts the user
-        to revise, submit as-is, or withdraw. Implements Rule 112 enforcement
-        (must revise or withdraw if discussions contain "UNCLEAR" or
-        "AMBIGUOUS").
+        to revise, submit as-is, or withdraw.
 
         Args:
             proposal: The original proposal made by this player.
@@ -401,24 +399,7 @@ class HumanPlayer(BasePlayer):
             else:
                 print(f"{discussion.player_name}: (Abstained)")
 
-        # Check for Rule 112: must revise if any discussion contains
-        # "UNCLEAR" or "AMBIGUOUS"
-        must_revise = any(
-            "UNCLEAR" in d.text.upper() or "AMBIGUOUS" in d.text.upper()
-            for d in discussions
-        )
-
-        # Build prompt based on Rule 112
-        # TODO: Remove this because rule v1 no longer has this
-        if must_revise:
-            print(
-                "\n⚠️  Rule 112: A discussion contains 'UNCLEAR' or "
-                "'AMBIGUOUS'."
-            )
-            print("You MUST revise or withdraw this proposal.")
-            prompt = "You MUST (R)evise or (W)ithdraw: "
-        else:
-            prompt = "(R)evise, (S)ubmit as-is, or (W)ithdraw: "
+        prompt = "(R)evise, (S)ubmit as-is, or (W)ithdraw: "
 
         # Handle input
         while True:
@@ -428,7 +409,7 @@ class HumanPlayer(BasePlayer):
                 print("Proposal withdrawn.")
                 return None
 
-            elif choice in ["S", "SUBMIT"] and not must_revise:
+            elif choice in ["S", "SUBMIT"]:
                 print("Submitting proposal as-is.")
                 return proposal
 
@@ -460,7 +441,4 @@ class HumanPlayer(BasePlayer):
                 return new_proposal
 
             else:
-                if must_revise:
-                    print("Invalid choice. You must enter R or W.")
-                else:
-                    print("Invalid choice. Please enter R, S, or W.")
+                print("Invalid choice. Please enter R, S, or W.")

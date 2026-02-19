@@ -622,8 +622,8 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("MODIFY", message.content)
         self.assertIn("WITHDRAW", message.content)
 
-    def test_build_revision_instruction_constraint_triggered_unclear(self):
-        """Test Rule 112 constraint is triggered with UNCLEAR keyword."""
+    def test_build_revision_instruction_unclear_uses_standard_prompt(self):
+        """UNCLEAR in discussion uses the standard permissive prompt."""
         discussions = [
             Discussion(player_name="Alice", text="I think this is UNCLEAR."),
             Discussion(player_name="Charlie", text="I agree."),
@@ -633,11 +633,14 @@ class TestPromptBuilder(unittest.TestCase):
             discussions=discussions
         )
 
-        self.assertIn("MUST either 'MODIFY' or 'WITHDRAW'", message.content)
-        self.assertIn("CANNOT choose 'KEEP'", message.content)
+        self.assertIn(
+            "You may choose to KEEP, MODIFY, or WITHDRAW based on",
+            message.content,
+        )
+        self.assertNotIn("CANNOT choose 'KEEP'", message.content)
 
-    def test_build_revision_instruction_constraint_triggered_ambiguous(self):
-        """Test Rule 112 constraint is triggered with AMBIGUOUS keyword."""
+    def test_build_revision_instruction_ambiguous_uses_standard_prompt(self):
+        """AMBIGUOUS in discussion uses the standard permissive prompt."""
         discussions = [
             Discussion(
                 player_name="Alice", text="The wording is a bit ambiguous."
@@ -648,7 +651,11 @@ class TestPromptBuilder(unittest.TestCase):
             discussions=discussions
         )
 
-        self.assertIn("MUST either 'MODIFY' or 'WITHDRAW'", message.content)
+        self.assertIn(
+            "You may choose to KEEP, MODIFY, or WITHDRAW based on",
+            message.content,
+        )
+        self.assertNotIn("CANNOT choose 'KEEP'", message.content)
 
     def test_build_revision_instruction_no_constraint(self):
         """Test permissive message shown when no UNCLEAR/AMBIGUOUS."""
