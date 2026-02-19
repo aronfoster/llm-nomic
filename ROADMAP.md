@@ -59,7 +59,7 @@ Our architecture is built on these principles:
 - Developer seeds personality files using the existing hardcoded examples;
   PM will iterate on file content post-merge
 
-### Task 3: Remove vestigial Rule 112 UNCLEAR/AMBIGUOUS checks (POLISH — LOW)
+### ~~Task 3: Remove vestigial Rule 112 UNCLEAR/AMBIGUOUS checks (POLISH — LOW)~~ ✅ COMPLETE
 
 **Problem:** Two TODO comments mark dead code from the v0 ruleset. The v1 ruleset's Rule 111 was simplified and no longer has the UNCLEAR/AMBIGUOUS triggering mechanism.
 

@@ -661,10 +661,7 @@ class PromptBuilder:
 
         Feeds feedback to the Proposer and asks for revision by assembling:
         - DISCUSSION_BLOCK (formatted with the discussions)
-        - INSTRUCTION_REVISE (formatted with constraint_message from Rule 112)
-
-        The constraint_message is derived from checking if any discussion
-        contains "UNCLEAR" or "AMBIGUOUS" (case insensitive).
+        - INSTRUCTION_REVISE (formatted with constraint_message)
 
         Args:
             discussions: List of Discussion objects from all players
@@ -680,26 +677,10 @@ class PromptBuilder:
             discussions_text=discussions_text
         )
 
-        # Rule 112 Check: Detect UNCLEAR or AMBIGUOUS in discussions
-        # TODO: remove this, as rule v1 no longer has this rule
-        constraint_triggered = False
-        for discussion in discussions:
-            message_upper = discussion.text.upper()
-            if "UNCLEAR" in message_upper or "AMBIGUOUS" in message_upper:
-                constraint_triggered = True
-                break
-
-        if constraint_triggered:
-            constraint_message = (
-                "⚠️ CRITICAL: Your proposal was flagged as 'UNCLEAR' or "
-                "'AMBIGUOUS'. Per Rule 112, you MUST either 'MODIFY' or "
-                "'WITHDRAW'. You CANNOT choose 'KEEP'."
-            )
-        else:
-            constraint_message = (
-                "You may choose to KEEP, MODIFY, or WITHDRAW based on "
-                "your strategy."
-            )
+        constraint_message = (
+            "You may choose to KEEP, MODIFY, or WITHDRAW based on "
+            "your strategy."
+        )
 
         # Format instruction block with personality-specific examples
         instruction_block = prompts.INSTRUCTION_REVISE.format(
