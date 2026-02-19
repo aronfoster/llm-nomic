@@ -2,8 +2,6 @@
 Smoke tests for data models to ensure basic functionality.
 """
 
-import pytest
-
 from src.nomic_engine.data_models import (
     ChatMessage,
     Discussion,
@@ -13,7 +11,6 @@ from src.nomic_engine.data_models import (
     ModelDefinition,
     ModelLibrary,
     PlayerConfig,
-    PlayerPersonality,
     Proposal,
     Rule,
     Vote,
@@ -43,8 +40,6 @@ def test_player_config_creation():
 def test_player_config_default_personality():
     """Test that PlayerConfig defaults to friendly personality."""
     player = PlayerConfig(name="Claude", model_id="claude-3-5-sonnet-20240620")
-    assert player.personality == PlayerPersonality.FRIENDLY
-    # Enum inherits from str, so string comparison should also work
     assert player.personality == "friendly"
 
 
@@ -53,10 +48,9 @@ def test_player_config_custom_personality():
     player = PlayerConfig(
         name="Claude",
         model_id="claude-3-5-sonnet-20240620",
-        personality=PlayerPersonality.FRIENDLY,
+        personality="friendly",
     )
     assert player.name == "Claude"
-    assert player.personality == PlayerPersonality.FRIENDLY
     assert player.personality == "friendly"
 
 
@@ -65,25 +59,9 @@ def test_player_config_machiavellian_personality():
     player = PlayerConfig(
         name="Alice",
         model_id="gpt-4o",
-        personality=PlayerPersonality.MACHIAVELLIAN,
+        personality="machiavellian",
     )
-    assert player.personality == PlayerPersonality.MACHIAVELLIAN
-
-
-def test_player_personality_enum_values():
-    """Test that PlayerPersonality enum has expected values."""
-    assert PlayerPersonality.MACHIAVELLIAN.value == "machiavellian"
-    assert PlayerPersonality.FRIENDLY.value == "friendly"
-    assert PlayerPersonality.NONE.value == "none"
-
-
-def test_player_personality_enum_iteration():
-    """Test that PlayerPersonality enum can be iterated."""
-    personalities = list(PlayerPersonality)
-    assert len(personalities) >= 3
-    assert PlayerPersonality.MACHIAVELLIAN in personalities
-    assert PlayerPersonality.FRIENDLY in personalities
-    assert PlayerPersonality.NONE in personalities
+    assert player.personality == "machiavellian"
 
 
 def test_player_config_none_personality():
@@ -91,31 +69,34 @@ def test_player_config_none_personality():
     player = PlayerConfig(
         name="Alice",
         model_id="gpt-4o",
-        personality=PlayerPersonality.NONE,
+        personality="none",
     )
-    assert player.personality == PlayerPersonality.NONE
     assert player.personality == "none"
 
 
-def test_player_config_personality_from_string():
-    """Test that PlayerConfig accepts string values for personality."""
-    # Pydantic should coerce valid string values to enum
+def test_player_config_personality_is_str():
+    """Test that PlayerConfig stores personality as a plain string."""
     player = PlayerConfig(
         name="Alice",
         model_id="gpt-4o",
         personality="friendly",
     )
-    assert player.personality == PlayerPersonality.FRIENDLY
+    assert isinstance(player.personality, str)
+    assert player.personality == "friendly"
 
 
-def test_player_config_invalid_personality():
-    """Test that PlayerConfig rejects invalid personality values."""
-    with pytest.raises(ValueError):
-        PlayerConfig(
-            name="Alice",
-            model_id="gpt-4o",
-            personality="invalid_personality",
-        )
+def test_player_config_accepts_any_personality_string():
+    """Test that PlayerConfig accepts any string value for personality.
+
+    Validation that the personality file exists only occurs at turn
+    execution time (inside PromptBuilder), not at config-load time.
+    """
+    player = PlayerConfig(
+        name="Alice",
+        model_id="gpt-4o",
+        personality="custom_personality",
+    )
+    assert player.personality == "custom_personality"
 
 
 def test_game_config_creation():

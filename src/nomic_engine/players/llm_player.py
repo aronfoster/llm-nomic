@@ -14,7 +14,6 @@ from ..data_models import (
     EngineTuningConfig,
     GameState,
     ModelDefinition,
-    PlayerPersonality,
     Proposal,
     ProposalType,
     Rule,
@@ -47,7 +46,7 @@ class LLMPlayer(BasePlayer):
         self,
         player_name: str,
         model_config: ModelDefinition,
-        personality: PlayerPersonality = PlayerPersonality.FRIENDLY,
+        personality: str = "friendly",
         tuning: EngineTuningConfig | None = None,
     ) -> None:
         """
@@ -57,8 +56,8 @@ class LLMPlayer(BasePlayer):
             player_name: The unique name for this player.
             model_config: The ModelDefinition containing API configuration
                           for this player's LLM.
-            personality: The PlayerPersonality enum value dictating which
-                         system prompt persona to use.
+            personality: Lowercase personality name (e.g. "machiavellian").
+                         Must match a file in the ``personalities/`` directory.
         """
         super().__init__(player_name)
         self.model_config = model_config
@@ -75,7 +74,7 @@ class LLMPlayer(BasePlayer):
         return assemble_player_label(
             self.player_name,
             is_human=False,
-            personality=self.personality.value,
+            personality=self.personality,
             model_id=self.model_config.id,
         )
 
@@ -122,7 +121,7 @@ class LLMPlayer(BasePlayer):
             rules=rules,
             game_state=game_state,
             player_name=self.player_name,
-            personality=self.personality.value,
+            personality=self.personality,
         )
 
         # Reset history for a fresh turn, unless this is a pivot retry.
@@ -241,7 +240,7 @@ class LLMPlayer(BasePlayer):
             rules=rules,
             game_state=game_state,
             player_name=self.player_name,
-            personality=self.personality.value,
+            personality=self.personality,
         )
         self._reset_history(system_message)
 
@@ -383,6 +382,7 @@ class LLMPlayer(BasePlayer):
             discussions=discussions,
             rules=rules,
             player_name=self.player_name,
+            personality=self.personality,
         )
         self.turn_history.append(vote_instruction)
 
@@ -544,7 +544,8 @@ class LLMPlayer(BasePlayer):
         """
         # Build revision instruction and append to history (continues turn)
         revision_instruction = self.prompt_builder.build_revision_instruction(
-            discussions=discussions
+            discussions=discussions,
+            personality=self.personality,
         )
         self.turn_history.append(revision_instruction)
 

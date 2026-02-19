@@ -298,10 +298,10 @@ class TestPromptBuilder(unittest.TestCase):
         result = self.builder._get_personality_block("friendly")
         self.assertIn("cooperative player", result)
 
-    def test_get_personality_block_defaults_to_friendly(self):
-        """Test _get_personality_block defaults to friendly for unknown."""
-        result = self.builder._get_personality_block("unknown")
-        self.assertIn("cooperative player", result)
+    def test_get_personality_block_raises_for_unknown(self):
+        """Test _get_personality_block raises FileNotFoundError for unknown."""
+        with self.assertRaises(FileNotFoundError):
+            self.builder._get_personality_block("unknown_personality_xyz")
 
     def test_get_personality_block_none(self):
         """Test _get_personality_block returns none persona."""
@@ -315,16 +315,45 @@ class TestPromptBuilder(unittest.TestCase):
     # Tests for build_proposer_system_message (with mocking)
     # =========================================================================
 
+    @patch("src.nomic_engine.llm.prompt_builder.load_personality")
     @patch("src.nomic_engine.llm.prompt_builder.prompts")
-    def test_build_proposer_system_message_mocked(self, mock_prompts):
+    def test_build_proposer_system_message_mocked(
+        self, mock_prompts, mock_load_personality
+    ):
         """Test build_proposer_system_message with mocked templates."""
         # Setup mocks
-        mock_prompts.MACHIAVELLIAN_PERSONALITY = "PERSONA:{player_name}"
+        mock_load_personality.return_value = {
+            "PERSONA": "PERSONA:{player_name}",
+            "STRATEGIC_GUIDANCE": "",
+            "PROPOSE_ADD_EXAMPLE": (
+                "private_thoughts: Add thought.\n"
+                "new_text: New rule text.\n"
+                "rationale: Add rationale."
+            ),
+            "PROPOSE_AMEND_EXAMPLE": (
+                "private_thoughts: Amend thought.\n"
+                "target_rule_id: 201\n"
+                "new_text: Amend text.\n"
+                "rationale: Amend rationale."
+            ),
+            "PROPOSE_REPEAL_EXAMPLE": (
+                "private_thoughts: Repeal thought.\n"
+                "target_rule_id: 203\n"
+                "rationale: Repeal rationale."
+            ),
+            "PROPOSE_TRANSMUTE_EXAMPLE": (
+                "private_thoughts: Transmute thought.\n"
+                "target_rule_id: 105\n"
+                "rationale: Transmute rationale."
+            ),
+        }
         mock_prompts.GAME_STATE_BLOCK = (
             "STATE:{move_number},{scores_text},{player_position},{turn_order}"
         )
         mock_prompts.RULES_BLOCK = "RULES:{rules_text}"
-        mock_prompts.INSTRUCTION_PROPOSE = "PROPOSE:{json_format_enforcement}"
+        mock_prompts.INSTRUCTION_PROPOSE = (
+            "PROPOSE:{json_format_enforcement}{personality_examples}"
+        )
         mock_prompts.JSON_FORMAT_ENFORCEMENT = "JSON_ENFORCE"
 
         message = self.builder.build_proposer_system_message(
@@ -344,6 +373,7 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("1 of 3", message.content)  # player position
         self.assertIn("RULES:", message.content)
         self.assertIn("PROPOSE:JSON_ENFORCE", message.content)
+        self.assertIn('"type": "ADD"', message.content)
 
     def test_build_proposer_system_message_integration(self):
         """Integration test using real templates (not mocked)."""
@@ -423,11 +453,22 @@ class TestPromptBuilder(unittest.TestCase):
     # Tests for build_discusser_system_message (with mocking)
     # =========================================================================
 
+    @patch("src.nomic_engine.llm.prompt_builder.load_personality")
     @patch("src.nomic_engine.llm.prompt_builder.prompts")
-    def test_build_discusser_system_message_mocked(self, mock_prompts):
+    def test_build_discusser_system_message_mocked(
+        self, mock_prompts, mock_load_personality
+    ):
         """Test build_discusser_system_message with mocked templates."""
         # Setup mocks
-        mock_prompts.FRIENDLY_PERSONALITY = "PERSONA:{player_name}"
+        mock_load_personality.return_value = {
+            "PERSONA": "PERSONA:{player_name}",
+            "STRATEGIC_GUIDANCE": "",
+            "DISCUSS_COMMENT_EXAMPLE": (
+                "private_thoughts: Comment thought.\n"
+                "discussion_text: Here is my comment."
+            ),
+            "DISCUSS_ABSTAIN_EXAMPLE": ("private_thoughts: Abstain thought."),
+        }
         mock_prompts.GAME_STATE_BLOCK = (
             "STATE:{move_number},{scores_text},{player_position},{turn_order}"
         )
@@ -436,7 +477,9 @@ class TestPromptBuilder(unittest.TestCase):
             "PROPOSAL:{proposal_id},{proposer_name},{proposal_type},"
             "{target_rule_id},{original_text},{new_text},{rationale}"
         )
-        mock_prompts.INSTRUCTION_DISCUSS = "DISCUSS:{json_format_enforcement}"
+        mock_prompts.INSTRUCTION_DISCUSS = (
+            "DISCUSS:{json_format_enforcement}{personality_examples}"
+        )
         mock_prompts.JSON_FORMAT_ENFORCEMENT = "JSON_ENFORCE"
 
         message = self.builder.build_discusser_system_message(
@@ -457,6 +500,7 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("RULES:", message.content)
         self.assertIn("PROPOSAL:304", message.content)
         self.assertIn("DISCUSS:JSON_ENFORCE", message.content)
+        self.assertIn('"discussion_text"', message.content)
 
     def test_build_discusser_system_message_integration(self):
         """Integration test using real templates (not mocked)."""
@@ -521,13 +565,26 @@ class TestPromptBuilder(unittest.TestCase):
     # Tests for build_revision_instruction (with mocking)
     # =========================================================================
 
+    @patch("src.nomic_engine.llm.prompt_builder.load_personality")
     @patch("src.nomic_engine.llm.prompt_builder.prompts")
-    def test_build_revision_instruction_mocked(self, mock_prompts):
+    def test_build_revision_instruction_mocked(
+        self, mock_prompts, mock_load_personality
+    ):
         """Test build_revision_instruction with mocked templates."""
         # Setup mocks
+        mock_load_personality.return_value = {
+            "REVISE_KEEP_EXAMPLE": "private_thoughts: Keep thought.",
+            "REVISE_MODIFY_EXAMPLE": (
+                "private_thoughts: Modify thought.\n"
+                "new_text: Modified text.\n"
+                "rationale: Modify rationale."
+            ),
+            "REVISE_WITHDRAW_EXAMPLE": "private_thoughts: Withdraw thought.",
+        }
         mock_prompts.DISCUSSION_BLOCK = "DISCUSSIONS:{discussions_text}"
         mock_prompts.INSTRUCTION_REVISE = (
             "REVISE:{constraint_message},{json_format_enforcement}"
+            "{personality_examples}"
         )
         mock_prompts.JSON_FORMAT_ENFORCEMENT = "JSON_ENFORCE"
 
@@ -625,16 +682,29 @@ class TestPromptBuilder(unittest.TestCase):
     # Tests for build_vote_instruction (with mocking)
     # =========================================================================
 
+    @patch("src.nomic_engine.llm.prompt_builder.load_personality")
     @patch("src.nomic_engine.llm.prompt_builder.prompts")
-    def test_build_vote_instruction_mocked(self, mock_prompts):
+    def test_build_vote_instruction_mocked(
+        self, mock_prompts, mock_load_personality
+    ):
         """Test build_vote_instruction with mocked templates."""
         # Setup mocks
+        mock_load_personality.return_value = {
+            "VOTE_YES_EXAMPLE": (
+                "private_thoughts: Yes thought.\n" "public_reason: Yes reason."
+            ),
+            "VOTE_NO_EXAMPLE": (
+                "private_thoughts: No thought.\n" "public_reason: No reason."
+            ),
+        }
         mock_prompts.PROPOSAL_BLOCK = (
             "PROPOSAL:{proposal_id},{proposer_name},{proposal_type},"
             "{target_rule_id},{original_text},{new_text},{rationale}"
         )
         mock_prompts.DISCUSSION_BLOCK = "DISCUSSIONS:{discussions_text}"
-        mock_prompts.INSTRUCTION_VOTE = "VOTE:{json_format_enforcement}"
+        mock_prompts.INSTRUCTION_VOTE = (
+            "VOTE:{json_format_enforcement}{personality_examples}"
+        )
         mock_prompts.JSON_FORMAT_ENFORCEMENT = "JSON_ENFORCE"
 
         message = self.builder.build_vote_instruction(
@@ -652,6 +722,7 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("PROPOSAL:304", message.content)
         self.assertIn("DISCUSSIONS:", message.content)
         self.assertIn("VOTE:JSON_ENFORCE", message.content)
+        self.assertIn('"vote": "YES"', message.content)
 
     def test_build_vote_instruction_integration(self):
         """Integration test using real templates (not mocked)."""

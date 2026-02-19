@@ -68,7 +68,7 @@ def format_player_label(
                 return assemble_player_label(
                     player_name,
                     is_human,
-                    player_cfg.personality.value if not is_human else "",
+                    player_cfg.personality if not is_human else "",
                     player_cfg.model_id if not is_human else "",
                 )
     except (TypeError, AttributeError):

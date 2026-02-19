@@ -35,15 +35,6 @@ class ProposalType(str, Enum):
     TRANSMUTE = "Transmute"
 
 
-class PlayerPersonality(str, Enum):
-    """Enum for player personality/persona values."""
-
-    MACHIAVELLIAN = "machiavellian"
-    FRIENDLY = "friendly"
-    NONE = "none"
-    # Add others here later (e.g. CHAOTIC)
-
-
 class JudgeType(str, Enum):
     """Enum for judge selection."""
 
@@ -94,9 +85,13 @@ class PlayerConfig(BaseModel):
             "or 'human'."
         ),
     )
-    personality: PlayerPersonality = Field(
-        default=PlayerPersonality.FRIENDLY,
-        description="The strategic persona for this player.",
+    personality: str = Field(
+        default="friendly",
+        description=(
+            "The strategic persona for this player. Must match the stem "
+            "of a file in the personalities/ directory (e.g. 'machiavellian', "
+            "'friendly', 'none'). Normalized to lowercase."
+        ),
     )
 
 

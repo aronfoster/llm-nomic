@@ -12,7 +12,6 @@ from src.nomic_engine.data_models import (
     GameConfig,
     JudgeType,
     PlayerConfig,
-    PlayerPersonality,
 )
 from src.nomic_engine.utils.player_label import (
     assemble_player_label,
@@ -74,12 +73,12 @@ def game_config_mixed() -> GameConfig:
             PlayerConfig(
                 name="Alice",
                 model_id="claude-sonnet-4-5",
-                personality=PlayerPersonality.MACHIAVELLIAN,
+                personality="machiavellian",
             ),
             PlayerConfig(
                 name="Bob",
                 model_id="human",
-                personality=PlayerPersonality.FRIENDLY,
+                personality="friendly",
             ),
         ],
         judge_type=JudgeType.HUMAN,

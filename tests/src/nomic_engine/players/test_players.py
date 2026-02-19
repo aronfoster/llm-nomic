@@ -1,6 +1,6 @@
 """Smoke test for player abstractions."""
 
-from src.nomic_engine.data_models import ModelDefinition, PlayerPersonality
+from src.nomic_engine.data_models import ModelDefinition
 from src.nomic_engine.players.base_player import BasePlayer
 from src.nomic_engine.players.human_player import HumanPlayer
 from src.nomic_engine.players.llm_player import LLMPlayer
@@ -30,7 +30,7 @@ def test_llm_player_label():
     player = LLMPlayer(
         "Bob",
         model_def,
-        personality=PlayerPersonality.MACHIAVELLIAN,
+        personality="machiavellian",
     )
     assert player.player_label == "Bob (Machiavellian / claude-sonnet-4-5)"
 
@@ -47,6 +47,6 @@ def test_llm_player_label_friendly():
     player = LLMPlayer(
         "Carol",
         model_def,
-        personality=PlayerPersonality.FRIENDLY,
+        personality="friendly",
     )
     assert player.player_label == "Carol (Friendly / gpt-4o)"

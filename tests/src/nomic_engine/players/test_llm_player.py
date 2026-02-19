@@ -433,6 +433,7 @@ class TestLLMPlayerVote:
             discussions=discussions,
             rules=rules,
             player_name="TestPlayer",
+            personality="friendly",
         )
 
 
@@ -1584,7 +1585,10 @@ class TestLLMPlayerRevise:
 
         # Verify PromptBuilder.build_revision_instruction called correctly
         call = mock_prompt_builder_instance.build_revision_instruction
-        call.assert_called_once_with(discussions=discussions)
+        call.assert_called_once_with(
+            discussions=discussions,
+            personality="friendly",
+        )
 
 
 class TestLLMPlayerStatefulHistory:

@@ -8,59 +8,6 @@ expected substrings, and that placeholders are correctly defined.
 from src.nomic_engine.llm import prompts
 
 
-class TestPersonalityBlocks:
-    """Test cases for personality template blocks."""
-
-    def test_machiavellian_personality_exists(self):
-        """Test that MACHIAVELLIAN_PERSONALITY constant exists."""
-        assert hasattr(prompts, "MACHIAVELLIAN_PERSONALITY")
-
-    def test_machiavellian_personality_contains_player_name(self):
-        """Test MACHIAVELLIAN_PERSONALITY has player_name placeholder."""
-        assert "{player_name}" in prompts.MACHIAVELLIAN_PERSONALITY
-
-    def test_machiavellian_personality_contains_ruthless(self):
-        """Test MACHIAVELLIAN_PERSONALITY contains 'ruthlessly competitive'."""
-        assert "ruthlessly competitive" in prompts.MACHIAVELLIAN_PERSONALITY
-
-    def test_friendly_personality_exists(self):
-        """Test that FRIENDLY_PERSONALITY constant exists."""
-        assert hasattr(prompts, "FRIENDLY_PERSONALITY")
-
-    def test_friendly_personality_contains_player_name(self):
-        """Test FRIENDLY_PERSONALITY has player_name placeholder."""
-        assert "{player_name}" in prompts.FRIENDLY_PERSONALITY
-
-    def test_friendly_personality_contains_cooperative(self):
-        """Test FRIENDLY_PERSONALITY contains 'cooperative'."""
-        assert "cooperative" in prompts.FRIENDLY_PERSONALITY
-
-    def test_friendly_personality_contains_consensus(self):
-        """Test FRIENDLY_PERSONALITY contains 'consensus'."""
-        assert "consensus" in prompts.FRIENDLY_PERSONALITY
-
-    def test_none_personality_exists(self):
-        """Test that NONE_PERSONALITY constant exists."""
-        assert hasattr(prompts, "NONE_PERSONALITY")
-
-    def test_none_personality_contains_player_name(self):
-        """Test NONE_PERSONALITY has player_name placeholder."""
-        assert "{player_name}" in prompts.NONE_PERSONALITY
-
-    def test_none_personality_contains_nomic(self):
-        """Test NONE_PERSONALITY contains 'Nomic'."""
-        assert "Nomic" in prompts.NONE_PERSONALITY
-
-    def test_none_personality_is_minimal(self):
-        """Test NONE_PERSONALITY is minimal (no strategy guidance)."""
-        # NONE personality should not contain strategy-related words
-        assert "ruthlessly" not in prompts.NONE_PERSONALITY
-        assert "competitive" not in prompts.NONE_PERSONALITY
-        assert "cooperative" not in prompts.NONE_PERSONALITY
-        assert "consensus" not in prompts.NONE_PERSONALITY
-        assert "alliance" not in prompts.NONE_PERSONALITY
-
-
 class TestDataBlocks:
     """Test cases for data block templates."""
 
@@ -149,6 +96,10 @@ class TestInstructionBlocks:
         """Test INSTRUCTION_PROPOSE contains json_format_enforcement."""
         assert "{json_format_enforcement}" in prompts.INSTRUCTION_PROPOSE
 
+    def test_instruction_propose_contains_examples_placeholder(self):
+        """Test INSTRUCTION_PROPOSE has {personality_examples} placeholder."""
+        assert "{personality_examples}" in prompts.INSTRUCTION_PROPOSE
+
     def test_instruction_propose_contains_proposal_types(self):
         """Test INSTRUCTION_PROPOSE contains all proposal types."""
         proposal_types = ["ADD", "AMEND", "REPEAL", "TRANSMUTE"]
@@ -183,6 +134,10 @@ class TestInstructionBlocks:
         """Test INSTRUCTION_DISCUSS contains json_format_enforcement."""
         assert "{json_format_enforcement}" in prompts.INSTRUCTION_DISCUSS
 
+    def test_instruction_discuss_contains_examples_placeholder(self):
+        """Test INSTRUCTION_DISCUSS has {personality_examples} placeholder."""
+        assert "{personality_examples}" in prompts.INSTRUCTION_DISCUSS
+
     def test_instruction_discuss_contains_json_keys(self):
         """Test INSTRUCTION_DISCUSS contains required JSON keys."""
         json_keys = ["private_thoughts", "discussion_text"]
@@ -209,6 +164,10 @@ class TestInstructionBlocks:
         """Test INSTRUCTION_REVISE contains json_format_enforcement."""
         assert "{json_format_enforcement}" in prompts.INSTRUCTION_REVISE
 
+    def test_instruction_revise_contains_examples_placeholder(self):
+        """Test INSTRUCTION_REVISE has {personality_examples} placeholder."""
+        assert "{personality_examples}" in prompts.INSTRUCTION_REVISE
+
     def test_instruction_revise_contains_json_keys(self):
         """Test INSTRUCTION_REVISE contains required JSON keys."""
         json_keys = ["private_thoughts", "action", "new_text", "rationale"]
@@ -228,6 +187,10 @@ class TestInstructionBlocks:
     def test_instruction_vote_contains_json_format_placeholder(self):
         """Test INSTRUCTION_VOTE contains json_format_enforcement."""
         assert "{json_format_enforcement}" in prompts.INSTRUCTION_VOTE
+
+    def test_instruction_vote_contains_personality_examples_placeholder(self):
+        """Test INSTRUCTION_VOTE contains personality_examples placeholder."""
+        assert "{personality_examples}" in prompts.INSTRUCTION_VOTE
 
     def test_instruction_vote_contains_json_keys(self):
         """Test INSTRUCTION_VOTE contains required JSON keys."""
