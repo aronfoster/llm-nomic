@@ -265,6 +265,17 @@ WITHDRAWAL ATTEMPT: {withdrawal_attempt} of {max_withdrawal_retries}
 
 Return only valid JSON using the standard proposal schema."""
 
+DISCUSS_PROPOSAL_UPDATED_TEMPLATE = """The proposer has withdrawn \
+their previous proposal and submitted a new one.
+
+WITHDRAWAL ATTEMPT: {withdrawal_attempt} of {max_withdrawal_retries}
+
+{proposal_block}
+
+Please provide your discussion on the new proposal above.
+
+{json_format_enforcement}"""
+
 # =====================================================================
 # ATOMIZED PROMPT BLOCKS (Sprint 6 - Stateful Context)
 # These composable blocks are used by PromptBuilder for stateful contexts.

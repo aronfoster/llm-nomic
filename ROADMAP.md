@@ -26,18 +26,15 @@ Our architecture is built on these principles:
 
 **Goal:** Make LLM players propose creative, personality-driven rules instead of exclusively point-manipulation plays. Fix stale context bug on withdrawal retries.
 
-### Task 1: Fix discusser stale context after withdrawal retry (BUG — HIGH)
+### ~~Task 1: Fix discusser stale context after withdrawal retry (BUG — HIGH)~~ ✅ COMPLETE
 
 **Problem:** When `retain_discusser_history_on_retry=True`, `_collect_discussions` skips `begin_discussion_turn` on retry rounds to preserve accumulated reasoning. But `begin_discussion_turn` is the only place the PROPOSAL_BLOCK gets injected into the discusser's system message. After a withdrawal + pivot, non-proposer LLMs discuss the *old* proposal.
 
 **Fix:**
-- When `is_retry=True` and history is being retained, instead of skipping entirely, append a **new user message** to the discusser's existing `turn_history` containing:
-  - Explicit statement: "The proposer has withdrawn their previous proposal and submitted a new one."
-  - The withdrawal attempt number and max retries remaining
-  - The full new PROPOSAL_BLOCK (formatted via `_format_proposal`)
-  - A re-prompt for discussion (reuse `INSTRUCTION_DISCUSS` or a variant)
-- This preserves prior reasoning context while making the new proposal visible.
-- Do NOT reset history or call `begin_discussion_turn` — the point is continuity.
+- Added `on_proposal_updated` abstract method to `BasePlayer`.
+- `LLMPlayer.on_proposal_updated` appends one user message (using new `DISCUSS_PROPOSAL_UPDATED_TEMPLATE`) with the new proposal block, preserving history.
+- `HumanPlayer.on_proposal_updated` prints withdrawal notice and new proposal details to console.
+- `GameLoop._collect_discussions` calls `on_proposal_updated` (instead of skipping) on retry rounds when `retain_discusser_history_on_retry=True`.
 
 ### Task 2: Personality files with phase-specific examples (CORE — LARGE)
 
