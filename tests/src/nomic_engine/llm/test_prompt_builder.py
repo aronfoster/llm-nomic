@@ -325,7 +325,27 @@ class TestPromptBuilder(unittest.TestCase):
         mock_load_personality.return_value = {
             "PERSONA": "PERSONA:{player_name}",
             "STRATEGIC_GUIDANCE": "",
-            "PROPOSE_EXAMPLES": "EXAMPLES",
+            "PROPOSE_ADD_EXAMPLE": (
+                "private_thoughts: Add thought.\n"
+                "new_text: New rule text.\n"
+                "rationale: Add rationale."
+            ),
+            "PROPOSE_AMEND_EXAMPLE": (
+                "private_thoughts: Amend thought.\n"
+                "target_rule_id: 201\n"
+                "new_text: Amend text.\n"
+                "rationale: Amend rationale."
+            ),
+            "PROPOSE_REPEAL_EXAMPLE": (
+                "private_thoughts: Repeal thought.\n"
+                "target_rule_id: 203\n"
+                "rationale: Repeal rationale."
+            ),
+            "PROPOSE_TRANSMUTE_EXAMPLE": (
+                "private_thoughts: Transmute thought.\n"
+                "target_rule_id: 105\n"
+                "rationale: Transmute rationale."
+            ),
         }
         mock_prompts.GAME_STATE_BLOCK = (
             "STATE:{move_number},{scores_text},{player_position},{turn_order}"
@@ -352,7 +372,8 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("STATE:5,", message.content)
         self.assertIn("1 of 3", message.content)  # player position
         self.assertIn("RULES:", message.content)
-        self.assertIn("PROPOSE:JSON_ENFORCEEXAMPLES", message.content)
+        self.assertIn("PROPOSE:JSON_ENFORCE", message.content)
+        self.assertIn('"type": "ADD"', message.content)
 
     def test_build_proposer_system_message_integration(self):
         """Integration test using real templates (not mocked)."""
@@ -442,7 +463,11 @@ class TestPromptBuilder(unittest.TestCase):
         mock_load_personality.return_value = {
             "PERSONA": "PERSONA:{player_name}",
             "STRATEGIC_GUIDANCE": "",
-            "DISCUSS_EXAMPLES": "EXAMPLES",
+            "DISCUSS_COMMENT_EXAMPLE": (
+                "private_thoughts: Comment thought.\n"
+                "discussion_text: Here is my comment."
+            ),
+            "DISCUSS_ABSTAIN_EXAMPLE": ("private_thoughts: Abstain thought."),
         }
         mock_prompts.GAME_STATE_BLOCK = (
             "STATE:{move_number},{scores_text},{player_position},{turn_order}"
@@ -474,7 +499,8 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("STATE:5,", message.content)
         self.assertIn("RULES:", message.content)
         self.assertIn("PROPOSAL:304", message.content)
-        self.assertIn("DISCUSS:JSON_ENFORCEEXAMPLES", message.content)
+        self.assertIn("DISCUSS:JSON_ENFORCE", message.content)
+        self.assertIn('"discussion_text"', message.content)
 
     def test_build_discusser_system_message_integration(self):
         """Integration test using real templates (not mocked)."""
@@ -546,7 +572,15 @@ class TestPromptBuilder(unittest.TestCase):
     ):
         """Test build_revision_instruction with mocked templates."""
         # Setup mocks
-        mock_load_personality.return_value = {"REVISE_EXAMPLES": "EXAMPLES"}
+        mock_load_personality.return_value = {
+            "REVISE_KEEP_EXAMPLE": "private_thoughts: Keep thought.",
+            "REVISE_MODIFY_EXAMPLE": (
+                "private_thoughts: Modify thought.\n"
+                "new_text: Modified text.\n"
+                "rationale: Modify rationale."
+            ),
+            "REVISE_WITHDRAW_EXAMPLE": "private_thoughts: Withdraw thought.",
+        }
         mock_prompts.DISCUSSION_BLOCK = "DISCUSSIONS:{discussions_text}"
         mock_prompts.INSTRUCTION_REVISE = (
             "REVISE:{constraint_message},{json_format_enforcement}"
@@ -655,7 +689,14 @@ class TestPromptBuilder(unittest.TestCase):
     ):
         """Test build_vote_instruction with mocked templates."""
         # Setup mocks
-        mock_load_personality.return_value = {"VOTE_EXAMPLES": "EXAMPLES"}
+        mock_load_personality.return_value = {
+            "VOTE_YES_EXAMPLE": (
+                "private_thoughts: Yes thought.\n" "public_reason: Yes reason."
+            ),
+            "VOTE_NO_EXAMPLE": (
+                "private_thoughts: No thought.\n" "public_reason: No reason."
+            ),
+        }
         mock_prompts.PROPOSAL_BLOCK = (
             "PROPOSAL:{proposal_id},{proposer_name},{proposal_type},"
             "{target_rule_id},{original_text},{new_text},{rationale}"
@@ -680,7 +721,8 @@ class TestPromptBuilder(unittest.TestCase):
         # Verify content includes all blocks
         self.assertIn("PROPOSAL:304", message.content)
         self.assertIn("DISCUSSIONS:", message.content)
-        self.assertIn("VOTE:JSON_ENFORCEEXAMPLES", message.content)
+        self.assertIn("VOTE:JSON_ENFORCE", message.content)
+        self.assertIn('"vote": "YES"', message.content)
 
     def test_build_vote_instruction_integration(self):
         """Integration test using real templates (not mocked)."""

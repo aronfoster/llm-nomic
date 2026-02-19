@@ -7,6 +7,7 @@ Tests cover:
 - Caching behaviour (file is read once per process)
 - Descriptive FileNotFoundError for unknown personalities
 - Content of the three seeded personality files
+- parse_section_fields: field extraction from prose sections
 """
 
 import pytest
@@ -15,6 +16,7 @@ from src.nomic_engine.llm.personality_loader import (
     _cache,
     _parse_sections,
     load_personality,
+    parse_section_fields,
 )
 
 # ---------------------------------------------------------------------------
@@ -67,20 +69,119 @@ class TestParseSections:
 
     def test_section_names_preserved(self):
         """Section names are returned exactly as written."""
-        text = "## PROPOSE_EXAMPLES\nSome example."
+        text = "## PROPOSE_ADD_EXAMPLE\nSome example."
         result = _parse_sections(text)
-        assert "PROPOSE_EXAMPLES" in result
+        assert "PROPOSE_ADD_EXAMPLE" in result
 
-    def test_json_braces_in_content_are_preserved(self):
-        """Brace characters in section content are preserved unchanged."""
-        text = '## PROPOSE_EXAMPLES\n{\n  "type": "ADD"\n}'
+    def test_field_text_in_content_is_preserved(self):
+        """Field text in section content is preserved unchanged."""
+        text = (
+            "## PROPOSE_ADD_EXAMPLE\n"
+            "private_thoughts: I want to win.\n"
+            "new_text: A rule."
+        )
         result = _parse_sections(text)
-        assert '{\n  "type": "ADD"\n}' == result["PROPOSE_EXAMPLES"]
+        section = result["PROPOSE_ADD_EXAMPLE"]
+        assert "private_thoughts: I want to win." in section
+        assert "new_text: A rule." in section
+
+
+# ---------------------------------------------------------------------------
+# Tests for parse_section_fields (pure parser — no filesystem)
+# ---------------------------------------------------------------------------
+
+
+class TestParseSectionFields:
+    """Unit tests for the labeled prose field parser."""
+
+    def test_single_field(self):
+        """A single field line is parsed into a one-entry dict."""
+        text = "private_thoughts: I want to win."
+        result = parse_section_fields(text)
+        assert result == {"private_thoughts": "I want to win."}
+
+    def test_multiple_fields(self):
+        """Multiple field lines are all captured."""
+        text = (
+            "private_thoughts: I want to win.\n"
+            "new_text: A rule that helps.\n"
+            "rationale: It is fair.\n"
+        )
+        result = parse_section_fields(text)
+        assert result["private_thoughts"] == "I want to win."
+        assert result["new_text"] == "A rule that helps."
+        assert result["rationale"] == "It is fair."
+
+    def test_empty_input(self):
+        """Empty input returns an empty dict."""
+        assert parse_section_fields("") == {}
+
+    def test_field_value_is_stripped(self):
+        """Leading/trailing whitespace in field values is stripped."""
+        text = "private_thoughts:   Some thought.   "
+        result = parse_section_fields(text)
+        assert result["private_thoughts"] == "Some thought."
+
+    def test_continuation_line_joined(self):
+        """Non-field continuation lines are joined to previous value."""
+        text = (
+            "private_thoughts: First part\n"
+            "  second part\n"
+            "new_text: A rule.\n"
+        )
+        result = parse_section_fields(text)
+        assert result["private_thoughts"] == "First part second part"
+        assert result["new_text"] == "A rule."
+
+    def test_blank_lines_ignored(self):
+        """Blank lines between fields do not affect parsing."""
+        text = "private_thoughts: Thought.\n\nnew_text: Rule.\n"
+        result = parse_section_fields(text)
+        assert result["private_thoughts"] == "Thought."
+        assert result["new_text"] == "Rule."
+
+    def test_field_with_colon_in_value(self):
+        """Colons in field values are preserved."""
+        text = "private_thoughts: See rules 201-203: they matter."
+        result = parse_section_fields(text)
+        assert result["private_thoughts"] == "See rules 201-203: they matter."
+
+    def test_missing_field_returns_empty(self):
+        """Accessing a missing field via .get returns the default."""
+        text = "private_thoughts: A thought."
+        result = parse_section_fields(text)
+        assert result.get("new_text", "") == ""
+
+    def test_target_rule_id_field(self):
+        """target_rule_id field is parsed as a plain string."""
+        text = (
+            "private_thoughts: Amend it.\n"
+            "target_rule_id: 201\n"
+            "rationale: Better."
+        )
+        result = parse_section_fields(text)
+        assert result["target_rule_id"] == "201"
 
 
 # ---------------------------------------------------------------------------
 # Tests for load_personality (uses the real personalities/ directory)
 # ---------------------------------------------------------------------------
+
+_NEW_SECTIONS = [
+    "PERSONA",
+    "STRATEGIC_GUIDANCE",
+    "PROPOSE_ADD_EXAMPLE",
+    "PROPOSE_AMEND_EXAMPLE",
+    "PROPOSE_REPEAL_EXAMPLE",
+    "PROPOSE_TRANSMUTE_EXAMPLE",
+    "DISCUSS_COMMENT_EXAMPLE",
+    "DISCUSS_ABSTAIN_EXAMPLE",
+    "REVISE_KEEP_EXAMPLE",
+    "REVISE_MODIFY_EXAMPLE",
+    "REVISE_WITHDRAW_EXAMPLE",
+    "VOTE_YES_EXAMPLE",
+    "VOTE_NO_EXAMPLE",
+]
 
 
 class TestLoadPersonality:
@@ -95,40 +196,19 @@ class TestLoadPersonality:
     def test_load_machiavellian_has_required_sections(self):
         """Machiavellian file has all required sections."""
         sections = load_personality("machiavellian")
-        for section in [
-            "PERSONA",
-            "STRATEGIC_GUIDANCE",
-            "PROPOSE_EXAMPLES",
-            "DISCUSS_EXAMPLES",
-            "REVISE_EXAMPLES",
-            "VOTE_EXAMPLES",
-        ]:
+        for section in _NEW_SECTIONS:
             assert section in sections, f"Missing section: {section}"
 
     def test_load_friendly_has_required_sections(self):
         """Friendly file has all required sections."""
         sections = load_personality("friendly")
-        for section in [
-            "PERSONA",
-            "STRATEGIC_GUIDANCE",
-            "PROPOSE_EXAMPLES",
-            "DISCUSS_EXAMPLES",
-            "REVISE_EXAMPLES",
-            "VOTE_EXAMPLES",
-        ]:
+        for section in _NEW_SECTIONS:
             assert section in sections, f"Missing section: {section}"
 
     def test_load_none_has_required_sections(self):
         """None file has all required sections."""
         sections = load_personality("none")
-        for section in [
-            "PERSONA",
-            "STRATEGIC_GUIDANCE",
-            "PROPOSE_EXAMPLES",
-            "DISCUSS_EXAMPLES",
-            "REVISE_EXAMPLES",
-            "VOTE_EXAMPLES",
-        ]:
+        for section in _NEW_SECTIONS:
             assert section in sections, f"Missing section: {section}"
 
     def test_machiavellian_persona_has_player_name_placeholder(self):
@@ -167,6 +247,57 @@ class TestLoadPersonality:
         assert "ruthlessly" not in sections["PERSONA"]
         assert "cooperative" not in sections["PERSONA"]
         assert "alliance" not in sections["PERSONA"]
+
+    def test_example_sections_contain_private_thoughts_field(self):
+        """All per-case example sections contain a private_thoughts field."""
+        example_sections = [s for s in _NEW_SECTIONS if s.endswith("_EXAMPLE")]
+        for personality in ("machiavellian", "friendly", "none"):
+            sections = load_personality(personality)
+            for section in example_sections:
+                fields = parse_section_fields(sections[section])
+                assert (
+                    "private_thoughts" in fields
+                ), f"{personality}/{section} missing private_thoughts field"
+
+    def test_propose_add_example_has_required_fields(self):
+        """PROPOSE_ADD_EXAMPLE sections have new_text and rationale."""
+        for personality in ("machiavellian", "friendly", "none"):
+            sections = load_personality(personality)
+            fields = parse_section_fields(sections["PROPOSE_ADD_EXAMPLE"])
+            assert (
+                "new_text" in fields
+            ), f"{personality} PROPOSE_ADD_EXAMPLE missing new_text"
+            assert (
+                "rationale" in fields
+            ), f"{personality} PROPOSE_ADD_EXAMPLE missing rationale"
+
+    def test_propose_amend_example_has_target_rule_id(self):
+        """PROPOSE_AMEND_EXAMPLE sections have a target_rule_id field."""
+        for personality in ("machiavellian", "friendly", "none"):
+            sections = load_personality(personality)
+            fields = parse_section_fields(sections["PROPOSE_AMEND_EXAMPLE"])
+            assert (
+                "target_rule_id" in fields
+            ), f"{personality} PROPOSE_AMEND_EXAMPLE missing target_rule_id"
+
+    def test_discuss_comment_example_has_discussion_text_field(self):
+        """DISCUSS_COMMENT_EXAMPLE sections have a discussion_text field."""
+        for personality in ("machiavellian", "friendly", "none"):
+            sections = load_personality(personality)
+            fields = parse_section_fields(sections["DISCUSS_COMMENT_EXAMPLE"])
+            assert (
+                "discussion_text" in fields
+            ), f"{personality} DISCUSS_COMMENT_EXAMPLE: no discussion_text"
+
+    def test_vote_examples_have_public_reason_field(self):
+        """VOTE_YES_EXAMPLE and VOTE_NO_EXAMPLE have a public_reason field."""
+        for personality in ("machiavellian", "friendly", "none"):
+            sections = load_personality(personality)
+            for section in ("VOTE_YES_EXAMPLE", "VOTE_NO_EXAMPLE"):
+                fields = parse_section_fields(sections[section])
+                assert (
+                    "public_reason" in fields
+                ), f"{personality} {section} missing public_reason"
 
     def test_missing_personality_raises_file_not_found(self):
         """load_personality raises FileNotFoundError for unknown name."""

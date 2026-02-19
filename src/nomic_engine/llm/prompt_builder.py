@@ -9,6 +9,8 @@ Sprint 6 refactor: Methods now return single ChatMessage objects instead of
 full message lists, enabling persistent conversation history per player.
 """
 
+import json
+
 from ..data_models import (
     ChatMessage,
     Discussion,
@@ -23,7 +25,7 @@ from ..utils.flag_schema import (
     format_supported_flags,
 )
 from . import prompts
-from .personality_loader import load_personality
+from .personality_loader import load_personality, parse_section_fields
 
 
 class PromptBuilder:
@@ -325,6 +327,203 @@ class PromptBuilder:
             leaderboard_context=leaderboard_context,
         )
 
+    def _build_propose_examples(self, personality: str) -> str:
+        """
+        Assemble personality-specific JSON examples for the propose phase.
+
+        Loads the four per-case example sections from the personality file,
+        extracts prose field values, and assembles one complete JSON object
+        per proposal type (ADD, AMEND, REPEAL, TRANSMUTE).
+
+        Args:
+            personality: Lowercase personality name (e.g. "machiavellian").
+
+        Returns:
+            Multi-line string of JSON objects separated by blank lines.
+        """
+        sections = load_personality(personality.lower())
+        add_f = parse_section_fields(sections.get("PROPOSE_ADD_EXAMPLE", ""))
+        amend_f = parse_section_fields(
+            sections.get("PROPOSE_AMEND_EXAMPLE", "")
+        )
+        repeal_f = parse_section_fields(
+            sections.get("PROPOSE_REPEAL_EXAMPLE", "")
+        )
+        transmute_f = parse_section_fields(
+            sections.get("PROPOSE_TRANSMUTE_EXAMPLE", "")
+        )
+        examples = [
+            json.dumps(
+                {
+                    "private_thoughts": add_f.get("private_thoughts", ""),
+                    "type": "ADD",
+                    "target_rule_id": None,
+                    "new_text": add_f.get("new_text", ""),
+                    "rationale": add_f.get("rationale", ""),
+                },
+                indent=2,
+            ),
+            json.dumps(
+                {
+                    "private_thoughts": amend_f.get("private_thoughts", ""),
+                    "type": "AMEND",
+                    "target_rule_id": amend_f.get("target_rule_id", ""),
+                    "new_text": amend_f.get("new_text", ""),
+                    "rationale": amend_f.get("rationale", ""),
+                },
+                indent=2,
+            ),
+            json.dumps(
+                {
+                    "private_thoughts": repeal_f.get("private_thoughts", ""),
+                    "type": "REPEAL",
+                    "target_rule_id": repeal_f.get("target_rule_id", ""),
+                    "new_text": None,
+                    "rationale": repeal_f.get("rationale", ""),
+                },
+                indent=2,
+            ),
+            json.dumps(
+                {
+                    "private_thoughts": transmute_f.get(
+                        "private_thoughts", ""
+                    ),
+                    "type": "TRANSMUTE",
+                    "target_rule_id": transmute_f.get("target_rule_id", ""),
+                    "new_text": None,
+                    "rationale": transmute_f.get("rationale", ""),
+                },
+                indent=2,
+            ),
+        ]
+        return "\n\n".join(examples)
+
+    def _build_discuss_examples(self, personality: str) -> str:
+        """
+        Assemble personality-specific JSON examples for the discuss phase.
+
+        Loads the COMMENT and ABSTAIN example sections, extracts prose
+        values, and assembles one JSON object per case.
+
+        Args:
+            personality: Lowercase personality name (e.g. "machiavellian").
+
+        Returns:
+            Multi-line string of JSON objects separated by blank lines.
+        """
+        sections = load_personality(personality.lower())
+        comment_f = parse_section_fields(
+            sections.get("DISCUSS_COMMENT_EXAMPLE", "")
+        )
+        abstain_f = parse_section_fields(
+            sections.get("DISCUSS_ABSTAIN_EXAMPLE", "")
+        )
+        examples = [
+            json.dumps(
+                {
+                    "private_thoughts": comment_f.get("private_thoughts", ""),
+                    "discussion_text": comment_f.get("discussion_text", ""),
+                },
+                indent=2,
+            ),
+            json.dumps(
+                {
+                    "private_thoughts": abstain_f.get("private_thoughts", ""),
+                    "discussion_text": "",
+                },
+                indent=2,
+            ),
+        ]
+        return "\n\n".join(examples)
+
+    def _build_revise_examples(self, personality: str) -> str:
+        """
+        Assemble personality-specific JSON examples for the revise phase.
+
+        Loads the KEEP, MODIFY, and WITHDRAW example sections, extracts
+        prose values, and assembles one JSON object per revision action.
+
+        Args:
+            personality: Lowercase personality name (e.g. "machiavellian").
+
+        Returns:
+            Multi-line string of JSON objects separated by blank lines.
+        """
+        sections = load_personality(personality.lower())
+        keep_f = parse_section_fields(sections.get("REVISE_KEEP_EXAMPLE", ""))
+        modify_f = parse_section_fields(
+            sections.get("REVISE_MODIFY_EXAMPLE", "")
+        )
+        withdraw_f = parse_section_fields(
+            sections.get("REVISE_WITHDRAW_EXAMPLE", "")
+        )
+        examples = [
+            json.dumps(
+                {
+                    "private_thoughts": keep_f.get("private_thoughts", ""),
+                    "action": "KEEP",
+                    "new_text": None,
+                    "rationale": None,
+                },
+                indent=2,
+            ),
+            json.dumps(
+                {
+                    "private_thoughts": modify_f.get("private_thoughts", ""),
+                    "action": "MODIFY",
+                    "new_text": modify_f.get("new_text", ""),
+                    "rationale": modify_f.get("rationale", ""),
+                },
+                indent=2,
+            ),
+            json.dumps(
+                {
+                    "private_thoughts": withdraw_f.get("private_thoughts", ""),
+                    "action": "WITHDRAW",
+                    "new_text": None,
+                    "rationale": None,
+                },
+                indent=2,
+            ),
+        ]
+        return "\n\n".join(examples)
+
+    def _build_vote_examples(self, personality: str) -> str:
+        """
+        Assemble personality-specific JSON examples for the vote phase.
+
+        Loads the YES and NO example sections, extracts prose values, and
+        assembles one JSON object per vote outcome.
+
+        Args:
+            personality: Lowercase personality name (e.g. "machiavellian").
+
+        Returns:
+            Multi-line string of JSON objects separated by blank lines.
+        """
+        sections = load_personality(personality.lower())
+        yes_f = parse_section_fields(sections.get("VOTE_YES_EXAMPLE", ""))
+        no_f = parse_section_fields(sections.get("VOTE_NO_EXAMPLE", ""))
+        examples = [
+            json.dumps(
+                {
+                    "private_thoughts": yes_f.get("private_thoughts", ""),
+                    "public_reason": yes_f.get("public_reason", ""),
+                    "vote": "YES",
+                },
+                indent=2,
+            ),
+            json.dumps(
+                {
+                    "private_thoughts": no_f.get("private_thoughts", ""),
+                    "public_reason": no_f.get("public_reason", ""),
+                    "vote": "NO",
+                },
+                indent=2,
+            ),
+        ]
+        return "\n\n".join(examples)
+
     def build_proposer_system_message(
         self,
         rules: list[Rule],
@@ -368,11 +567,9 @@ class PromptBuilder:
         rules_block = prompts.RULES_BLOCK.format(rules_text=rules_text)
 
         # Format instruction block with personality-specific examples
-        personality_sections = load_personality(personality.lower())
-        propose_examples = personality_sections.get("PROPOSE_EXAMPLES", "")
         instruction_block = prompts.INSTRUCTION_PROPOSE.format(
             json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
-            personality_examples=propose_examples,
+            personality_examples=self._build_propose_examples(personality),
         )
 
         # Assemble the full system message
@@ -436,11 +633,9 @@ class PromptBuilder:
         proposal_block = self._format_proposal(proposal, rules, player_name)
 
         # Format instruction block with personality-specific examples
-        personality_sections = load_personality(personality.lower())
-        discuss_examples = personality_sections.get("DISCUSS_EXAMPLES", "")
         instruction_block = prompts.INSTRUCTION_DISCUSS.format(
             json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
-            personality_examples=discuss_examples,
+            personality_examples=self._build_discuss_examples(personality),
         )
 
         # Assemble the full system message
@@ -507,12 +702,10 @@ class PromptBuilder:
             )
 
         # Format instruction block with personality-specific examples
-        personality_sections = load_personality(personality.lower())
-        revise_examples = personality_sections.get("REVISE_EXAMPLES", "")
         instruction_block = prompts.INSTRUCTION_REVISE.format(
             constraint_message=constraint_message,
             json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
-            personality_examples=revise_examples,
+            personality_examples=self._build_revise_examples(personality),
         )
 
         # Assemble the full user message
@@ -562,11 +755,9 @@ class PromptBuilder:
         )
 
         # Format instruction block with personality-specific examples
-        personality_sections = load_personality(personality.lower())
-        vote_examples = personality_sections.get("VOTE_EXAMPLES", "")
         instruction_block = prompts.INSTRUCTION_VOTE.format(
             json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
-            personality_examples=vote_examples,
+            personality_examples=self._build_vote_examples(personality),
         )
 
         # Assemble the full user message
