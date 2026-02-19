@@ -487,6 +487,37 @@ class LLMPlayer(BasePlayer):
             ChatMessage(role="user", content=pivot_message)
         )
 
+    def on_proposal_updated(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+        withdrawal_attempt: int,
+        max_withdrawal_retries: int,
+    ) -> None:
+        """Append a user message with the new proposal context.
+
+        Injects the replacement proposal into the existing discussion history
+        without resetting it, so accumulated reasoning is preserved.
+
+        Args:
+            proposal: The new (replacement) proposal.
+            game_state: Current game state.
+            rules: Current rules.
+            withdrawal_attempt: The current retry attempt number (1-based).
+            max_withdrawal_retries: Max retries configured for this game.
+        """
+        proposal_block = self.prompt_builder._format_proposal(
+            proposal, rules, self.player_name
+        )
+        message = prompts.DISCUSS_PROPOSAL_UPDATED_TEMPLATE.format(
+            withdrawal_attempt=withdrawal_attempt,
+            max_withdrawal_retries=max_withdrawal_retries,
+            proposal_block=proposal_block,
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+        )
+        self.turn_history.append(ChatMessage(role="user", content=message))
+
     def revise(
         self,
         proposal: Proposal,

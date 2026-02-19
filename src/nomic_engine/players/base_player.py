@@ -144,6 +144,33 @@ class BasePlayer(ABC):
         return None
 
     @abstractmethod
+    def on_proposal_updated(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+        withdrawal_attempt: int,
+        max_withdrawal_retries: int,
+    ) -> None:
+        """
+        Called when a proposer withdraws and replaces their proposal mid-turn.
+
+        Injects the new proposal context into the player's existing discussion
+        state without resetting accumulated history or reasoning.
+
+        This is the discusser-side counterpart to note_withdrawal_for_retry
+        (which notifies the proposer).
+
+        Args:
+            proposal: The new (replacement) proposal.
+            game_state: Current game state.
+            rules: Current rules.
+            withdrawal_attempt: The current retry attempt number (1-based).
+            max_withdrawal_retries: Max retries configured for this game.
+        """
+        pass
+
+    @abstractmethod
     def revise(
         self,
         proposal: Proposal,

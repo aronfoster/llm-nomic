@@ -133,6 +133,8 @@ class GameLoop:
                     proposal,
                     self.players,
                     is_retry=withdrawal_attempt > 0,
+                    withdrawal_attempt=withdrawal_attempt,
+                    max_withdrawal_retries=max_withdrawal_retries,
                 )
 
                 # Step 3: Revise
@@ -349,6 +351,8 @@ class GameLoop:
         proposal: Proposal,
         players: list[BasePlayer],
         is_retry: bool = False,
+        withdrawal_attempt: int = 0,
+        max_withdrawal_retries: int = 0,
     ) -> list[Discussion]:
         """
         Collect discussion from all players.
@@ -357,11 +361,22 @@ class GameLoop:
         rationale from the proposal serves as their discussion contribution,
         so they are not prompted again.
 
+        On a retry round with ``retain_discusser_history_on_retry=True``,
+        ``on_proposal_updated`` is called on each non-proposing player to
+        inject the new proposal into their existing discussion context
+        without resetting accumulated history.
+
         Args:
             proposal: The proposal to discuss
             players: List of all players
             is_retry: True when this discussion round follows a withdrawal
                 retry.
+            withdrawal_attempt: The current withdrawal attempt number
+                (1-based; 0 on the first attempt). Forwarded to
+                ``on_proposal_updated``.
+            max_withdrawal_retries: The maximum number of withdrawal retries
+                configured for this game. Forwarded to
+                ``on_proposal_updated``.
 
         Returns:
             List of Discussion objects from all players (includes abstentions)
@@ -371,7 +386,7 @@ class GameLoop:
 
         logger.info("Step 2: Discussion phase")
 
-        skip_init = (
+        retain_history = (
             is_retry
             and self.game_manager.game_config is not None
             and self.game_manager.game_config.retain_discusser_history_on_retry
@@ -402,7 +417,20 @@ class GameLoop:
             if player.player_name == proposal.proposer_name:
                 continue  # Skip the proposer
 
-            if not skip_init:
+            if retain_history:
+                # Retry round with history preservation: inject the new
+                # proposal into the player's existing context without
+                # resetting accumulated reasoning.
+                player.on_proposal_updated(
+                    proposal=proposal,
+                    game_state=self.game_manager.game_state,
+                    rules=self.game_manager.rules_manager.rules,
+                    withdrawal_attempt=withdrawal_attempt,
+                    max_withdrawal_retries=max_withdrawal_retries,
+                )
+            else:
+                # First round or retry without history preservation: reset
+                # the player's discussion context with the new proposal.
                 player.begin_discussion_turn(
                     proposal=proposal,
                     game_state=self.game_manager.game_state,

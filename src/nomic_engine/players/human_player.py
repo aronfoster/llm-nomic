@@ -163,6 +163,66 @@ class HumanPlayer(BasePlayer):
             rules: The current list of all rules (unused).
         """
 
+    def on_proposal_updated(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+        withdrawal_attempt: int,
+        max_withdrawal_retries: int,
+    ) -> None:
+        """
+        Print a notice that the previous proposal was withdrawn and a new
+        one has been submitted.
+
+        No state is maintained for human players; this method is purely
+        informational console output.
+
+        Args:
+            proposal: The new (replacement) proposal.
+            game_state: Current game state (unused).
+            rules: Current rules (used to look up original rule text).
+            withdrawal_attempt: The current retry attempt number (1-based).
+            max_withdrawal_retries: Max retries configured for this game.
+        """
+        del game_state  # Unused for human players
+
+        print(
+            "\n--- Notice: Previous Proposal Withdrawn — New Proposal "
+            "Submitted ---"
+        )
+        print(
+            f"WITHDRAWAL ATTEMPT: {withdrawal_attempt} of "
+            f"{max_withdrawal_retries}"
+        )
+        print("\nNew proposal details:")
+        print(f"  Type: {proposal.type.value}")
+        if proposal.target_rule_id:
+            print(f"  Target Rule ID: {proposal.target_rule_id}")
+
+            if proposal.type in [
+                ProposalType.AMEND,
+                ProposalType.REPEAL,
+                ProposalType.TRANSMUTE,
+            ]:
+                original_rule = next(
+                    (
+                        rule
+                        for rule in rules
+                        if rule.rule_id == proposal.target_rule_id
+                    ),
+                    None,
+                )
+                if original_rule:
+                    print(f"  Original Text: {original_rule.text}")
+                else:
+                    print("  Original Text: [Rule not found]")
+
+        if proposal.new_text:
+            print(f"  New Text: {proposal.new_text}")
+        if proposal.rationale:
+            print(f"  Rationale: {proposal.rationale}")
+
     def discuss(
         self,
         proposal: Proposal,

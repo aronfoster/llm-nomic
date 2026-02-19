@@ -522,17 +522,39 @@ class TestCollectDiscussionsLifecycle:
         bob.begin_discussion_turn.assert_called_once()
         bob.discuss.assert_called_once()
 
-    def test_retry_with_flag_true_skips_begin_discussion_turn(self) -> None:
-        """is_retry=True + retain=True skips begin_discussion_turn()."""
+    def test_retry_with_flag_true_calls_on_proposal_updated(self) -> None:
+        """is_retry=True + retain=True calls on_proposal_updated()."""
         game_loop, _alice, bob = self._make_game_loop(retain_flag=True)
         proposal = self._make_proposal()
 
         game_loop._collect_discussions(
-            proposal, game_loop.players, is_retry=True
+            proposal,
+            game_loop.players,
+            is_retry=True,
+            withdrawal_attempt=1,
+            max_withdrawal_retries=2,
         )
 
         bob.begin_discussion_turn.assert_not_called()
+        bob.on_proposal_updated.assert_called_once()
         bob.discuss.assert_called_once()
+
+    def test_retry_with_flag_true_passes_attempt_numbers(self) -> None:
+        """on_proposal_updated receives correct withdrawal attempt numbers."""
+        game_loop, _alice, bob = self._make_game_loop(retain_flag=True)
+        proposal = self._make_proposal()
+
+        game_loop._collect_discussions(
+            proposal,
+            game_loop.players,
+            is_retry=True,
+            withdrawal_attempt=2,
+            max_withdrawal_retries=3,
+        )
+
+        call_kwargs = bob.on_proposal_updated.call_args
+        assert call_kwargs.kwargs["withdrawal_attempt"] == 2
+        assert call_kwargs.kwargs["max_withdrawal_retries"] == 3
 
     def test_retry_with_flag_false_calls_begin_discussion_turn(self) -> None:
         """is_retry=True + retain=False calls begin_discussion_turn()."""
@@ -546,16 +568,21 @@ class TestCollectDiscussionsLifecycle:
         bob.begin_discussion_turn.assert_called_once()
         bob.discuss.assert_called_once()
 
-    def test_proposer_skipped_for_both_methods(self) -> None:
-        """Proposer must not have begin_discussion_turn() or discuss()."""
+    def test_proposer_skipped_for_all_discussion_methods(self) -> None:
+        """Proposer must not have begin/on_proposal_updated/discuss called."""
         game_loop, alice, _bob = self._make_game_loop()
         proposal = self._make_proposal(proposer="Alice")
 
         game_loop._collect_discussions(
-            proposal, game_loop.players, is_retry=True
+            proposal,
+            game_loop.players,
+            is_retry=True,
+            withdrawal_attempt=1,
+            max_withdrawal_retries=2,
         )
 
         alice.begin_discussion_turn.assert_not_called()
+        alice.on_proposal_updated.assert_not_called()
         alice.discuss.assert_not_called()
 
     def test_no_game_config_calls_begin_discussion_turn(self) -> None:
@@ -607,3 +634,270 @@ class TestCollectDiscussionsLifecycle:
         # With no config, skip_init=False, so init IS called
         bob.begin_discussion_turn.assert_called_once()
         bob.discuss.assert_called_once()
+
+
+# =====================================================================
+# Sprint 30 Task 1: DISCUSS_PROPOSAL_UPDATED_TEMPLATE
+# =====================================================================
+
+
+class TestDiscussProposalUpdatedTemplate:
+    """Tests for DISCUSS_PROPOSAL_UPDATED_TEMPLATE constant in prompts.py."""
+
+    def test_template_exists(self) -> None:
+        """DISCUSS_PROPOSAL_UPDATED_TEMPLATE must be defined in prompts."""
+        assert hasattr(prompts, "DISCUSS_PROPOSAL_UPDATED_TEMPLATE")
+
+    def test_template_has_required_placeholders(self) -> None:
+        """Template must expose all required placeholder variables."""
+        template = prompts.DISCUSS_PROPOSAL_UPDATED_TEMPLATE
+        assert "{withdrawal_attempt}" in template
+        assert "{max_withdrawal_retries}" in template
+        assert "{proposal_block}" in template
+        assert "{json_format_enforcement}" in template
+
+    def test_template_formats_correctly(self) -> None:
+        """Template must render without error when all placeholders filled."""
+        rendered = prompts.DISCUSS_PROPOSAL_UPDATED_TEMPLATE.format(
+            withdrawal_attempt=1,
+            max_withdrawal_retries=2,
+            proposal_block="=== PROPOSAL #301 ===\n...",
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+        )
+        assert "1" in rendered
+        assert "2" in rendered
+        assert "=== PROPOSAL #301 ===" in rendered
+
+
+# =====================================================================
+# Sprint 30 Task 1: LLMPlayer.on_proposal_updated
+# =====================================================================
+
+
+class TestLLMPlayerOnProposalUpdated:
+    """Tests for LLMPlayer.on_proposal_updated()."""
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    def test_appends_exactly_one_user_message(
+        self,
+        mock_api_client_class: MagicMock,
+        mock_prompt_builder_class: MagicMock,
+        model_config: ModelDefinition,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> None:
+        """on_proposal_updated must append exactly one user message."""
+        mock_pb = mock_prompt_builder_class.return_value
+        mock_pb._format_proposal.return_value = "=== PROPOSAL #301 ===\n..."
+
+        player = LLMPlayer("Bob", model_config)
+        initial_history = [
+            ChatMessage(role="system", content="Prior system"),
+            ChatMessage(role="assistant", content="Prior discussion"),
+        ]
+        player.turn_history = list(initial_history)
+
+        player.on_proposal_updated(
+            proposal=proposal,
+            game_state=game_state,
+            rules=rules,
+            withdrawal_attempt=1,
+            max_withdrawal_retries=2,
+        )
+
+        # Exactly one message appended
+        assert len(player.turn_history) == len(initial_history) + 1
+        new_msg = player.turn_history[-1]
+        assert new_msg.role == "user"
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    def test_does_not_reset_history(
+        self,
+        mock_api_client_class: MagicMock,
+        mock_prompt_builder_class: MagicMock,
+        model_config: ModelDefinition,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> None:
+        """on_proposal_updated must not reset turn_history."""
+        mock_pb = mock_prompt_builder_class.return_value
+        mock_pb._format_proposal.return_value = "=== PROPOSAL ==="
+
+        player = LLMPlayer("Bob", model_config)
+        player.turn_history = [
+            ChatMessage(role="system", content="Keep this"),
+            ChatMessage(role="assistant", content="Keep this too"),
+        ]
+
+        player.on_proposal_updated(
+            proposal=proposal,
+            game_state=game_state,
+            rules=rules,
+            withdrawal_attempt=1,
+            max_withdrawal_retries=2,
+        )
+
+        # Original messages must be preserved
+        assert player.turn_history[0].content == "Keep this"
+        assert player.turn_history[1].content == "Keep this too"
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    def test_message_contains_withdrawal_attempt_numbers(
+        self,
+        mock_api_client_class: MagicMock,
+        mock_prompt_builder_class: MagicMock,
+        model_config: ModelDefinition,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> None:
+        """The appended message must contain withdrawal attempt numbers."""
+        mock_pb = mock_prompt_builder_class.return_value
+        mock_pb._format_proposal.return_value = "=== PROPOSAL ==="
+
+        player = LLMPlayer("Bob", model_config)
+        player.turn_history = [ChatMessage(role="system", content="sys")]
+
+        player.on_proposal_updated(
+            proposal=proposal,
+            game_state=game_state,
+            rules=rules,
+            withdrawal_attempt=2,
+            max_withdrawal_retries=3,
+        )
+
+        appended = player.turn_history[-1].content
+        assert "2" in appended
+        assert "3" in appended
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    def test_message_contains_proposal_block(
+        self,
+        mock_api_client_class: MagicMock,
+        mock_prompt_builder_class: MagicMock,
+        model_config: ModelDefinition,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> None:
+        """The appended message must contain the formatted proposal block."""
+        mock_pb = mock_prompt_builder_class.return_value
+        mock_pb._format_proposal.return_value = "=== PROPOSAL #301 ==="
+
+        player = LLMPlayer("Bob", model_config)
+        player.turn_history = [ChatMessage(role="system", content="sys")]
+
+        player.on_proposal_updated(
+            proposal=proposal,
+            game_state=game_state,
+            rules=rules,
+            withdrawal_attempt=1,
+            max_withdrawal_retries=2,
+        )
+
+        appended = player.turn_history[-1].content
+        assert "=== PROPOSAL #301 ===" in appended
+
+
+# =====================================================================
+# Sprint 30 Task 1: HumanPlayer.on_proposal_updated
+# =====================================================================
+
+
+class TestHumanPlayerOnProposalUpdated:
+    """Tests for HumanPlayer.on_proposal_updated()."""
+
+    def test_prints_withdrawal_notice(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """on_proposal_updated must print a withdrawal notice."""
+        player = HumanPlayer("Bob")
+        player.on_proposal_updated(
+            proposal=proposal,
+            game_state=game_state,
+            rules=rules,
+            withdrawal_attempt=1,
+            max_withdrawal_retries=2,
+        )
+        captured = capsys.readouterr()
+        # Must mention withdrawal
+        assert "withdraw" in captured.out.lower()
+
+    def test_prints_attempt_numbers(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """on_proposal_updated must print withdrawal attempt numbers."""
+        player = HumanPlayer("Bob")
+        player.on_proposal_updated(
+            proposal=proposal,
+            game_state=game_state,
+            rules=rules,
+            withdrawal_attempt=2,
+            max_withdrawal_retries=3,
+        )
+        captured = capsys.readouterr()
+        assert "2" in captured.out
+        assert "3" in captured.out
+
+    def test_prints_new_proposal_details(
+        self,
+        game_state: GameState,
+        rules: list[Rule],
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """on_proposal_updated must print the new proposal's type and text."""
+        player = HumanPlayer("Bob")
+        new_proposal = Proposal(
+            proposer_name="Alice",
+            move_number=1,
+            type=ProposalType.ADD,
+            proposal_id="302",
+            new_text="A brand new rule",
+            rationale="Fresh start",
+        )
+        player.on_proposal_updated(
+            proposal=new_proposal,
+            game_state=game_state,
+            rules=rules,
+            withdrawal_attempt=1,
+            max_withdrawal_retries=2,
+        )
+        captured = capsys.readouterr()
+        # ProposalType.ADD.value is "Add"
+        assert "Add" in captured.out
+        assert "A brand new rule" in captured.out
+        assert "Fresh start" in captured.out
+
+    def test_does_not_prompt_for_input(
+        self,
+        proposal: Proposal,
+        game_state: GameState,
+        rules: list[Rule],
+    ) -> None:
+        """on_proposal_updated must not call input() — purely informational."""
+        player = HumanPlayer("Bob")
+        # If input() is called without patching it will block; we use
+        # a patch that raises an error if called.
+        err = AssertionError("input() called")
+        with patch("builtins.input", side_effect=err):
+            player.on_proposal_updated(
+                proposal=proposal,
+                game_state=game_state,
+                rules=rules,
+                withdrawal_attempt=1,
+                max_withdrawal_retries=2,
+            )
