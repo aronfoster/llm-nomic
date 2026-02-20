@@ -38,11 +38,6 @@ models:
     api_model_id: "gemini-2.5-flash-lite"
     env_key_name: "GOOGLE_API_KEY"
 
-  - id: "grok-code-fast-1"
-    provider: "xai"
-    api_model_id: "grok-code-fast-1"
-    env_key_name: "XAI_API_KEY"
-
   - id: "grok-4-1-fast-reasoning"
     provider: "xai"
     api_model_id: "grok-4-1-fast-reasoning"
