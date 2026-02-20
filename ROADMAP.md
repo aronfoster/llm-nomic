@@ -15,58 +15,21 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-- None
+- `game_transcript.md` does not include initial rule proposal, withdrawals, and possibly other player inputs that should be in there.
 
 ### Low Priority
 
 - Allow numbers or text (e.g. 2 or llm) in each prompt of create_game.py
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
+- Nedd to remove the extraneous DEBUG level logging of private thoughts, which happens after INFO logging of the entire response (including private_thoughts)
+- Judge scoring uses RULES_BLOCK which begins "=== ALL CURRENT RULES ===", but is actually sent only points-related rules
 
-### Sprint 30: Creative Personalities & Withdrawal Fix
+## Sprint 31: TBD
 
-**Goal:** Make LLM players propose creative, personality-driven rules instead of exclusively point-manipulation plays. Fix stale context bug on withdrawal retries.
+### Task 1
 
-### ~~Task 1: Fix discusser stale context after withdrawal retry (BUG — HIGH)~~ ✅ COMPLETE
+TBD
 
-**Problem:** When `retain_discusser_history_on_retry=True`, `_collect_discussions` skips `begin_discussion_turn` on retry rounds to preserve accumulated reasoning. But `begin_discussion_turn` is the only place the PROPOSAL_BLOCK gets injected into the discusser's system message. After a withdrawal + pivot, non-proposer LLMs discuss the *old* proposal.
-
-**Fix:**
-- Added `on_proposal_updated` abstract method to `BasePlayer`.
-- `LLMPlayer.on_proposal_updated` appends one user message (using new `DISCUSS_PROPOSAL_UPDATED_TEMPLATE`) with the new proposal block, preserving history.
-- `HumanPlayer.on_proposal_updated` prints withdrawal notice and new proposal details to console.
-- `GameLoop._collect_discussions` calls `on_proposal_updated` (instead of skipping) on retry rounds when `retain_discusser_history_on_retry=True`.
-
-### ~~Task 2: Personality files with phase-specific examples (CORE — LARGE)~~ ✅ COMPLETE
-
-**Problem:** All personalities share hardcoded examples in `prompts.py`. These examples exclusively demonstrate point-manipulation strategies, anchoring LLMs to propose only numerical advantage plays. The personality blocks themselves are 4 lines of tone-setting that are not effective at differentiating behavior.
-
-**Solution:** Create dedicated personality files containing persona description, strategic guidance, and phase-specific examples. Wire PromptBuilder to load them.
-
-**Subtasks:**
-- Create a `personalities/` directory (sibling to `src/`? inside `src/nomic_engine/`? — developer's call) with one file per personality
-  (`machiavellian.md`, `friendly.md`, `none.md`), each containing persona
-  description, strategic guidance, and phase-specific examples (propose,
-  discuss, revise, vote)
-  - Each file contains appropriate sections, e.g. `PERSONA`, `STRATEGIC_GUIDANCE`, `PROPOSE_EXAMPLES`, `DISCUSS_EXAMPLES`, `REVISE_EXAMPLES`, `VOTE_EXAMPLES`
-  - **Use the existing hardcoded examples for these files during development** and they will be modified by the PM later, outside this Developer Task
-- Update PromptBuilder to load personality from file and inject personality-specific examples into appropriate places, e.g. `INSTRUCTION_PROPOSE`,`INSTRUCTION_DISCUSS`, `INSTRUCTION_REVISE`, and `INSTRUCTION_VOTE`
-  templates via a new `{personality_examples}` placeholder
-- Remove inline personality constants from `prompts.py`
-- Update `create_game.py` to discover available personalities from the
-  directory. The game loop should throw an exception and log an error if it attempts to run a turn and finds a player with a personality name that doesn't exist in the directory.
-- Personality names are case-insensitive: normalize to lowercase at input,
-  enforce lowercase filenames as convention
-- Developer seeds personality files using the existing hardcoded examples;
-  PM will iterate on file content post-merge
-
-### ~~Task 3: Remove vestigial Rule 112 UNCLEAR/AMBIGUOUS checks (POLISH — LOW)~~ ✅ COMPLETE
-
-**Problem:** Two TODO comments mark dead code from the v0 ruleset. The v1 ruleset's Rule 111 was simplified and no longer has the UNCLEAR/AMBIGUOUS triggering mechanism.
-
-**Fix:**
-- In `prompt_builder.py` `build_revision_instruction`: Remove the Rule 112 loop that checks for "UNCLEAR"/"AMBIGUOUS" in discussions. Always use the unconditional `constraint_message`.
-- In `human_player.py` `revise`: Remove the `must_revise` check and the associated "Rule 112" print/prompt logic. Always show the standard R/S/W prompt.
-- Remove both TODO comments.
 
 ## Future Work
 
@@ -85,7 +48,7 @@ This is the long-term backlog and TODO scratchpad.
   * Refactor to a registry or factory pattern (even a dict mapping provider names to initialization callables). This also makes adding OpenRouter support cleaner.
 
 * **Validate API Keys at Startup:**
-  * Currently, missing API keys aren't discovered until a player's first turn — potentially hours into a game with multiple providers.
+  * Currently, missing API keys aren't discovered until a player is called for proposal or discussion. With bad or missing API keys, this would terminate the program and waste the tokens spent on other players.
   * Add a validation step in `create_game.py` or at `main.py` startup that checks all required env vars for configured players and the judge before gameplay begins.
 
 * **Validate Personality Files at Startup:**
