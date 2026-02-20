@@ -66,11 +66,10 @@ This is the long-term backlog and TODO scratchpad.
 ### Engine Features
 
 * **Improve `LLMPlayer`:**
-  * Prompt examples should draw from personality!
-    * Consider moving personalities into individual files
   * Implement advanced token-saving strategies, especially context caching
   * Implement async behavior (per model provider?)
   * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
+    * For prompt examples, do we use current-game responses instead of static personality file values on turn 2+?
   * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
   * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
   * Explore https://openrouter.ai/ support for tokens/models

@@ -1,5 +1,5 @@
 """
-LLM Prompt Templates — Nomic V1 (November 2025)
+LLM Prompt Templates — Nomic V1.2 (February 2026)
 
 Design Decisions & Tradeoffs (DO NOT DELETE THIS COMMENT BLOCK):
 
@@ -14,23 +14,23 @@ Design Decisions & Tradeoffs (DO NOT DELETE THIS COMMENT BLOCK):
    - Forces Chain-of-Thought reasoning before commitment
    - LLMs generate linearly - they can't "think ahead" to later JSON keys
 
-3. AGGRESSIVE FORMAT ENFORCEMENT
+3. AGGRESSIVE FORMAT THREAT
    - Multiple reminders about JSON-only output
    - Threat of ABSTAIN on format failure (psychological pressure)
    - No markdown, no explanations, no "here is my response" preamble
    - Works even on 8B models when threatened properly
+   - Engine actually drops everything before the first { and after the last }
 
 4. DUAL REASONING FIELDS
    - private_thoughts: Real strategy (logged for analysis)
    - public_reason: Political theater for other players
    - Mirrors how humans actually play Nomic
 
-WHAT WE DIDN'T DO (saved for V2+):
-- Dynamic examples from current game (too complex for V1)
-- Personality traits affecting strategy (unnecessary complexity)
-- Multi-model parsing (one model tries, another parses)
-- Configurable output formats per model
-- Memory of previous games/strategies
+5. FEW-SHOT PROMPTING
+   - Each instruction template has a {personality_examples} block
+   - PromptBuilder fills it with relevant examples from the active personality
+   - Examples show personality style, JSON structure, and ordering
+
 """
 
 # =====================================================================
@@ -333,6 +333,10 @@ You must output EXACTLY one JSON object with these keys IN THIS ORDER:
 The order matters. Think BEFORE you decide.
 
 {json_format_enforcement}
+
+The following examples illustrate reasoning style and decision-making. Treat
+them as models for how to think, not what to propose — the game state will
+always differ and better opportunities will exist.
 
 {personality_examples}
 
