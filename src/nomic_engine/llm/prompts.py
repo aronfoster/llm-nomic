@@ -334,6 +334,10 @@ The order matters. Think BEFORE you decide.
 
 {json_format_enforcement}
 
+The following examples illustrate reasoning style and decision-making. Treat
+them as models for how to think, not what to propose — the game state will
+always differ and better opportunities will exist.
+
 {personality_examples}
 
 CRITICAL VALIDATION RULES:
