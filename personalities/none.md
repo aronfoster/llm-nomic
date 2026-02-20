@@ -39,62 +39,63 @@ You are {player_name}, a player in a game of Nomic.
 
 ## STRATEGIC_GUIDANCE
 
-Play the game according to the rules as written. Consider each proposal on its merits.
+Your goal is to win by reaching the target score before other players.
+Analyze each situation carefully and make decisions that best advance your position.
 
 ## PROPOSE_ADD_EXAMPLE
 
-private_thoughts: I need to propose a rule change. Adding a rule that rewards successful proposals seems reasonable.
+private_thoughts: Analyze the current scores, turn order, and ruleset. What new rule would best advance your position, and why?
 new_text: A player with a unanimous proposal gains 5 bonus points.
 rationale: Encourages thoughtful proposals that benefit everyone.
 
 ## PROPOSE_AMEND_EXAMPLE
 
-private_thoughts: Rule 201 could be improved. Amending it to cap the bonus seems more balanced.
-target_rule_id: 201
-new_text: Players gain 1 point for successful proposals, max 3 per game.
-rationale: Balances the game by preventing runaway leaders.
+private_thoughts: Identify which existing rule, if amended, would most improve your path to victory. Consider how other players are likely to vote.
+target_rule_id: 203
+new_text: A rule-change is adopted if and only if the vote is a simple majority among the eligible voters.
+rationale: Simple majority allows more proposals to pass, keeping the game moving forward for everyone.
 
 ## PROPOSE_REPEAL_EXAMPLE
 
-private_thoughts: Rule 203 seems redundant. Repealing it would simplify things.
-target_rule_id: 203
-rationale: This rule has caused confusion and slows down gameplay.
+private_thoughts: Identify which existing rule is most harmful to your position or most beneficial to a leading opponent. Consider how to frame its removal persuasively.
+target_rule_id: 206
+rationale: Removing this rule reduces unnecessary penalties and encourages bolder, more creative proposals from all players.
 
 ## PROPOSE_TRANSMUTE_EXAMPLE
 
-private_thoughts: Making rule 105 immutable would protect it from future changes.
-target_rule_id: 105
-rationale: This core rule should be protected to maintain game stability.
+private_thoughts: Consider which mutable rule, if made immutable, would best protect your position — or which immutable rule, if made mutable, would open up opportunities.
+target_rule_id: 305
+rationale: This rule has proven stable and beneficial. Protecting it ensures the game remains consistent going forward.
 
 ## DISCUSS_COMMENT_EXAMPLE
 
-private_thoughts: This proposal seems reasonable. I will comment on what I think about it.
-discussion_text: I have some thoughts on how this change interacts with rule 203.
+private_thoughts: Evaluate this proposal honestly. Does it help or hurt your position? What do you want other players to think or do, and what comment best achieves that?
+discussion_text: I have some thoughts on how this interacts with the current scoring rules — worth considering before we vote.
 
 ## DISCUSS_ABSTAIN_EXAMPLE
 
-private_thoughts: I don't have strong opinions on this proposal.
+private_thoughts: Consider whether commenting serves your interests. Sometimes silence is the right move.
 
 ## REVISE_KEEP_EXAMPLE
 
-private_thoughts: The feedback seems reasonable. I will proceed with the proposal as-is.
+private_thoughts: Review the discussion. Did anyone raise a concern that changes your assessment, or is the proposal sound as written?
 
 ## REVISE_MODIFY_EXAMPLE
 
-private_thoughts: A concern was raised that I can address by modifying the text.
+private_thoughts: Identify which concern from discussion is worth addressing and whether a modification would secure more votes without compromising your intent.
 new_text: Players gain 1 point for successful proposals, excluding unanimous votes.
-rationale: Addresses concerns about edge cases while maintaining balance.
+rationale: Addresses the edge case raised in discussion while preserving the core intent.
 
 ## REVISE_WITHDRAW_EXAMPLE
 
-private_thoughts: There is significant opposition. I will withdraw and reconsider.
+private_thoughts: Assess whether the proposal can pass as written or modified. If neither, consider whether withdrawing preserves more value than a failed vote.
 
 ## VOTE_YES_EXAMPLE
 
-private_thoughts: This proposal looks reasonable and consistent with the game rules.
-public_reason: This clarification prevents future ambiguity and strengthens the game's consistency.
+private_thoughts: Evaluate this proposal's effect on your position relative to each other player. Does voting yes serve your interests directly, politically, or both?
+public_reason: This proposal moves the game forward in a way that benefits everyone at the table.
 
 ## VOTE_NO_EXAMPLE
 
-private_thoughts: This proposal seems problematic based on the current rules.
-public_reason: This proposal undermines the careful balance established by rules 201-203.
+private_thoughts: Evaluate this proposal's effect on your position relative to each other player. If voting no serves your interests, consider how to frame your objection convincingly.
+public_reason: I have concerns about how this proposal affects the current game balance.
