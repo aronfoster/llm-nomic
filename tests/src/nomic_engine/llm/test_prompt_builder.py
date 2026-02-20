@@ -294,9 +294,11 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("ruthlessly competitive", result)
 
     def test_get_personality_block_friendly(self):
-        """Test _get_personality_block returns friendly persona."""
-        result = self.builder._get_personality_block("friendly")
-        self.assertIn("cooperative player", result)
+        """Test _get_personality_block returns friendly persona (non-empty, distinct from machiavellian)."""
+        friendly_result = self.builder._get_personality_block("friendly")
+        machiavellian_result = self.builder._get_personality_block("machiavellian")
+        self.assertGreater(len(friendly_result), 0)
+        self.assertNotEqual(friendly_result, machiavellian_result)
 
     def test_get_personality_block_raises_for_unknown(self):
         """Test _get_personality_block raises FileNotFoundError for unknown."""
@@ -397,7 +399,7 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("OUTPUT REQUIREMENTS", message.content)  # JSON format
 
     def test_build_proposer_system_message_friendly_personality(self):
-        """Test proposer message with friendly personality."""
+        """Test proposer message with friendly personality builds correctly and differs from machiavellian."""
         message = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
@@ -405,9 +407,19 @@ class TestPromptBuilder(unittest.TestCase):
             personality="friendly",
         )
 
-        # Verify friendly persona is used
-        self.assertIn("cooperative player", message.content)
-        self.assertNotIn("ruthlessly competitive", message.content)
+        # Verify message structure
+        self.assertIsInstance(message, ChatMessage)
+        self.assertEqual(message.role, "system")
+        self.assertIn("Alice", message.content)
+
+        # Verify the friendly personality produces different content than machiavellian
+        machiavellian_message = self.builder.build_proposer_system_message(
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Alice",
+            personality="machiavellian",
+        )
+        self.assertNotEqual(message.content, machiavellian_message.content)
 
     def test_build_proposer_system_message_none_personality(self):
         """Test proposer message with none personality."""

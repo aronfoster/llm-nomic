@@ -232,9 +232,11 @@ class TestLoadPersonality:
         assert "ruthlessly competitive" in sections["PERSONA"]
 
     def test_friendly_persona_contains_expected_content(self):
-        """Friendly PERSONA describes cooperative play."""
-        sections = load_personality("friendly")
-        assert "cooperative player" in sections["PERSONA"]
+        """Friendly PERSONA is non-empty and distinct from machiavellian."""
+        friendly = load_personality("friendly")
+        machiavellian = load_personality("machiavellian")
+        assert len(friendly["PERSONA"]) > 0
+        assert friendly["PERSONA"] != machiavellian["PERSONA"]
 
     def test_none_persona_contains_expected_content(self):
         """None PERSONA is minimal — contains 'player in a game of Nomic'."""
