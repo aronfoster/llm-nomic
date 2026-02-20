@@ -19,7 +19,11 @@ from ..data_models import (
 )
 from ..judge import BaseJudge
 from ..judge.human_judge import HumanJudge
-from ..judge_contracts import JudgeScoreResponse, JudgeVetoResponse
+from ..judge_contracts import (
+    JudgeScoreResponse,
+    JudgeVetoResponse,
+    StateUpdates,
+)
 from ..players.base_player import BasePlayer
 from ..utils.player_label import format_player_label
 from ..validation.validator import validate_proposal
@@ -116,6 +120,7 @@ class GameLoop:
             proposal: Proposal | None = None
             discussions: list[Discussion] = []
             turn_ready_for_vote = False
+            original_proposal_for_log: Proposal | None = None
 
             # Loop covers initial attempt plus configured withdrawal pivots.
             for withdrawal_attempt in range(max_withdrawal_retries + 1):
@@ -138,11 +143,17 @@ class GameLoop:
                 )
 
                 # Step 3: Revise
+                # Save the proposal before revision so we can detect MODIFY
+                pre_revision_proposal = proposal
                 revised_proposal = self._handle_revision(
                     current_player, proposal, discussions
                 )
 
                 if revised_proposal is not None:
+                    # Detect if the proposer actually modified the proposal
+                    if revised_proposal is not pre_revision_proposal:
+                        # MODIFY: track original for transcript (REQ-5)
+                        original_proposal_for_log = pre_revision_proposal
                     proposal = revised_proposal
                     turn_ready_for_vote = True
                     break
@@ -163,6 +174,12 @@ class GameLoop:
                     self._advance_turn_state()
                     self.game_manager.save_game_state()
                     break
+
+                # Log withdrawn proposal to transcript before retry (REQ-1)
+                withdrawn_entry = self._format_withdrawn_proposal_transcript(
+                    proposal, discussions
+                )
+                self.game_manager.logger.log_transcript(withdrawn_entry)
 
                 current_player.note_withdrawal_for_retry(
                     discussions=discussions,
@@ -186,7 +203,12 @@ class GameLoop:
             completed_turn_number = self.game_manager.game_state.move_number
 
             # Step 5: Resolve
-            game_over = self._resolve_turn(proposal, votes, discussions)
+            game_over = self._resolve_turn(
+                proposal,
+                votes,
+                discussions,
+                original_proposal=original_proposal_for_log,
+            )
 
             logger.info(f"Completed turn {completed_turn_number}")
 
@@ -276,6 +298,59 @@ class GameLoop:
 
         transcript_entry = "\n\n".join(blocks)
         self.game_manager.logger.log_transcript(transcript_entry)
+
+    def _format_withdrawn_proposal_transcript(
+        self,
+        proposal: Proposal,
+        discussions: list[Discussion],
+    ) -> str:
+        """
+        Format a withdrawn proposal entry for the transcript.
+
+        Args:
+            proposal: The proposal that was withdrawn
+            discussions: Discussion comments received before withdrawal
+
+        Returns:
+            Formatted markdown string for the transcript
+        """
+        assert self.game_manager.game_state is not None
+
+        proposer_label = format_player_label(
+            proposal.proposer_name, self.game_manager.game_config
+        )
+
+        blocks: list[str] = []
+        blocks.append(f"## MOVE #{proposal.move_number} (Withdrawn Proposal)")
+        blocks.append(f"**Proposal ID:** {proposal.proposal_id}")
+        blocks.append(f"**Proposer:** {proposer_label}")
+        blocks.append(f"**Type:** {proposal.type.value}")
+
+        if proposal.target_rule_id:
+            blocks.append(f"**Target Rule ID:** {proposal.target_rule_id}")
+
+        if proposal.new_text:
+            blocks.append(f"**New Text:** {proposal.new_text}")
+
+        if proposal.rationale:
+            blocks.append(f"**Rationale:** {proposal.rationale}")
+
+        discussion_lines = ["### Discussions"]
+        for discussion in discussions:
+            disc_label = format_player_label(
+                discussion.player_name, self.game_manager.game_config
+            )
+            if discussion.text:
+                discussion_lines.append(
+                    f"- **{disc_label}:** {discussion.text}"
+                )
+            else:
+                discussion_lines.append(f"- **{disc_label}:** *(Abstained)*")
+        blocks.append("\n".join(discussion_lines))
+
+        blocks.append("**Result:** WITHDRAWN")
+
+        return "\n\n".join(blocks)
 
     def _get_and_validate_proposal(
         self,
@@ -728,6 +803,7 @@ class GameLoop:
         discussions: list[Discussion],
         vote_result: VoteResult,
         judge_decisions: JudgeDecisions,
+        original_proposal: Proposal | None = None,
     ) -> bool:
         """
         Authoritative state and file persistence.
@@ -748,6 +824,8 @@ class GameLoop:
             discussions: List of discussions
             vote_result: Vote tallying result
             judge_decisions: Consolidated judge decisions
+            original_proposal: The proposal before revision, if modified
+                (None when the proposal was kept as-is)
 
         Returns:
             bool: True if game ended by victory, False otherwise
@@ -772,6 +850,10 @@ class GameLoop:
                 delta,
                 reason,
             )
+
+        # Track state updates for transcript logging (REQ-3)
+        # None means maintain_state was not called (proposal failed or vetoed)
+        state_updates_for_log: StateUpdates | None = None
 
         # Apply proposal if passed and approved
         if judge_decisions.judge_approved:
@@ -820,6 +902,8 @@ class GameLoop:
                     original_rule_text=original_rule_text,
                     new_rule_text=new_rule_text,
                 )
+                # Capture for transcript logging
+                state_updates_for_log = dict(state_updates)  # type: ignore[assignment]
 
                 # Apply state updates if any (only if values changed)
                 if state_updates:
@@ -861,6 +945,8 @@ class GameLoop:
                     "Skipping maintain_state for TRANSMUTE proposal %s",
                     proposal.proposal_id,
                 )
+                # TRANSMUTE skips maintain_state; record no changes
+                state_updates_for_log = {}
 
             logger.debug(
                 f"Applying passed proposal {proposal.proposal_id} to rules"
@@ -906,6 +992,8 @@ class GameLoop:
             judge_decisions.judge_approved,
             judge_decisions.veto_response,
             judge_decisions.score_response,
+            state_updates=state_updates_for_log,
+            original_proposal=original_proposal,
         )
 
         # Log game over if victory reached
@@ -1079,6 +1167,8 @@ class GameLoop:
         judge_approved: bool,
         judge_veto_response: JudgeVetoResponse,
         judge_score_response: JudgeScoreResponse,
+        state_updates: StateUpdates | None = None,
+        original_proposal: Proposal | None = None,
     ) -> None:
         """
         Log the turn transcript and save game state.
@@ -1091,6 +1181,10 @@ class GameLoop:
             judge_approved: Whether the judge approved (not vetoed)
             judge_veto_response: Data describing the judge's veto decision
             judge_score_response: Data describing the judge's score assessment
+            state_updates: Engine state changes from maintain_state, or None
+                if maintain_state was not called (failed/vetoed proposal)
+            original_proposal: The proposal before revision, if the proposer
+                chose MODIFY (None when proposal was kept as-is)
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
@@ -1105,6 +1199,8 @@ class GameLoop:
             judge_score_response,
             discussions,
             self.game_manager.rules_manager.rules,
+            state_updates=state_updates,
+            original_proposal=original_proposal,
         )
         self.game_manager.logger.log_transcript(transcript_entry)
         logger.debug("Transcript logged")
@@ -1255,6 +1351,7 @@ class GameLoop:
         proposal: Proposal,
         votes: list[Vote],
         discussions: list[Discussion],
+        original_proposal: Proposal | None = None,
     ) -> bool:
         """
         Resolve the turn by tallying, judging, and applying changes.
@@ -1269,6 +1366,8 @@ class GameLoop:
             proposal: The proposal that was voted on
             votes: List of Vote objects from all players
             discussions: List of Discussion objects from discussion phase
+            original_proposal: The proposal before revision, if the proposer
+                chose MODIFY (None when the proposal was kept as-is)
 
         Returns:
             bool: True if the game ended by reaching the target score.
@@ -1297,7 +1396,12 @@ class GameLoop:
         # Phase 3: Apply mutations (the ONLY phase with side effects)
         logger.info("Phase 3: Applying turn mutations")
         game_over = self._apply_turn_mutations(
-            proposal, votes, discussions, vote_result, judge_decisions
+            proposal,
+            votes,
+            discussions,
+            vote_result,
+            judge_decisions,
+            original_proposal=original_proposal,
         )
 
         logger.info(f"Resolution phase complete: game_over={game_over}")
@@ -1313,12 +1417,14 @@ class GameLoop:
         judge_score_response: JudgeScoreResponse,
         discussions: list[Discussion],
         rules: list[Rule],
+        state_updates: StateUpdates | None = None,
+        original_proposal: Proposal | None = None,
     ) -> str:
         """
         Format a complete turn summary for the transcript.
 
         Args:
-            proposal: The proposal
+            proposal: The final proposal (after any revision)
             votes: List of votes
             proposal_passed: Whether the vote passed
             judge_approved: Whether the judge approved
@@ -1326,6 +1432,10 @@ class GameLoop:
             judge_score_response: Details from the judge's score assessment
             discussions: List of Discussion objects from all players
             rules: List of all current rules
+            state_updates: Engine state changes from maintain_state, or None
+                if maintain_state was not called (failed/vetoed proposal)
+            original_proposal: The proposal before revision when the proposer
+                chose MODIFY; None when the proposal was kept as-is
 
         Returns:
             Formatted markdown string for the transcript
@@ -1341,52 +1451,136 @@ class GameLoop:
         blocks.append(f"## MOVE #{proposal.move_number}")
         blocks.append(f"**Proposal ID:** {proposal.proposal_id}")
         blocks.append(f"**Proposer:** {proposer_label}")
-        blocks.append(f"**Type:** {proposal.type.value}")
 
-        if proposal.target_rule_id:
-            blocks.append(f"**Target Rule ID:** {proposal.target_rule_id}")
+        if original_proposal is not None:
+            # REQ-5: Proposal was revised (MODIFY) — show original before
+            # discussions, then revised submission after discussions.
 
-        if proposal.new_text:
-            blocks.append(f"**New Text:** {proposal.new_text}")
+            # --- Original Submission ---
+            orig_lines: list[str] = []
+            orig_lines.append("**Original Submission**")
+            orig_lines.append(f"**Type:** {original_proposal.type.value}")
+            if original_proposal.target_rule_id:
+                orig_lines.append(
+                    f"**Target Rule ID:** "
+                    f"{original_proposal.target_rule_id}"
+                )
+            if original_proposal.new_text:
+                orig_lines.append(
+                    f"**New Text:** {original_proposal.new_text}"
+                )
+            if original_proposal.rationale:
+                orig_lines.append(
+                    f"**Rationale:** {original_proposal.rationale}"
+                )
+            blocks.append("\n".join(orig_lines))
 
-        if proposal.rationale:
-            blocks.append(f"**Rationale:** {proposal.rationale}")
+            # --- Discussions ---
+            discussion_lines = ["### Discussions"]
+            for discussion in discussions:
+                disc_label = format_player_label(
+                    discussion.player_name, self.game_manager.game_config
+                )
+                if discussion.text:
+                    discussion_lines.append(
+                        f"- **{disc_label}:** {discussion.text}"
+                    )
+                else:
+                    discussion_lines.append(
+                        f"- **{disc_label}:** *(Abstained)*"
+                    )
+                if discussion.private_thoughts:
+                    discussion_lines.append(
+                        f"  - Private Thoughts: "
+                        f"{discussion.private_thoughts}"
+                    )
+            blocks.append("\n".join(discussion_lines))
 
-        if proposal.private_thoughts:
-            blocks.append(f"**Private Thoughts:** {proposal.private_thoughts}")
-
-        # Add original text for AMEND, REPEAL, or TRANSMUTE proposals
-        if proposal.type in [
-            ProposalType.AMEND,
-            ProposalType.REPEAL,
-            ProposalType.TRANSMUTE,
-        ]:
+            # --- Revised Submission ---
+            rev_lines: list[str] = []
+            rev_lines.append("**Revised Submission**")
+            rev_lines.append(f"**Type:** {proposal.type.value}")
             if proposal.target_rule_id:
-                for rule in rules:
-                    if rule.rule_id == proposal.target_rule_id:
-                        blocks.append(
-                            f"**Original Text (Rule {rule.rule_id}):** "
-                            f"{rule.text}"
-                        )
-                        break
-
-        discussion_lines = ["### Discussions"]
-        for discussion in discussions:
-            disc_label = format_player_label(
-                discussion.player_name, self.game_manager.game_config
-            )
-            if discussion.text:
-                discussion_lines.append(
-                    f"- **{disc_label}:** {discussion.text}"
+                rev_lines.append(
+                    f"**Target Rule ID:** {proposal.target_rule_id}"
                 )
-            else:
-                discussion_lines.append(f"- **{disc_label}:** *(Abstained)*")
-            if discussion.private_thoughts:
-                discussion_lines.append(
-                    f"  - Private Thoughts: {discussion.private_thoughts}"
+            if proposal.new_text:
+                rev_lines.append(f"**New Text:** {proposal.new_text}")
+            if proposal.rationale:
+                rev_lines.append(f"**Rationale:** {proposal.rationale}")
+            if proposal.private_thoughts:
+                rev_lines.append(
+                    f"**Private Thoughts:** {proposal.private_thoughts}"
                 )
-        blocks.append("\n".join(discussion_lines))
+            # Add original rule text for AMEND/REPEAL/TRANSMUTE
+            if proposal.type in [
+                ProposalType.AMEND,
+                ProposalType.REPEAL,
+                ProposalType.TRANSMUTE,
+            ]:
+                if proposal.target_rule_id:
+                    for rule in rules:
+                        if rule.rule_id == proposal.target_rule_id:
+                            rev_lines.append(
+                                f"**Original Text (Rule {rule.rule_id}):** "
+                                f"{rule.text}"
+                            )
+                            break
+            blocks.append("\n".join(rev_lines))
 
+        else:
+            # No revision (KEEP) or first-time proposal — standard format.
+            blocks.append(f"**Type:** {proposal.type.value}")
+
+            if proposal.target_rule_id:
+                blocks.append(f"**Target Rule ID:** {proposal.target_rule_id}")
+
+            if proposal.new_text:
+                blocks.append(f"**New Text:** {proposal.new_text}")
+
+            if proposal.rationale:
+                blocks.append(f"**Rationale:** {proposal.rationale}")
+
+            if proposal.private_thoughts:
+                blocks.append(
+                    f"**Private Thoughts:** {proposal.private_thoughts}"
+                )
+
+            # Add original text for AMEND, REPEAL, or TRANSMUTE proposals
+            if proposal.type in [
+                ProposalType.AMEND,
+                ProposalType.REPEAL,
+                ProposalType.TRANSMUTE,
+            ]:
+                if proposal.target_rule_id:
+                    for rule in rules:
+                        if rule.rule_id == proposal.target_rule_id:
+                            blocks.append(
+                                f"**Original Text (Rule {rule.rule_id}):** "
+                                f"{rule.text}"
+                            )
+                            break
+
+            discussion_lines = ["### Discussions"]
+            for discussion in discussions:
+                disc_label = format_player_label(
+                    discussion.player_name, self.game_manager.game_config
+                )
+                if discussion.text:
+                    discussion_lines.append(
+                        f"- **{disc_label}:** {discussion.text}"
+                    )
+                else:
+                    discussion_lines.append(
+                        f"- **{disc_label}:** *(Abstained)*"
+                    )
+                if discussion.private_thoughts:
+                    discussion_lines.append(
+                        f"  - Private Thoughts: {discussion.private_thoughts}"
+                    )
+            blocks.append("\n".join(discussion_lines))
+
+        # --- Votes ---
         vote_lines = ["### Votes"]
         for vote in votes:
             vote_label = format_player_label(
@@ -1404,19 +1598,30 @@ class GameLoop:
         blocks.append(
             f"**Vote Result:** {'PASSED' if proposal_passed else 'FAILED'}"
         )
-        blocks.append(
-            f"**Judge Approval:** {'YES' if judge_approved else 'NO'}"
-        )
 
+        # REQ-2: Suppress judge fields when proposal failed the vote
+        if proposal_passed:
+            blocks.append(
+                f"**Judge Approval:** {'YES' if judge_approved else 'NO'}"
+            )
+        else:
+            blocks.append("**Judge Approval:** N/A")
+
+        # REQ-2: Judge Veto Response — N/A when proposal failed
         veto_lines = ["### Judge Veto Response"]
-        is_veto = judge_veto_response["veto"]
-        judge_veto_decision = "VETO" if is_veto else "ALLOW"
-        veto_lines.append(f"- **Decision:** {judge_veto_decision}")
-        if judge_veto_response.get("reason"):
-            veto_lines.append(f"- **Reason:** {judge_veto_response['reason']}")
-        if judge_veto_response.get("private_thoughts"):
-            private_thoughts = judge_veto_response["private_thoughts"]
-            veto_lines.append(f"  - Private Thoughts: {private_thoughts}")
+        if not proposal_passed:
+            veto_lines.append("N/A")
+        else:
+            is_veto = judge_veto_response["veto"]
+            judge_veto_decision = "VETO" if is_veto else "ALLOW"
+            veto_lines.append(f"- **Decision:** {judge_veto_decision}")
+            if judge_veto_response.get("reason"):
+                veto_lines.append(
+                    f"- **Reason:** {judge_veto_response['reason']}"
+                )
+            if judge_veto_response.get("private_thoughts"):
+                private_thoughts = judge_veto_response["private_thoughts"]
+                veto_lines.append(f"  - Private Thoughts: {private_thoughts}")
         blocks.append("\n".join(veto_lines))
 
         score_resp_lines = ["### Judge Score Response"]
@@ -1431,6 +1636,34 @@ class GameLoop:
         else:
             score_resp_lines.append("- No score adjustments this turn.")
         blocks.append("\n".join(score_resp_lines))
+
+        # REQ-3: Judge State Maintenance — only when judge_approved
+        # (skipped entirely when proposal failed or was vetoed)
+        if judge_approved:
+            state_lines = ["### Judge State Maintenance"]
+            has_flag_changes = bool(
+                state_updates and state_updates.get("flags")
+            )
+            has_score_change = bool(
+                state_updates and "target_score" in state_updates
+            )
+            if has_flag_changes or has_score_change:
+                assert state_updates is not None
+                if state_updates.get("flags"):
+                    for flag_name, flag_value in state_updates[
+                        "flags"
+                    ].items():
+                        state_lines.append(
+                            f"- **Flag `{flag_name}`:** {flag_value}"
+                        )
+                if "target_score" in state_updates:
+                    state_lines.append(
+                        f"- **`target_score`:** "
+                        f"{state_updates['target_score']}"
+                    )
+            else:
+                state_lines.append("No engine state changes.")
+            blocks.append("\n".join(state_lines))
 
         # Scores section – bare player names are sufficient here;
         # adding personality/model labels would be visually noisy in what
