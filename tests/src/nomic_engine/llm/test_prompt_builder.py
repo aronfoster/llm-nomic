@@ -294,11 +294,11 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("ruthlessly competitive", result)
 
     def test_get_personality_block_friendly(self):
-        """Test _get_personality_block returns friendly persona (non-empty, distinct from machiavellian)."""
+        """Friendly block is non-empty and distinct from machiavellian."""
         friendly_result = self.builder._get_personality_block("friendly")
-        machiavellian_result = self.builder._get_personality_block("machiavellian")
+        mach_result = self.builder._get_personality_block("machiavellian")
         self.assertGreater(len(friendly_result), 0)
-        self.assertNotEqual(friendly_result, machiavellian_result)
+        self.assertNotEqual(friendly_result, mach_result)
 
     def test_get_personality_block_raises_for_unknown(self):
         """Test _get_personality_block raises FileNotFoundError for unknown."""
@@ -399,7 +399,7 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("OUTPUT REQUIREMENTS", message.content)  # JSON format
 
     def test_build_proposer_system_message_friendly_personality(self):
-        """Test proposer message with friendly personality builds correctly and differs from machiavellian."""
+        """Friendly personality produces correct, distinct output."""
         message = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
@@ -412,7 +412,7 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertEqual(message.role, "system")
         self.assertIn("Alice", message.content)
 
-        # Verify the friendly personality produces different content than machiavellian
+        # Verify friendly produces different content than machiavellian
         machiavellian_message = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
