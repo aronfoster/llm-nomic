@@ -29,7 +29,21 @@ Our architecture is built on these principles:
 
 ### Task 1
 
-TBD
+**Task 1: Transcript fidelity fixes**
+- Log withdrawal proposals and their discussion rounds
+- Fix `Judge Approval` / `Judge Veto Response` showing `N/A` on failed votes
+- Log `maintain_state` decisions
+- Kill the duplicate DEBUG logging of private thoughts (it's a one-liner and you're already in that neighborhood)
+
+**Task 2: Startup validation**
+- API key validation for all configured players + judge before first turn
+- Personality file existence validation at the same startup checkpoint
+- These live in the same place and fail for the same reason — ship them together
+
+**Task 3: ApiClient Provider Factory Pattern**
+- The if/elif chain is isolated to one file, touches zero game logic, and has a clear "done" state
+- Low blast radius, good test story, and it unblocks OpenRouter support which is on the long-term backlog anyway
+- This is a satisfying standalone refactor that a dev can own start-to-finish in 1.5-2 days
 
 
 ## Future Work
@@ -98,7 +112,6 @@ This is the long-term backlog and TODO scratchpad.
 * **Tooling & Features:**
     * Specify versions for dependencies and start managing those (pin at least major versions in `requirements.txt` to prevent breakage from upstream changes)
     * Add `make fix` to Makefile that does the same thing as `make format`
-    * Investigate use of https://github.com/github/spec-kit and https://github.com/bmad-code-org/BMAD-METHOD
 
 * **Dynamic Game Structure**
   * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.
