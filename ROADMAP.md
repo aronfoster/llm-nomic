@@ -25,7 +25,19 @@ Our architecture is built on these principles:
 - Judge scoring uses RULES_BLOCK which begins "=== ALL CURRENT RULES ===", but is actually sent only points-related rules
 - Game creation allows you to pick the target score, but the initial rule isn't changed. Hardcode the initial score.
 
-## Sprint 31: TBD
+## Sprint 31: Project Structure Reorganization
+
+Reorganized root-level files into `config/` and `docs/` subdirectories:
+- `flag_schema.json` → `config/flag_schema.json`
+- `models.yml` → `config/models.yml`
+- `PM_CONTEXT.md` → `docs/PM_CONTEXT.md`
+- `RULESET_DESIGN.md` → `docs/RULESET_DESIGN.md`
+- `Nomic_Initial_Ruleset_v0.md` → `docs/rulesets/Nomic_Initial_Ruleset_v0.md`
+- `Nomic_Initial_Ruleset_v1.md` → `docs/rulesets/Nomic_Initial_Ruleset_v1.md`
+
+Updated all references in `src/nomic_engine/constants.py`, `tests/`, and `README.md`.
+
+## Sprint 32: TBD
 
 ### Task 1
 
