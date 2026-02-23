@@ -172,8 +172,6 @@ llm-nomic/
 │   ├── PM_CONTEXT.md           # PM guidelines
 │   ├── RULESET_DESIGN.md       # Ruleset design rationale
 │   └── rulesets/               # Initial ruleset files
-│       ├── Nomic_Initial_Ruleset_v0.md
-│       └── Nomic_Initial_Ruleset_v1.md
 ├── create_game.py              # Interactive game creation script
 ├── requirements.txt            # Python dependencies
 ├── Makefile                    # Development commands
