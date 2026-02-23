@@ -109,6 +109,7 @@ This is the long-term backlog and TODO scratchpad.
 * **Tooling & Features:**
     * Specify versions for dependencies and start managing those (pin at least major versions in `requirements.txt` to prevent breakage from upstream changes)
     * Add `make fix` to Makefile that does the same thing as `make format`
+    * Investigate use of https://github.com/github/spec-kit and https://github.com/bmad-code-org/BMAD-METHOD
 
 * **Dynamic Game Structure**
   * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.
