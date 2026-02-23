@@ -1433,7 +1433,7 @@ def test_run_turn_advances_when_retry_budget_exhausted(
 def test_format_transcript_includes_all_details(
     game_loop: GameLoop, mock_rules: list[Rule]
 ) -> None:
-    """Test _format_transcript includes all required details."""
+    """Test _format_transcript includes all required details when passed."""
     # Create an AMEND proposal to test original text inclusion
     proposal = Proposal(
         proposer_name="Alice",
@@ -1453,7 +1453,7 @@ def test_format_transcript_includes_all_details(
             reason="I agree",
             private_thoughts="Strategic analysis: this aligns with my goals",
         ),
-        Vote(player_name="Charlie", vote="NO", reason="I disagree"),
+        Vote(player_name="Charlie", vote="YES", reason="I agree too"),
     ]
 
     discussions = [
@@ -1489,7 +1489,7 @@ def test_format_transcript_includes_all_details(
     transcript = game_loop._format_transcript(
         proposal=proposal,
         votes=votes,
-        proposal_passed=False,
+        proposal_passed=True,
         judge_approved=True,
         judge_veto_response=judge_veto_response,
         judge_score_response=judge_score_response,
@@ -1526,23 +1526,81 @@ def test_format_transcript_includes_all_details(
     assert "### Votes" in transcript
     assert "YES" in transcript
     assert "I agree" in transcript
-    assert "NO" in transcript
-    assert "I disagree" in transcript
 
     # Verify private thoughts appear for Bob's vote (LLM player)
     assert "Strategic analysis: this aligns with my goals" in transcript
 
-    # Verify vote result and judge approval
-    assert "FAILED" in transcript
-    assert "Judge Approval:**" in transcript or "Judge Approval:" in transcript
+    # Verify vote result and judge approval (proposal passed)
+    assert "PASSED" in transcript
+    assert (
+        "Judge Approval: YES" in transcript
+        or "Judge Approval:** YES" in transcript
+    )
 
-    # Verify judge responses are logged
+    # Judge responses are logged in full when proposal passed
     assert "Judge Veto Response" in transcript
     assert "No conflicts with rules." in transcript
     assert "I think this is within scope." in transcript
     assert "Judge Score Response" in transcript
     assert "Strong proposal and engagement." in transcript
     assert "+2" in transcript
+
+
+def test_format_transcript_failed_vote_suppresses_judge_fields(
+    game_loop: GameLoop, mock_rules: list[Rule]
+) -> None:
+    """Test _format_transcript shows N/A for judge fields when vote failed."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="New rule.",
+        rationale="Good idea.",
+    )
+
+    votes = [
+        Vote(player_name="Alice", vote="YES"),
+        Vote(player_name="Bob", vote="NO"),
+    ]
+
+    discussions = [
+        Discussion(player_name="Bob", text="I disagree"),
+    ]
+
+    # These values would be populated for a passed proposal, but since
+    # proposal_passed=False, they should not appear in the transcript.
+    judge_veto_response = {
+        "veto": False,
+        "reason": "No conflicts with rules.",
+        "private_thoughts": "Within scope.",
+    }
+    judge_score_response = {
+        "private_thoughts": None,
+        "score_adjustments": [],
+    }
+
+    transcript = game_loop._format_transcript(
+        proposal=proposal,
+        votes=votes,
+        proposal_passed=False,
+        judge_approved=False,
+        judge_veto_response=judge_veto_response,
+        judge_score_response=judge_score_response,
+        discussions=discussions,
+        rules=mock_rules,
+    )
+
+    assert "FAILED" in transcript
+    # REQ-2: Judge Approval and Veto Response must show N/A
+    assert "**Judge Approval:** N/A" in transcript
+    assert "Judge Veto Response" in transcript
+    assert "N/A" in transcript
+    # Reason and private_thoughts must NOT appear when failed
+    assert "No conflicts with rules." not in transcript
+    assert "Within scope." not in transcript
+    # REQ-3: Judge State Maintenance section must be absent when failed
+    assert "Judge State Maintenance" not in transcript
 
 
 def test_format_transcript_shows_abstentions(
@@ -1602,6 +1660,369 @@ def test_format_transcript_shows_abstentions(
     assert "*(Abstained)*" in transcript
     # Bob's private thoughts should still appear
     assert "Nothing useful to say" in transcript
+
+
+def test_format_withdrawn_proposal_transcript_includes_all_fields(
+    game_loop: GameLoop, mock_rules: list[Rule]
+) -> None:
+    """_format_withdrawn_proposal_transcript includes all required fields."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=2,
+        type=ProposalType.AMEND,
+        proposal_id="302",
+        target_rule_id="201",
+        new_text="Amended text.",
+        rationale="My reason.",
+    )
+    discussions = [
+        Discussion(
+            player_name="Bob", text="I disagree.", private_thoughts=None
+        ),
+        Discussion(player_name="Charlie", text="", private_thoughts=None),
+    ]
+
+    entry = game_loop._format_withdrawn_proposal_transcript(
+        proposal, discussions
+    )
+
+    # Proposal identity
+    assert "302" in entry
+    assert "Alice" in entry
+    assert "Amend" in entry
+    assert "201" in entry
+    assert "Amended text." in entry
+    assert "My reason." in entry
+    # Discussions
+    assert "### Discussions" in entry
+    assert "I disagree." in entry
+    assert "*(Abstained)*" in entry
+    # Result marker
+    assert "**Result:** WITHDRAWN" in entry
+    # Should NOT show voting, judge, or scores sections
+    assert "### Votes" not in entry
+    assert "### Judge" not in entry
+    assert "### Scores" not in entry
+
+
+@patch(
+    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
+    return_value={},
+)
+@patch("builtins.input", side_effect=["n", "0", "0", "0"])
+def test_run_turn_logs_withdrawn_proposals_before_retry(
+    mock_input: Mock,
+    mock_maintain_state: Mock,
+    game_loop: GameLoop,
+    mock_players: list[Mock],
+    mock_game_manager: Mock,
+) -> None:
+    """REQ-1: Withdrawn proposals must be logged to transcript before retry."""
+    alice = mock_players[0]
+    mock_game_manager.game_config.withdrawal_policy = WithdrawalPolicy.RETRY
+    mock_game_manager.game_config.max_withdrawal_retries = 1
+
+    first = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id=None,
+        new_text="First proposal",
+        rationale="Attempt one",
+    )
+    second = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id=None,
+        new_text="Second proposal",
+        rationale="Attempt two",
+    )
+
+    alice.propose.side_effect = [first, second]
+    # First revision: withdraw; second revision: keep
+    alice.revise = Mock(side_effect=[None, second])
+
+    game_loop.run_turn()
+
+    # log_transcript must be called at least twice:
+    # once for the withdrawn proposal, once for the final turn
+    assert mock_game_manager.logger.log_transcript.call_count >= 2
+
+    # The first call must contain WITHDRAWN
+    first_call_text = mock_game_manager.logger.log_transcript.call_args_list[
+        0
+    ][0][0]
+    assert "WITHDRAWN" in first_call_text
+    assert "First proposal" in first_call_text
+
+
+def test_run_turn_forfeit_policy_does_not_log_withdrawn_transcript(
+    game_loop: GameLoop,
+    mock_players: list[Mock],
+    mock_game_manager: Mock,
+    mock_game_state: GameState,
+) -> None:
+    """
+    FORFEIT policy must not log any transcript — existing behaviour preserved.
+    """
+    alice = mock_players[0]
+    # Default policy is FORFEIT in fixture
+    alice.revise = Mock(return_value=None)
+
+    game_loop.run_turn()
+
+    mock_game_manager.logger.log_transcript.assert_not_called()
+
+
+def test_format_transcript_judge_state_maintenance_no_changes(
+    game_loop: GameLoop, mock_rules: list[Rule]
+) -> None:
+    """REQ-3: Empty state_updates shows 'No engine state changes.'."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="New rule.",
+    )
+
+    transcript = game_loop._format_transcript(
+        proposal=proposal,
+        votes=[Vote(player_name="Alice", vote="YES")],
+        proposal_passed=True,
+        judge_approved=True,
+        judge_veto_response={
+            "veto": False,
+            "reason": None,
+            "private_thoughts": None,
+        },
+        judge_score_response={
+            "private_thoughts": None,
+            "score_adjustments": [],
+        },
+        discussions=[],
+        rules=mock_rules,
+        state_updates={},
+    )
+
+    assert "### Judge State Maintenance" in transcript
+    assert "No engine state changes." in transcript
+
+
+def test_format_transcript_judge_state_maintenance_with_flag_change(
+    game_loop: GameLoop, mock_rules: list[Rule]
+) -> None:
+    """REQ-3: state_updates with flags shows the updated flag value."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="New rule.",
+    )
+
+    transcript = game_loop._format_transcript(
+        proposal=proposal,
+        votes=[Vote(player_name="Alice", vote="YES")],
+        proposal_passed=True,
+        judge_approved=True,
+        judge_veto_response={
+            "veto": False,
+            "reason": None,
+            "private_thoughts": None,
+        },
+        judge_score_response={
+            "private_thoughts": None,
+            "score_adjustments": [],
+        },
+        discussions=[],
+        rules=mock_rules,
+        state_updates={"flags": {"vote_mode": "majority"}},
+    )
+
+    assert "### Judge State Maintenance" in transcript
+    assert "vote_mode" in transcript
+    assert "majority" in transcript
+    assert "No engine state changes." not in transcript
+
+
+def test_format_transcript_judge_state_maintenance_with_target_score(
+    game_loop: GameLoop, mock_rules: list[Rule]
+) -> None:
+    """REQ-3: state_updates with target_score shows the new value."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="New rule.",
+    )
+
+    transcript = game_loop._format_transcript(
+        proposal=proposal,
+        votes=[Vote(player_name="Alice", vote="YES")],
+        proposal_passed=True,
+        judge_approved=True,
+        judge_veto_response={
+            "veto": False,
+            "reason": None,
+            "private_thoughts": None,
+        },
+        judge_score_response={
+            "private_thoughts": None,
+            "score_adjustments": [],
+        },
+        discussions=[],
+        rules=mock_rules,
+        state_updates={"target_score": 100},
+    )
+
+    assert "### Judge State Maintenance" in transcript
+    assert "target_score" in transcript
+    assert "100" in transcript
+    assert "No engine state changes." not in transcript
+
+
+def test_format_transcript_judge_state_maintenance_skipped_when_failed(
+    game_loop: GameLoop, mock_rules: list[Rule]
+) -> None:
+    """REQ-3: Judge State Maintenance section absent when proposal failed."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="New rule.",
+    )
+
+    transcript = game_loop._format_transcript(
+        proposal=proposal,
+        votes=[Vote(player_name="Alice", vote="NO")],
+        proposal_passed=False,
+        judge_approved=False,
+        judge_veto_response={
+            "veto": False,
+            "reason": None,
+            "private_thoughts": None,
+        },
+        judge_score_response={
+            "private_thoughts": None,
+            "score_adjustments": [],
+        },
+        discussions=[],
+        rules=mock_rules,
+        state_updates=None,
+    )
+
+    assert "### Judge State Maintenance" not in transcript
+
+
+def test_format_transcript_shows_original_and_revised_proposals(
+    game_loop: GameLoop, mock_rules: list[Rule]
+) -> None:
+    """REQ-5: original_proposal appears before discussions; revised after."""
+    original = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Original text.",
+        rationale="First rationale.",
+    )
+    revised = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Revised text.",
+        rationale="Revised rationale.",
+        private_thoughts="I changed it based on feedback.",
+    )
+    discussions = [
+        Discussion(player_name="Bob", text="Original text is too vague."),
+    ]
+
+    transcript = game_loop._format_transcript(
+        proposal=revised,
+        votes=[Vote(player_name="Alice", vote="YES")],
+        proposal_passed=True,
+        judge_approved=True,
+        judge_veto_response={
+            "veto": False,
+            "reason": None,
+            "private_thoughts": None,
+        },
+        judge_score_response={
+            "private_thoughts": None,
+            "score_adjustments": [],
+        },
+        discussions=discussions,
+        rules=mock_rules,
+        original_proposal=original,
+    )
+
+    # Both labels present
+    assert "**Original Submission**" in transcript
+    assert "**Revised Submission**" in transcript
+    # Original content before discussions
+    orig_pos = transcript.find("**Original Submission**")
+    disc_pos = transcript.find("### Discussions")
+    rev_pos = transcript.find("**Revised Submission**")
+    assert orig_pos < disc_pos < rev_pos
+    # Original text and revised text both present
+    assert "Original text." in transcript
+    assert "Revised text." in transcript
+    # Private thoughts only in revised submission
+    assert "I changed it based on feedback." in transcript
+
+
+def test_format_transcript_no_original_uses_standard_format(
+    game_loop: GameLoop, mock_rules: list[Rule]
+) -> None:
+    """REQ-5: Without original_proposal, discussions appear after proposal."""
+    proposal = Proposal(
+        proposer_name="Alice",
+        move_number=1,
+        type=ProposalType.ADD,
+        proposal_id="301",
+        new_text="Some rule.",
+        rationale="A rationale.",
+    )
+    discussions = [
+        Discussion(player_name="Bob", text="Fine by me."),
+    ]
+
+    transcript = game_loop._format_transcript(
+        proposal=proposal,
+        votes=[Vote(player_name="Alice", vote="YES")],
+        proposal_passed=True,
+        judge_approved=True,
+        judge_veto_response={
+            "veto": False,
+            "reason": None,
+            "private_thoughts": None,
+        },
+        judge_score_response={
+            "private_thoughts": None,
+            "score_adjustments": [],
+        },
+        discussions=discussions,
+        rules=mock_rules,
+    )
+
+    # No original/revised labels in standard format
+    assert "**Original Submission**" not in transcript
+    assert "**Revised Submission**" not in transcript
+    # Discussions section present
+    assert "### Discussions" in transcript
+    assert "Fine by me." in transcript
+    # Proposal fields present
+    assert "Some rule." in transcript
+    # Proposal fields appear before discussions section
+    new_text_pos = transcript.find("Some rule.")
+    disc_pos = transcript.find("### Discussions")
+    assert new_text_pos < disc_pos
 
 
 @patch(
