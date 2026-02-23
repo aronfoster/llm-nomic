@@ -27,21 +27,10 @@ Our architecture is built on these principles:
 
 ## Sprint 31: TBD
 
-**Task 1: Transcript fidelity fixes**
-- Log withdrawal proposals and their discussion rounds
-- Fix `Judge Approval` / `Judge Veto Response` showing `N/A` on failed votes
-- Log `maintain_state` decisions
-- Kill the duplicate DEBUG logging of private thoughts (it's a one-liner and you're already in that neighborhood)
+### Task 1
 
-**Task 2: Startup validation**
-- API key validation for all configured players + judge before first turn
-- Personality file existence validation at the same startup checkpoint
-- These live in the same place and fail for the same reason — ship them together
+TBD
 
-**Task 3: ApiClient Provider Factory Pattern**
-- The if/elif chain is isolated to one file, touches zero game logic, and has a clear "done" state
-- Low blast radius, good test story, and it unblocks OpenRouter support which is on the long-term backlog anyway
-- This is a satisfying standalone refactor that a dev can own start-to-finish in 1.5-2 days
 
 ## Future Work
 
