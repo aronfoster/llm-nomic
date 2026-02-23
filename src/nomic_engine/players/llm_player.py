@@ -298,12 +298,6 @@ class LLMPlayer(BasePlayer):
                     ChatMessage(role="assistant", content=response_text)
                 )
 
-                # Log private thoughts
-                logger.debug(
-                    f"{self.player_name} private thoughts: "
-                    f"{data['private_thoughts']}"
-                )
-
                 # Return Discussion object (empty text means abstention)
                 return Discussion(
                     player_name=self.player_name,
@@ -416,12 +410,6 @@ class LLMPlayer(BasePlayer):
                 # Success! Append valid response to history
                 self.turn_history.append(
                     ChatMessage(role="assistant", content=response_text)
-                )
-
-                # Log private thoughts
-                logger.debug(
-                    f"{self.player_name} private thoughts: "
-                    f"{data['private_thoughts']}"
                 )
 
                 # Cast vote to Literal type (parser guarantees it's valid)
@@ -579,12 +567,6 @@ class LLMPlayer(BasePlayer):
                 # Success! Append valid response to history
                 self.turn_history.append(
                     ChatMessage(role="assistant", content=response_text)
-                )
-
-                # Log private thoughts
-                logger.debug(
-                    f"{self.player_name} private thoughts: "
-                    f"{data['private_thoughts']}"
                 )
 
                 # Handle based on action

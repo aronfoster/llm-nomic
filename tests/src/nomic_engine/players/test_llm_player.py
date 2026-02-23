@@ -1963,3 +1963,143 @@ class TestLLMPlayerStatefulHistory:
         assert len(player.turn_history) == 2
         assert player.turn_history[-1].role == "user"
         assert "withdrawn" in player.turn_history[-1].content.lower()
+
+
+# =====================================================================
+# REQ-4: No duplicate private-thoughts DEBUG logging
+# =====================================================================
+
+
+class TestNoDuplicatePrivateThoughtsLog:
+    """
+    REQ-4: Private thoughts must not be emitted as a separate DEBUG log.
+
+    The full LLM response (which contains the private_thoughts field) is
+    already logged at INFO level.  The additional logger.debug() calls in
+    discuss(), vote(), and revise() were removed to prevent duplication.
+    These tests confirm the DEBUG record is absent for each method.
+    """
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
+    def test_discuss_does_not_emit_debug_private_thoughts(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        proposal,
+        game_state,
+        rules,
+        caplog,
+    ):
+        """discuss() must not emit a separate DEBUG log for private_thoughts."""  # noqa: E501
+        import logging
+
+        mock_api = mock_api_client_class.return_value
+        mock_api.get_completion.return_value = '{"x":"y"}'
+        mock_parse.return_value = {
+            "private_thoughts": "secret strategy",
+            "discussion_text": "public comment",
+        }
+
+        player = LLMPlayer("Bob", model_config)
+        player.turn_history = [ChatMessage(role="system", content="sys")]
+
+        with caplog.at_level(
+            logging.DEBUG, logger="src.nomic_engine.players.llm_player"
+        ):
+            player.discuss(proposal, game_state, rules)
+
+        debug_records = [
+            r for r in caplog.records if r.levelno == logging.DEBUG
+        ]
+        # private_thoughts value must not appear in any DEBUG record
+        for record in debug_records:
+            assert "secret strategy" not in record.message
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_vote_response")
+    def test_vote_does_not_emit_debug_private_thoughts(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        proposal,
+        game_state,
+        rules,
+        caplog,
+    ):
+        """vote() must not emit a separate DEBUG log for private_thoughts."""
+        import logging
+
+        mock_api = mock_api_client_class.return_value
+        mock_api.get_completion.return_value = '{"x":"y"}'
+        mock_pb = mock_prompt_builder_class.return_value
+        mock_pb.build_vote_instruction.return_value = ChatMessage(
+            role="user", content="vote?"
+        )
+        mock_parse.return_value = {
+            "private_thoughts": "my secret vote reasoning",
+            "public_reason": "I agree",
+            "vote": "YES",
+        }
+
+        player = LLMPlayer("Bob", model_config)
+        player.turn_history = [ChatMessage(role="system", content="sys")]
+
+        with caplog.at_level(
+            logging.DEBUG, logger="src.nomic_engine.players.llm_player"
+        ):
+            player.vote(proposal, game_state, rules)
+
+        debug_records = [
+            r for r in caplog.records if r.levelno == logging.DEBUG
+        ]
+        for record in debug_records:
+            assert "my secret vote reasoning" not in record.message
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_does_not_emit_debug_private_thoughts(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        proposal,
+        game_state,
+        rules,
+        caplog,
+    ):
+        """revise() must not emit a separate DEBUG log for private_thoughts."""
+        import logging
+
+        mock_api = mock_api_client_class.return_value
+        mock_api.get_completion.return_value = '{"x":"y"}'
+        mock_pb = mock_prompt_builder_class.return_value
+        mock_pb.build_revision_instruction.return_value = ChatMessage(
+            role="user", content="revise?"
+        )
+        mock_parse.return_value = {
+            "private_thoughts": "hidden revision thoughts",
+            "action": "KEEP",
+        }
+
+        player = LLMPlayer("Bob", model_config)
+        player.turn_history = [ChatMessage(role="system", content="sys")]
+
+        with caplog.at_level(
+            logging.DEBUG, logger="src.nomic_engine.players.llm_player"
+        ):
+            player.revise(proposal, [], game_state, rules)
+
+        debug_records = [
+            r for r in caplog.records if r.levelno == logging.DEBUG
+        ]
+        for record in debug_records:
+            assert "hidden revision thoughts" not in record.message
