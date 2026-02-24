@@ -11,7 +11,7 @@ from ..judge_contracts import (
     JudgeVetoResponse,
     StateUpdates,
 )
-from ..llm import ApiClient, PromptBuilder
+from ..llm import ApiClientProtocol, PromptBuilder, create_api_client
 from ..llm import prompts as llm_prompts
 from ..llm.parsers import (
     parse_judge_maintain_state_response,
@@ -36,7 +36,7 @@ class LLMJudge(BaseJudge):
         self,
         model_config: ModelDefinition,
         prompt_builder: PromptBuilder | None = None,
-        api_client: ApiClient | None = None,
+        api_client: ApiClientProtocol | None = None,
         tuning: EngineTuningConfig | None = None,
     ) -> None:
         """Initialize the LLMJudge.
@@ -46,13 +46,13 @@ class LLMJudge(BaseJudge):
                 used for judging.
             prompt_builder (PromptBuilder, optional): Prompt builder instance.
                 If None, a new PromptBuilder() is created.
-            api_client (ApiClient, optional): API client instance for LLM calls
-                If None, a new ApiClient(model_config) is created.
+            api_client (ApiClientProtocol, optional): API client for LLM
+                calls. If None, create_api_client(model_config) is used.
         """
         self.model_config = model_config
         self.tuning = tuning or EngineTuningConfig()
         self.prompt_builder = prompt_builder or PromptBuilder()
-        self.api_client = api_client or ApiClient(model_config)
+        self.api_client = api_client or create_api_client(model_config)
         logger.info(
             "Initialized LLMJudge with model %s (provider: %s)",
             model_config.api_model_id,

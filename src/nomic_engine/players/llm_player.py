@@ -20,8 +20,8 @@ from ..data_models import (
     Vote,
 )
 from ..llm import (
-    ApiClient,
     PromptBuilder,
+    create_api_client,
     parse_discussion_response,
     parse_proposal_response,
     parse_revision_response,
@@ -63,7 +63,7 @@ class LLMPlayer(BasePlayer):
         self.model_config = model_config
         self.personality = personality
         self.tuning = tuning or EngineTuningConfig()
-        self.api_client = ApiClient(self.model_config)
+        self.api_client = create_api_client(self.model_config)
         self.prompt_builder = PromptBuilder()
         # Stateful conversation history for the current turn
         self.turn_history: list[ChatMessage] = []

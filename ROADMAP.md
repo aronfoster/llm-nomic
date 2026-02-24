@@ -48,7 +48,7 @@ Our architecture is built on these principles:
 - Personality file existence validation at the same startup checkpoint
 - These live in the same place and fail for the same reason — ship them together
 
-**Task 4: ApiClient Provider Factory Pattern**
+~~**Task 4: ApiClient Provider Factory Pattern**~~ COMPLETED
 - The constructor is a long if/elif chain that will grow with every new provider. Each branch does nearly identical work: check env key, get API key, create client.
 - Refactor to a registry or factory pattern (even a dict mapping provider names to initialization callables). This also makes adding OpenRouter support cleaner.
 

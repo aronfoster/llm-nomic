@@ -75,7 +75,7 @@ class TestLLMPlayerVote:
     """Tests for LLMPlayer.vote() method."""
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_vote_response")
     def test_vote_success_first_try(
         self,
@@ -142,7 +142,7 @@ class TestLLMPlayerVote:
         mock_parse.assert_called_with(valid_json_response)
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_vote_response")
     def test_vote_success_after_retry(
         self,
@@ -218,7 +218,7 @@ class TestLLMPlayerVote:
         assert player.turn_history[-1].role == "assistant"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_vote_response")
     def test_vote_failure_max_retries(
         self,
@@ -276,7 +276,7 @@ class TestLLMPlayerVote:
         assert mock_parse.call_count == player.tuning.max_vote_retries
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_vote_api_error_then_success(
         self,
         mock_api_client_class,
@@ -330,7 +330,7 @@ class TestLLMPlayerVote:
         assert mock_api_instance.get_completion.call_count == 2
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_vote_all_api_errors(
         self,
         mock_api_client_class,
@@ -379,7 +379,7 @@ class TestLLMPlayerVote:
         )
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_vote_response")
     def test_vote_prompt_builder_called_correctly(
         self,
@@ -441,7 +441,7 @@ class TestLLMPlayerDiscuss:
     """Tests for LLMPlayer.discuss() method."""
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
     def test_discuss_success_first_try(
         self,
@@ -498,7 +498,7 @@ class TestLLMPlayerDiscuss:
         mock_parse.assert_called_with(valid_json_response)
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
     def test_discuss_empty_string_returns_abstain(
         self,
@@ -544,7 +544,7 @@ class TestLLMPlayerDiscuss:
         assert result.player_name == "TestPlayer"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
     def test_discuss_success_after_retry(
         self,
@@ -609,7 +609,7 @@ class TestLLMPlayerDiscuss:
         assert len(player.turn_history) >= 3
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
     def test_discuss_failure_max_retries_returns_abstain(
         self,
@@ -661,7 +661,7 @@ class TestLLMPlayerDiscuss:
         assert mock_parse.call_count == player.tuning.max_discuss_retries
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_discuss_all_api_errors_returns_abstain(
         self,
         mock_api_client_class,
@@ -704,7 +704,7 @@ class TestLLMPlayerDiscuss:
         )
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
     def test_discuss_prompt_builder_called_correctly(
         self,
@@ -749,7 +749,7 @@ class TestLLMPlayerPropose:
     """Tests for LLMPlayer.propose() method."""
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
     def test_propose_success_first_try(
         self,
@@ -814,7 +814,7 @@ class TestLLMPlayerPropose:
         mock_parse.assert_called_with(valid_json_response)
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
     def test_propose_success_amend_type(
         self,
@@ -859,7 +859,7 @@ class TestLLMPlayerPropose:
         assert proposal.new_text == "Amended rule text"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
     def test_propose_success_after_retry(
         self,
@@ -924,7 +924,7 @@ class TestLLMPlayerPropose:
         assert len(player.turn_history) >= 3
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
     def test_propose_failure_max_retries_raises_runtime_error(
         self,
@@ -975,7 +975,7 @@ class TestLLMPlayerPropose:
         assert mock_parse.call_count == player.tuning.max_propose_retries
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_propose_api_error_then_success(
         self,
         mock_api_client_class,
@@ -1023,7 +1023,7 @@ class TestLLMPlayerPropose:
         assert mock_api_instance.get_completion.call_count == 2
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_propose_all_api_errors_raises_runtime_error(
         self,
         mock_api_client_class,
@@ -1065,7 +1065,7 @@ class TestLLMPlayerPropose:
         )
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
     def test_propose_prompt_builder_called_correctly(
         self,
@@ -1121,7 +1121,7 @@ class TestLLMPlayerRevise:
     """Tests for LLMPlayer.revise() method."""
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_revision_response")
     def test_revise_withdraw(
         self,
@@ -1183,7 +1183,7 @@ class TestLLMPlayerRevise:
         assert mock_api_instance.get_completion.call_count == 1
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_revision_response")
     def test_revise_keep(
         self,
@@ -1245,7 +1245,7 @@ class TestLLMPlayerRevise:
         assert mock_api_instance.get_completion.call_count == 1
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_revision_response")
     def test_revise_modify(
         self,
@@ -1311,7 +1311,7 @@ class TestLLMPlayerRevise:
         assert mock_api_instance.get_completion.call_count == 1
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_revision_response")
     def test_revise_modify_only_text(
         self,
@@ -1363,7 +1363,7 @@ class TestLLMPlayerRevise:
         assert result.rationale == proposal.rationale
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_revision_response")
     def test_revise_success_after_retry(
         self,
@@ -1435,7 +1435,7 @@ class TestLLMPlayerRevise:
         assert len(player.turn_history) >= 4
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_revision_response")
     def test_revise_failure_max_retries_returns_original(
         self,
@@ -1487,7 +1487,7 @@ class TestLLMPlayerRevise:
         )
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_revise_all_api_errors_returns_original(
         self,
         mock_api_client_class,
@@ -1534,7 +1534,7 @@ class TestLLMPlayerRevise:
         )
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_revision_response")
     def test_revise_prompt_builder_called_correctly(
         self,
@@ -1595,7 +1595,7 @@ class TestLLMPlayerStatefulHistory:
     """Tests for stateful conversation history management."""
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
     def test_propose_initializes_history(
         self,
@@ -1654,7 +1654,7 @@ class TestLLMPlayerStatefulHistory:
         assert player.turn_history[1].content == valid_response
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_revision_response")
     def test_revise_extends_history(
         self,
@@ -1723,7 +1723,7 @@ class TestLLMPlayerStatefulHistory:
         assert player.turn_history[3].content == revision_response
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_vote_response")
     def test_vote_extends_history(
         self,
@@ -1789,7 +1789,7 @@ class TestLLMPlayerStatefulHistory:
         assert player.turn_history[3].content == vote_response
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
     def test_discuss_initializes_history(
         self,
@@ -1845,7 +1845,7 @@ class TestLLMPlayerStatefulHistory:
         assert player.turn_history[1].content == valid_response
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
     def test_propose_resets_existing_history(
         self,
@@ -1896,7 +1896,7 @@ class TestLLMPlayerStatefulHistory:
         assert player.turn_history[0].content == "New proposer system prompt"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
     def test_propose_continue_turn_preserves_history(
         self,
@@ -1981,7 +1981,7 @@ class TestNoDuplicatePrivateThoughtsLog:
     """
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
     def test_discuss_does_not_emit_debug_private_thoughts(
         self,
@@ -2020,7 +2020,7 @@ class TestNoDuplicatePrivateThoughtsLog:
             assert "secret strategy" not in record.message
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_vote_response")
     def test_vote_does_not_emit_debug_private_thoughts(
         self,
@@ -2063,7 +2063,7 @@ class TestNoDuplicatePrivateThoughtsLog:
             assert "my secret vote reasoning" not in record.message
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_revision_response")
     def test_revise_does_not_emit_debug_private_thoughts(
         self,
