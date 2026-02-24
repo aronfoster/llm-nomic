@@ -23,7 +23,7 @@ def parse_rules_md(filepath: Union[str, Path]) -> list[Rule]:
 
     Args:
         filepath: Path to the markdown file to parse (e.g., 'rules.md' or
-                  'Nomic_Initial_Ruleset_v0.md')
+                  'docs/rulesets/Nomic_Initial_Ruleset_v1.md')
 
     Returns:
         A list of Rule objects parsed from the markdown file
@@ -33,7 +33,7 @@ def parse_rules_md(filepath: Union[str, Path]) -> list[Rule]:
         ValueError: If the file format is invalid
 
     Example:
-        >>> rules = parse_rules_md("Nomic_Initial_Ruleset_v0.md")
+        >>> rules = parse_rules_md("docs/rulesets/Nomic_Initial_Ruleset_v1.md")
         >>> len(rules)
         33
         >>> rules[0].rule_id

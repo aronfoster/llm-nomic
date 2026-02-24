@@ -95,7 +95,8 @@ class TestSchemaLoadingErrors:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """FlagSchemaError raised when file has invalid JSON."""
-        bad_file = tmp_path / "flag_schema.json"
+        (tmp_path / "config").mkdir()
+        bad_file = tmp_path / "config" / "flag_schema.json"
         bad_file.write_text("{ invalid json }")
         monkeypatch.chdir(tmp_path)
         with pytest.raises(FlagSchemaError, match="Malformed JSON"):
@@ -105,7 +106,8 @@ class TestSchemaLoadingErrors:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """FlagSchemaError raised when schema root is not an object."""
-        bad_file = tmp_path / "flag_schema.json"
+        (tmp_path / "config").mkdir()
+        bad_file = tmp_path / "config" / "flag_schema.json"
         bad_file.write_text('["not", "an", "object"]')
         monkeypatch.chdir(tmp_path)
         with pytest.raises(FlagSchemaError, match="must be a JSON object"):
@@ -115,7 +117,8 @@ class TestSchemaLoadingErrors:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """FlagSchemaError raised when a flag entry is missing fields."""
-        bad_file = tmp_path / "flag_schema.json"
+        (tmp_path / "config").mkdir()
+        bad_file = tmp_path / "config" / "flag_schema.json"
         bad_file.write_text(json.dumps({"test_flag": {"type": "string"}}))
         monkeypatch.chdir(tmp_path)
         with pytest.raises(FlagSchemaError, match="missing required fields"):
@@ -125,7 +128,8 @@ class TestSchemaLoadingErrors:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """FlagSchemaError raised when a flag value is not a dict."""
-        bad_file = tmp_path / "flag_schema.json"
+        (tmp_path / "config").mkdir()
+        bad_file = tmp_path / "config" / "flag_schema.json"
         bad_file.write_text(json.dumps({"test_flag": "not_a_dict"}))
         monkeypatch.chdir(tmp_path)
         with pytest.raises(FlagSchemaError, match="must be an object"):
@@ -189,7 +193,8 @@ class TestFlagValidationWithCustomSchema:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Boolean flags validate type correctly."""
-        schema_file = tmp_path / "flag_schema.json"
+        (tmp_path / "config").mkdir()
+        schema_file = tmp_path / "config" / "flag_schema.json"
         schema_file.write_text(
             json.dumps(
                 {
@@ -212,7 +217,8 @@ class TestFlagValidationWithCustomSchema:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Integer flags validate type correctly."""
-        schema_file = tmp_path / "flag_schema.json"
+        (tmp_path / "config").mkdir()
+        schema_file = tmp_path / "config" / "flag_schema.json"
         schema_file.write_text(
             json.dumps(
                 {
@@ -339,7 +345,8 @@ class TestGetFlagDefaults:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Flags with null defaults are excluded."""
-        schema_file = tmp_path / "flag_schema.json"
+        (tmp_path / "config").mkdir()
+        schema_file = tmp_path / "config" / "flag_schema.json"
         schema_file.write_text(
             json.dumps(
                 {

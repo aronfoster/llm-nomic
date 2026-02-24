@@ -11,7 +11,7 @@ This project runs full games of Nomic with any mix of human and LLM players. The
 - **[ROADMAP.md](ROADMAP.md)** — High-level plan, current sprint, bug list, refactoring notes, and long-term backlog.  
   **Developers and Contributors: this is the single file you should read first.**
 
-- **[RULESET_DESIGN.md](RULESET_DESIGN.md)** — Why and how the ruleset differs from Suber’s original (plus a side-by-side table of changes). Essential context for anyone playing or extending the game.
+- **[RULESET_DESIGN.md](docs/RULESET_DESIGN.md)** — Why and how the ruleset differs from Suber’s original (plus a side-by-side table of changes). Essential context for anyone playing or extending the game.
 
 - [Peter Suber’s original 1982 rules](http://legacy.earlham.edu/~peters/writing/nomic.htm) (external reference)
 
@@ -165,9 +165,14 @@ llm-nomic/
 │   └── nomic_engine/           # Core game engine
 ├── tests/                      # Test files
 ├── games/                      # Game instances (created by create_game.py)
+├── config/                     # Configuration files
+│   ├── flag_schema.json        # Flag schema definitions
+│   └── models.yml              # Available LLM model definitions
+├── docs/                       # Project documentation
+│   ├── PM_CONTEXT.md           # PM guidelines
+│   ├── RULESET_DESIGN.md       # Ruleset design rationale
+│   └── rulesets/               # Initial ruleset files
 ├── create_game.py              # Interactive game creation script
-├── models.yml                  # Available LLM model definitions
-├── Nomic_Initial_Ruleset_v0.md # Initial game rules
 ├── requirements.txt            # Python dependencies
 ├── Makefile                    # Development commands
 └── .env                        # API keys (not in git)
