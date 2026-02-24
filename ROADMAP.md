@@ -49,9 +49,8 @@ Our architecture is built on these principles:
 - These live in the same place and fail for the same reason — ship them together
 
 **Task 4: ApiClient Provider Factory Pattern**
-- The if/elif chain is isolated to one file, touches zero game logic, and has a clear "done" state
-- Low blast radius, good test story, and it unblocks OpenRouter support which is on the long-term backlog anyway
-- This is a satisfying standalone refactor that a dev can own start-to-finish in 1.5-2 days
+- The constructor is a long if/elif chain that will grow with every new provider. Each branch does nearly identical work: check env key, get API key, create client.
+- Refactor to a registry or factory pattern (even a dict mapping provider names to initialization callables). This also makes adding OpenRouter support cleaner.
 
 
 ## Future Work
@@ -65,18 +64,6 @@ This is the long-term backlog and TODO scratchpad.
   * Extract rule application + state maintenance into a private `_apply_rule_changes` method.
   * Extract transcript logging + save into a dedicated method (partially done already with `_log_and_save_turn`).
   * The guiding principle ("only method with side effects") is good, but it should orchestrate discrete sub-steps rather than implement them inline.
-
-* **Provider Factory Pattern for `ApiClient`:**
-  * The constructor is a long if/elif chain that will grow with every new provider. Each branch does nearly identical work: check env key, get API key, create client.
-  * Refactor to a registry or factory pattern (even a dict mapping provider names to initialization callables). This also makes adding OpenRouter support cleaner.
-
-* **Validate API Keys at Startup:**
-  * Currently, missing API keys aren't discovered until a player is called for proposal or discussion. With bad or missing API keys, this would terminate the program and waste the tokens spent on other players.
-  * Add a validation step in `create_game.py` or at `main.py` startup that checks all required env vars for configured players and the judge before gameplay begins.
-
-* **Validate Personality Files at Startup:**
-  * Currently, a missing personality file raises a `FileNotFoundError` at the point of first use (inside `PromptBuilder` during a player's turn), not at startup.
-  * Add a validation step alongside API key validation that checks all player personality files exist in the `personalities/` directory before gameplay begins.
 
 * **Decouple Score Mutation from Judge Methods:** - Integrated into Sprint 27 task 1.
   * `LLMJudge.assess_scores` directly mutates `game_manager.game_state.scores`. This creates a hidden dependency: `_detect_victory` only works correctly because the judge's side effect already happened.
