@@ -849,7 +849,7 @@ class PromptBuilder:
         Returns:
             ChatMessage with role="user" containing scoring context
         """
-        rules_block = prompts.RULES_BLOCK.format(
+        rules_block = prompts.SCORING_RULES_BLOCK.format(
             rules_text=self._format_rules(rules)
         )
         proposal_block = self._format_proposal(

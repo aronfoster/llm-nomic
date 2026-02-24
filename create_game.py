@@ -33,6 +33,7 @@ from src.nomic_engine.data_models import (
     ModelDefinition,
     ModelLibrary,
     PlayerConfig,
+    Rule,
 )
 from src.nomic_engine.utils.flag_schema import (
     get_flag_defaults,
@@ -177,9 +178,10 @@ def choose_llm_model(model_library: ModelLibrary) -> str:
     for idx, model in enumerate(model_library.models, start=1):
         print(f"  {idx}. {model.id} ({model.provider})")
 
+    model_ids = [model.id for model in model_library.models]
     while True:
+        choice = input("Choose a model by number or name: ").strip()
         try:
-            choice = input("Choose a model by number: ").strip()
             choice_idx = int(choice) - 1
             if 0 <= choice_idx < len(model_library.models):
                 return model_library.models[choice_idx].id
@@ -188,8 +190,15 @@ def choose_llm_model(model_library: ModelLibrary) -> str:
                     "Please enter a number between 1 and "
                     f"{len(model_library.models)}"
                 )
+                continue
         except ValueError:
-            print("Please enter a valid number.")
+            pass
+        if choice in model_ids:
+            return choice
+        print(
+            f"Please enter a number between 1 and {len(model_library.models)}"
+            " or a valid model name."
+        )
 
 
 def _discover_personalities() -> list[str]:
@@ -226,8 +235,8 @@ def choose_personality() -> str:
         print(f"  {idx}. {personality}")
 
     while True:
+        choice = input("Choose a personality by number or name: ").strip()
         try:
-            choice = input("Choose a personality by number: ").strip()
             choice_idx = int(choice) - 1
             if 0 <= choice_idx < len(personalities):
                 return personalities[choice_idx]
@@ -236,8 +245,16 @@ def choose_personality() -> str:
                     "Please enter a number between 1 and "
                     f"{len(personalities)}"
                 )
+                continue
         except ValueError:
-            print("Please enter a valid number.")
+            pass
+        choice_lower = choice.lower()
+        if choice_lower in personalities:
+            return choice_lower
+        print(
+            f"Please enter a number between 1 and {len(personalities)}"
+            " or a valid personality name."
+        )
 
 
 def configure_players(model_library: ModelLibrary) -> list[PlayerConfig]:
@@ -273,11 +290,19 @@ def configure_players(model_library: ModelLibrary) -> list[PlayerConfig]:
             break
 
         # Get player type
+        player_types = ["human", "llm"]
         while True:
-            player_type = input("Player type (human/llm): ").strip().lower()
-            if player_type in ["human", "llm"]:
+            player_type = input("Player type (1=human, 2=llm): ").strip().lower()
+            if player_type in player_types:
                 break
-            print("Please enter either 'human' or 'llm'.")
+            try:
+                choice_idx = int(player_type) - 1
+                if 0 <= choice_idx < len(player_types):
+                    player_type = player_types[choice_idx]
+                    break
+            except ValueError:
+                pass
+            print("Please enter either 'human' or 'llm', or 1 or 2.")
 
         # Get model ID and personality
         if player_type == "llm":
@@ -313,15 +338,27 @@ def choose_judge_type() -> JudgeType:
     for idx, judge_type in enumerate(judge_types, start=1):
         print(f"  {idx}. {judge_type.value}")
 
+    judge_values = [jt.value for jt in judge_types]
     while True:
+        choice = input("Choose judge type by number or name: ").strip()
         try:
-            choice = input("Choose judge type by number: ").strip()
             choice_idx = int(choice) - 1
             if 0 <= choice_idx < len(judge_types):
                 return judge_types[choice_idx]
-            print(f"Please enter a number between 1 and {len(judge_types)}")
+            else:
+                print(
+                    f"Please enter a number between 1 and {len(judge_types)}"
+                )
+                continue
         except ValueError:
-            print("Please enter a valid number.")
+            pass
+        choice_lower = choice.lower()
+        if choice_lower in judge_values:
+            return judge_types[judge_values.index(choice_lower)]
+        print(
+            f"Please enter a number between 1 and {len(judge_types)}"
+            " or a valid judge type name."
+        )
 
 
 def get_model_definition(
@@ -418,7 +455,27 @@ def create_game_files(
         f.write(game_state.model_dump_json(indent=2))
 
     # 3. Create rules.jsonl and rules.md
-    rules_manager = RulesManager(rules=initial_rules)
+    # If target_score differs from the 100 hardcoded in rule 208, update
+    # rule 208's text so the ruleset and the configured target agree.
+    rules_to_write = list(initial_rules)
+    if target_score is not None and target_score != 100:
+        rules_to_write = []
+        for rule in initial_rules:
+            if rule.rule_id == "208":
+                updated_text = rule.text.replace(
+                    "100 (positive) points",
+                    f"{target_score} (positive) points",
+                )
+                rules_to_write.append(
+                    Rule(
+                        rule_id=rule.rule_id,
+                        text=updated_text,
+                        status=rule.status,
+                    )
+                )
+            else:
+                rules_to_write.append(rule)
+    rules_manager = RulesManager(rules=rules_to_write)
 
     rules_jsonl_path = game_dir / RULES_JSONL_FILE
     logger.info(f"Creating {rules_jsonl_path}")
