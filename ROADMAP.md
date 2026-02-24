@@ -43,7 +43,7 @@ Our architecture is built on these principles:
   - `Nomic_Initial_Ruleset_v1.md` → `docs/rulesets/Nomic_Initial_Ruleset_v1.md`
 - Updated all references in `src/nomic_engine/constants.py`, `tests/`, and `README.md`.
 
-**Task 3: Startup validation**
+~~**Task 3: Startup validation**~~ COMPLETED
 - API key validation for all configured players + judge before first turn
 - Personality file existence validation at the same startup checkpoint
 - These live in the same place and fail for the same reason — ship them together
