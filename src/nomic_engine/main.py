@@ -23,6 +23,7 @@ from .judge.llm_judge import LLMJudge
 from .players.base_player import BasePlayer
 from .players.human_player import HumanPlayer
 from .players.llm_player import LLMPlayer
+from .startup_validation import validate_startup
 from .utils.loaders import load_model_library
 
 
@@ -237,6 +238,9 @@ def main() -> None:
     except Exception as e:
         logger.error(f"Error checking victory status: {e}", exc_info=True)
         sys.exit(1)
+
+    # Validate startup configuration (API keys + personality files)
+    validate_startup(players, judge, manager)
 
     # Run single turn
     try:
