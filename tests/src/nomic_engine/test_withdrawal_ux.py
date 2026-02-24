@@ -302,7 +302,7 @@ class TestLLMPlayerBeginDiscussionTurn:
     """Tests for LLMPlayer.begin_discussion_turn() and discuss()."""
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_begin_discussion_turn_resets_history(
         self,
         mock_api_client_class: MagicMock,
@@ -331,7 +331,7 @@ class TestLLMPlayerBeginDiscussionTurn:
         assert player.turn_history[0].content == "New system msg"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
     def test_discuss_does_not_reset_history(
         self,
@@ -372,7 +372,7 @@ class TestLLMPlayerBeginDiscussionTurn:
         assert len(player.turn_history) == len(prior_history) + 1
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
     def test_begin_then_discuss_uses_new_context(
         self,
@@ -407,7 +407,7 @@ class TestLLMPlayerBeginDiscussionTurn:
         assert len(player.turn_history) == 2
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     @patch("src.nomic_engine.players.llm_player.parse_discussion_response")
     def test_discuss_without_begin_preserves_prior_rounds(
         self,
@@ -678,7 +678,7 @@ class TestLLMPlayerOnProposalUpdated:
     """Tests for LLMPlayer.on_proposal_updated()."""
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_appends_exactly_one_user_message(
         self,
         mock_api_client_class: MagicMock,
@@ -713,7 +713,7 @@ class TestLLMPlayerOnProposalUpdated:
         assert new_msg.role == "user"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_does_not_reset_history(
         self,
         mock_api_client_class: MagicMock,
@@ -746,7 +746,7 @@ class TestLLMPlayerOnProposalUpdated:
         assert player.turn_history[1].content == "Keep this too"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_message_contains_withdrawal_attempt_numbers(
         self,
         mock_api_client_class: MagicMock,
@@ -776,7 +776,7 @@ class TestLLMPlayerOnProposalUpdated:
         assert "3" in appended
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
-    @patch("src.nomic_engine.players.llm_player.ApiClient")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
     def test_message_contains_proposal_block(
         self,
         mock_api_client_class: MagicMock,
