@@ -25,34 +25,30 @@ Our architecture is built on these principles:
 - Judge scoring uses RULES_BLOCK which begins "=== ALL CURRENT RULES ===", but is actually sent only points-related rules
 - Game creation allows you to pick the target score, but the initial rule isn't changed. Hardcode the initial score.
 
-## Sprint 31: Project Structure Reorganization
+## Sprint 31: Refactoring, small bugfixing
 
-Reorganized root-level files into `config/` and `docs/` subdirectories:
-- `flag_schema.json` → `config/flag_schema.json`
-- `models.yml` → `config/models.yml`
-- `PM_CONTEXT.md` → `docs/PM_CONTEXT.md`
-- `RULESET_DESIGN.md` → `docs/RULESET_DESIGN.md`
-- `Nomic_Initial_Ruleset_v0.md` → `docs/rulesets/Nomic_Initial_Ruleset_v0.md`
-- `Nomic_Initial_Ruleset_v1.md` → `docs/rulesets/Nomic_Initial_Ruleset_v1.md`
-
-Updated all references in `src/nomic_engine/constants.py`, `tests/`, and `README.md`.
-
-## Sprint 32: TBD
-
-### Task 1
-
-**Task 1: Transcript fidelity fixes**
+~~**Task 1: Transcript fidelity fixes**~~ COMPLETED
 - Log withdrawal proposals and their discussion rounds
 - Fix `Judge Approval` / `Judge Veto Response` showing `N/A` on failed votes
 - Log `maintain_state` decisions
 - Kill the duplicate DEBUG logging of private thoughts (it's a one-liner and you're already in that neighborhood)
 
-**Task 2: Startup validation**
+~~**Task 2: Project Structure Reorganization**~~ COMPLETED
+- Reorganized root-level files into `config/` and `docs/` subdirectories:
+  - `flag_schema.json` → `config/flag_schema.json`
+  - `models.yml` → `config/models.yml`
+  - `PM_CONTEXT.md` → `docs/PM_CONTEXT.md`
+  - `RULESET_DESIGN.md` → `docs/RULESET_DESIGN.md`
+  - `Nomic_Initial_Ruleset_v0.md` → `docs/rulesets/Nomic_Initial_Ruleset_v0.md`
+  - `Nomic_Initial_Ruleset_v1.md` → `docs/rulesets/Nomic_Initial_Ruleset_v1.md`
+- Updated all references in `src/nomic_engine/constants.py`, `tests/`, and `README.md`.
+
+**Task 3: Startup validation**
 - API key validation for all configured players + judge before first turn
 - Personality file existence validation at the same startup checkpoint
 - These live in the same place and fail for the same reason — ship them together
 
-**Task 3: ApiClient Provider Factory Pattern**
+**Task 4: ApiClient Provider Factory Pattern**
 - The if/elif chain is isolated to one file, touches zero game logic, and has a clear "done" state
 - Low blast radius, good test story, and it unblocks OpenRouter support which is on the long-term backlog anyway
 - This is a satisfying standalone refactor that a dev can own start-to-finish in 1.5-2 days
@@ -97,6 +93,7 @@ This is the long-term backlog and TODO scratchpad.
   * Implement async behavior (per model provider?)
   * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
     * For prompt examples, do we use current-game responses instead of static personality file values on turn 2+?
+    * Recommended notepad sections: 1 per other player, long term strategy, 
   * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
   * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
   * Explore https://openrouter.ai/ support for tokens/models
