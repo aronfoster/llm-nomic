@@ -19,11 +19,8 @@ Our architecture is built on these principles:
 
 ### Low Priority
 
-- Allow numbers or text (e.g. 2 or llm) in each prompt of create_game.py
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
 - Nedd to remove the extraneous DEBUG level logging of private thoughts, which happens after INFO logging of the entire response (including private_thoughts)
-- Judge scoring uses RULES_BLOCK which begins "=== ALL CURRENT RULES ===", but is actually sent only points-related rules
-- Game creation allows you to pick the target score, but the initial rule isn't changed. Hardcode the initial score.
 
 ## Sprint 32: Refactoring & Polish
 
@@ -33,12 +30,12 @@ Our architecture is built on these principles:
 
 **Task 1: Quick-win bug fixes/features**
 
-Bundle the three trivial low-priority bugs/features that don't deserve individual PRs:
+Bundle the three trivial low-priority bugs/features that don't deserve individual PRs. ✅ Done:
 
-- Allow numeric input anywhere the script currently only accepts text (e.g., entering `2` instead of `llm` for player type, `1` instead of `friendly` for personality). Straightforward input normalization with no architectural impact. 
-- Fix the low-priority bug where the target score set during game creation: set it to 100 always; don't prompt the user
-- Fix the misleading `RULES_BLOCK` label in `LLMJudge.assess_scores` — it says "ALL CURRENT RULES" but only contains scoring rules
-- Add `make fix` as an alias for `make format` in the Makefile
+- Allow numeric input anywhere the script currently only accepts text (e.g., entering `2` instead of `llm` for player type, `1` instead of `friendly` for personality). Straightforward input normalization with no architectural impact.
+- Fix the initial rule text to match the configured target score when it differs from the default 100.
+- Fix the misleading `RULES_BLOCK` label in `LLMJudge.assess_scores` — it said "ALL CURRENT RULES" but only contained scoring rules; now uses `SCORING_RULES_BLOCK` with accurate header.
+- Add `make fix` as an alias for `make format` in the Makefile.
 
 **Task 2: Dependency version pinning + update process**
 
@@ -106,7 +103,6 @@ This is the long-term backlog and TODO scratchpad.
 
 * **Tooling & Features:**
     * Specify versions for dependencies and start managing those (pin at least major versions in `requirements.txt` to prevent breakage from upstream changes)
-    * Add `make fix` to Makefile that does the same thing as `make format`
 
 * **Dynamic Game Structure**
   * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.

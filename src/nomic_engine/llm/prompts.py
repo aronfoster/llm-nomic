@@ -288,6 +288,9 @@ Please provide your discussion on the new proposal above.
 RULES_BLOCK = """=== ALL CURRENT RULES ===
 {rules_text}"""
 
+SCORING_RULES_BLOCK = """=== SCORING-RELEVANT RULES ===
+{rules_text}"""
+
 GAME_STATE_BLOCK = """=== GAME STATE ===
 Move #{move_number}
 Scores: {scores_text}
