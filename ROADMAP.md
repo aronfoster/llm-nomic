@@ -15,12 +15,11 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-- `game_transcript.md` does not include initial rule proposal, withdrawals, and possibly other player inputs that should be in there.
+- None
 
 ### Low Priority
 
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
-- Nedd to remove the extraneous DEBUG level logging of private thoughts, which happens after INFO logging of the entire response (including private_thoughts)
 
 ## Sprint 32: Refactoring & Polish
 
@@ -65,10 +64,6 @@ This is the long-term backlog and TODO scratchpad.
   * `LLMJudge.assess_scores` directly mutates `game_manager.game_state.scores`. This creates a hidden dependency: `_detect_victory` only works correctly because the judge's side effect already happened.
   * Consider having the judge *return* score deltas, with `_apply_turn_mutations` being the sole method that writes to game state. This matches the existing architecture's intent.
 
-* **Parser Return Types:**
-  * Several parsers (e.g., `parse_proposal_response`) declare return types like `dict[str, str | None]` but actually return values that include booleans, ints, etc.
-  * Replace with proper TypedDicts or dataclasses for each response shape.
-
 ### Engine Features
 
 * **Improve `LLMPlayer`:**
@@ -76,7 +71,7 @@ This is the long-term backlog and TODO scratchpad.
   * Implement async behavior (per model provider?)
   * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
     * For prompt examples, do we use current-game responses instead of static personality file values on turn 2+?
-    * Recommended notepad sections: 1 per other player, long term strategy, 
+    * Recommended notepad sections: 1 per other player, long term strategy, rules to watch, more?
   * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
   * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
   * Explore https://openrouter.ai/ support for tokens/models
