@@ -16,13 +16,13 @@ from src.nomic_engine.utils.parsers import parse_rules_md
 
 
 def test_parse_nomic_initial_ruleset():
-    """Test that Nomic_Initial_Ruleset_v0.md is parsed correctly."""
+    """Test that Nomic_Initial_Ruleset_v1.md is parsed correctly."""
     # Parse the actual initial ruleset file
-    rules = parse_rules_md("docs/rulesets/Nomic_Initial_Ruleset_v0.md")
+    rules = parse_rules_md("docs/rulesets/Nomic_Initial_Ruleset_v1.md")
 
     # Validate we got the expected number of rules
-    # There are 17 immutable rules (101-117) and 16 mutable rules (201-216)
-    assert len(rules) == 33
+    # There are 17 immutable rules (101-117) and 10 mutable rules (201-210)
+    assert len(rules) == 27
 
     # Check first rule (101)
     rule_101 = rules[0]
@@ -35,7 +35,7 @@ def test_parse_nomic_initial_ruleset():
     rule_117 = rules[16]
     assert rule_117.rule_id == "117"
     assert rule_117.status == RuleStatus.IMMUTABLE
-    assert "not prohibited or regulated" in rule_117.text
+    assert "An impartial Judge will veto" in rule_117.text
 
     # Check first mutable rule (201)
     rule_201 = rules[17]
@@ -43,11 +43,11 @@ def test_parse_nomic_initial_ruleset():
     assert rule_201.status == RuleStatus.MUTABLE
     assert "Players shall alternate" in rule_201.text
 
-    # Check last rule (216)
-    rule_216 = rules[32]
-    assert rule_216.rule_id == "216"
-    assert rule_216.status == RuleStatus.MUTABLE
-    assert "further play is impossible" in rule_216.text
+    # Check last rule (210)
+    rule_210 = rules[26]
+    assert rule_210.rule_id == "210"
+    assert rule_210.status == RuleStatus.MUTABLE
+    assert "If two or more mutable rules" in rule_210.text
 
 
 def test_parse_multiline_rule_text():

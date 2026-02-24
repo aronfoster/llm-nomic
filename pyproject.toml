@@ -5,44 +5,6 @@ warn_unused_configs = true
 strict = true
 files = ["src"]
 
-# Suppress import errors for third-party packages that lack stubs.
-# This is normal for LLM SDK packages (anthropic, openai, google-genai)
-# and lets mypy still validate all first-party code.
-[[tool.mypy.overrides]]
-module = [
-    "anthropic",
-    "anthropic.*",
-    "openai",
-    "openai.*",
-    "google",
-    "google.*",
-    "pydantic",
-    "pydantic.*",
-    "dotenv",
-    "pythonjsonlogger",
-    "pythonjsonlogger.*",
-    "yaml",
-]
-ignore_missing_imports = true
-
-# data_models.py subclasses pydantic.BaseModel (treated as Any when stubs
-# are absent) and uses an untyped pydantic decorator — suppress those
-# downstream errors while keeping all other strict checks active.
-[[tool.mypy.overrides]]
-module = ["nomic_engine.data_models"]
-disable_error_code = ["misc", "untyped-decorator"]
-
-# These modules call into LLM SDK methods that return Any (because the SDK
-# stubs are absent).  The functions themselves are correctly typed — only
-# the return-type inference is unavoidably Any in a stub-free environment.
-[[tool.mypy.overrides]]
-module = [
-    "nomic_engine.llm.api_clients",
-    "nomic_engine.players.human_player",
-    "nomic_engine.players.llm_player",
-]
-disable_error_code = ["no-any-return"]
-
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q"
