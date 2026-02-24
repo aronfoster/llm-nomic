@@ -25,32 +25,31 @@ Our architecture is built on these principles:
 - Judge scoring uses RULES_BLOCK which begins "=== ALL CURRENT RULES ===", but is actually sent only points-related rules
 - Game creation allows you to pick the target score, but the initial rule isn't changed. Hardcode the initial score.
 
-## Sprint 31: Refactoring, small bugfixing
+## Sprint 32: Refactoring & Polish
 
-~~**Task 1: Transcript fidelity fixes**~~ COMPLETED
-- Log withdrawal proposals and their discussion rounds
-- Fix `Judge Approval` / `Judge Veto Response` showing `N/A` on failed votes
-- Log `maintain_state` decisions
-- Kill the duplicate DEBUG logging of private thoughts (it's a one-liner and you're already in that neighborhood)
+**Theme:** Pay down technical debt accumulated across Sprints 27–31, with no new user-visible features. Every task is a standalone PR that leaves `make ci` green.
 
-~~**Task 2: Project Structure Reorganization**~~ COMPLETED
-- Reorganized root-level files into `config/` and `docs/` subdirectories:
-  - `flag_schema.json` → `config/flag_schema.json`
-  - `models.yml` → `config/models.yml`
-  - `PM_CONTEXT.md` → `docs/PM_CONTEXT.md`
-  - `RULESET_DESIGN.md` → `docs/RULESET_DESIGN.md`
-  - `Nomic_Initial_Ruleset_v0.md` → `docs/rulesets/Nomic_Initial_Ruleset_v0.md`
-  - `Nomic_Initial_Ruleset_v1.md` → `docs/rulesets/Nomic_Initial_Ruleset_v1.md`
-- Updated all references in `src/nomic_engine/constants.py`, `tests/`, and `README.md`.
+---
 
-~~**Task 3: Startup validation**~~ COMPLETED
-- API key validation for all configured players + judge before first turn
-- Personality file existence validation at the same startup checkpoint
-- These live in the same place and fail for the same reason — ship them together
+**Task 1: Quick-win bug fixes/features**
 
-~~**Task 4: ApiClient Provider Factory Pattern**~~ COMPLETED
-- The constructor is a long if/elif chain that will grow with every new provider. Each branch does nearly identical work: check env key, get API key, create client.
-- Refactor to a registry or factory pattern (even a dict mapping provider names to initialization callables). This also makes adding OpenRouter support cleaner.
+Bundle the three trivial low-priority bugs/features that don't deserve individual PRs:
+
+- Allow numeric input anywhere the script currently only accepts text (e.g., entering `2` instead of `llm` for player type, `1` instead of `friendly` for personality). Straightforward input normalization with no architectural impact. 
+- Fix the low-priority bug where the target score set during game creation: set it to 100 always; don't prompt the user
+- Fix the misleading `RULES_BLOCK` label in `LLMJudge.assess_scores` — it says "ALL CURRENT RULES" but only contains scoring rules
+- Add `make fix` as an alias for `make format` in the Makefile
+
+**Task 2: Dependency version pinning + update process**
+
+- All packages in `requirements.txt` have pinned minimum and maximum major versions (e.g. `anthropic>=0.20,<1.0`) rather than unpinned names.
+- A script or `make` target exists that fetches the latest available version of each dependency, updates `requirements.txt` to reflect those versions, and runs `make ci` to verify nothing broke. A developer or LLM should be able to run this single command to perform a full dependency update cycle.
+- The update process is documented in the README so that someone unfamiliar with the project can perform a dependency update without guessing.
+- `make ci` passes against the pinned versions before the PR is merged.
+
+**Task 3: Parser return type hardening**
+
+Replace the `dict[str, str | None]` return types in `parsers.py` with proper `TypedDict`s or dataclasses — one per response shape (`ProposalResponseData`, `VoteResponseData`, etc.). The current types lie (they include booleans and ints), which silences mypy errors that should be caught. Update callers and add regression tests for the new shapes.
 
 
 ## Future Work
