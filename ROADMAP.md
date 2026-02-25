@@ -20,11 +20,16 @@ Our architecture is built on these principles:
 ### Low Priority
 
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
-- Need to prevent identical player names during game creation
 - Need to change text on last withdrawal attempt to make it clear that withdrawing is still an option, just skips your turn
 
 
 ## Sprint 34: LLM Player Persistent Memory
+
+### Task 1 — Infrastructure ✅ DONE
+Config schema (`llm.memory.max_characters`), `MemoryManager` utility,
+`create_game.py` memory initialisation, `GameManager.load_game()` robustness,
+duplicate/reserved player-name validation.  All covered by unit tests;
+`make ci` passes.
 
 ### Goal
 Add a lightweight, model-agnostic persistent memory system for every **LLM player only** (including Judge when it is an LLM). Each LLM gets its own `*_MEMORY.md` file that survives between turns, rides along in context for the entire turn, and is updated at the very end of every turn. This dramatically improves long-term strategy, consistency, and “aliveness” without touching any existing JSON flows or adding model-specific logic.

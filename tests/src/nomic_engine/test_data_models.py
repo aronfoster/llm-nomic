@@ -412,3 +412,98 @@ def test_game_config_withdrawal_override():
 
     assert config.withdrawal_policy == WithdrawalPolicy.FORFEIT
     assert config.max_withdrawal_retries == 3
+
+
+# --- GameConfig player name validation ---
+
+
+def test_game_config_rejects_duplicate_player_names():
+    """GameConfig raises ValueError for duplicate player names."""
+    import pytest
+
+    with pytest.raises(ValueError, match="Duplicate player name"):
+        GameConfig(
+            players=[
+                PlayerConfig(name="Alice", model_id="gpt-4o"),
+                PlayerConfig(name="Alice", model_id="claude-3-5-sonnet"),
+            ]
+        )
+
+
+def test_game_config_rejects_duplicate_names_case_insensitive():
+    """GameConfig treats names as case-insensitive for uniqueness."""
+    import pytest
+
+    with pytest.raises(ValueError, match="Duplicate player name"):
+        GameConfig(
+            players=[
+                PlayerConfig(name="alice", model_id="gpt-4o"),
+                PlayerConfig(name="Alice", model_id="claude-3-5-sonnet"),
+            ]
+        )
+
+
+def test_game_config_rejects_reserved_name_judge():
+    """GameConfig raises ValueError if any player is named 'Judge'."""
+    import pytest
+
+    with pytest.raises(ValueError, match="reserved"):
+        GameConfig(
+            players=[
+                PlayerConfig(name="Alice", model_id="gpt-4o"),
+                PlayerConfig(name="Judge", model_id="claude-3-5-sonnet"),
+            ]
+        )
+
+
+def test_game_config_rejects_reserved_name_judge_case_insensitive():
+    """GameConfig rejects 'judge' in any casing."""
+    import pytest
+
+    with pytest.raises(ValueError, match="reserved"):
+        GameConfig(
+            players=[
+                PlayerConfig(name="judge", model_id="gpt-4o"),
+            ]
+        )
+
+
+def test_game_config_accepts_unique_non_reserved_names():
+    """GameConfig accepts unique, non-reserved player names."""
+    config = GameConfig(
+        players=[
+            PlayerConfig(name="Alice", model_id="gpt-4o"),
+            PlayerConfig(name="Bob", model_id="claude-3-5-sonnet"),
+        ]
+    )
+    assert len(config.players) == 2
+
+
+# --- LLM memory config ---
+
+
+def test_game_config_default_llm_memory():
+    """GameConfig defaults to 12000 max_characters for LLM memory."""
+
+    config = GameConfig(
+        players=[PlayerConfig(name="Alice", model_id="gpt-4o")]
+    )
+    assert config.llm.memory.max_characters == 12000
+
+
+def test_game_config_llm_memory_can_be_set_to_none():
+    """GameConfig allows max_characters=None (unlimited)."""
+    config = GameConfig(
+        players=[PlayerConfig(name="Alice", model_id="gpt-4o")],
+        llm={"memory": {"max_characters": None}},
+    )
+    assert config.llm.memory.max_characters is None
+
+
+def test_game_config_llm_memory_custom_limit():
+    """GameConfig stores a custom max_characters value."""
+    config = GameConfig(
+        players=[PlayerConfig(name="Alice", model_id="gpt-4o")],
+        llm={"memory": {"max_characters": 5000}},
+    )
+    assert config.llm.memory.max_characters == 5000
