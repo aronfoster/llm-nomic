@@ -367,3 +367,44 @@ def test_assess_scores_retries_on_invalid_player_name(mock_game_manager):
     ]
     assert mock_game_manager.game_state.scores["Alice"] == 0
     assert api_client.get_completion.call_count == 2
+
+
+# =====================================================================
+# MEMORY INJECTION TESTS
+# =====================================================================
+
+
+def test_build_judge_system_message_with_memory_appends_block():
+    """_build_judge_system_message with non-empty content appends the
+    MEMORY_INJECTION block after JUDGE_SYSTEM_PROMPT."""
+    from src.nomic_engine.llm import prompts as llm_prompts
+
+    judge = LLMJudge(Mock(), api_client=Mock())
+    memory = "# Judge Memory\n\nSome precedents."
+    msg = judge._build_judge_system_message(memory_content=memory)
+
+    assert msg.role == "system"
+    assert llm_prompts.JUDGE_SYSTEM_PROMPT in msg.content
+    assert "=== YOUR PRIVATE MEMORY ===" in msg.content
+    assert "Some precedents." in msg.content
+    # Memory block must come AFTER the base prompt
+    base_pos = msg.content.index(llm_prompts.JUDGE_SYSTEM_PROMPT)
+    mem_pos = msg.content.index("=== YOUR PRIVATE MEMORY ===")
+    assert base_pos < mem_pos
+
+
+def test_build_judge_system_message_empty_memory_equals_base_prompt():
+    """_build_judge_system_message with empty content returns a message
+    whose content equals JUDGE_SYSTEM_PROMPT exactly."""
+    from src.nomic_engine.llm import prompts as llm_prompts
+
+    judge = LLMJudge(Mock(), api_client=Mock())
+
+    msg_default = judge._build_judge_system_message()
+    msg_empty = judge._build_judge_system_message(memory_content="")
+    msg_whitespace = judge._build_judge_system_message(memory_content="  \n  ")
+
+    assert msg_default.content == llm_prompts.JUDGE_SYSTEM_PROMPT
+    assert msg_empty.content == llm_prompts.JUDGE_SYSTEM_PROMPT
+    assert msg_whitespace.content == llm_prompts.JUDGE_SYSTEM_PROMPT
+    assert "=== YOUR PRIVATE MEMORY ===" not in msg_default.content

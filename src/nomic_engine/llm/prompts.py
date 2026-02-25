@@ -258,6 +258,14 @@ Remember:
 No other text. Just the JSON object:"""
 
 
+MEMORY_INJECTION = """\
+=== YOUR PRIVATE MEMORY ===
+(Read-only this turn. You will update it at the very end.)
+
+{full_memory_content}
+
+=== END YOUR PRIVATE MEMORY ==="""
+
 WITHDRAWAL_RETRY_TEMPLATE = """Your previous proposal was withdrawn \
 after discussion.
 

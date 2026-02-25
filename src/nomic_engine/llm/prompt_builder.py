@@ -530,6 +530,7 @@ class PromptBuilder:
         game_state: GameState,
         player_name: str,
         personality: str,
+        memory_content: str = "",
     ) -> ChatMessage:
         """
         Build the system message for the Proposer at the start of their turn.
@@ -538,6 +539,7 @@ class PromptBuilder:
         - Base Persona (based on personality)
         - GAME_STATE_BLOCK (formatted with scores/turn order)
         - RULES_BLOCK (formatted with rules)
+        - MEMORY_INJECTION (if memory_content is non-empty)
         - INSTRUCTION_PROPOSE (formatted with JSON format enforcement)
 
         Args:
@@ -545,6 +547,8 @@ class PromptBuilder:
             game_state: The current game state
             player_name: The name of the player making the proposal
             personality: The persona key ("machiavellian" or "friendly")
+            memory_content: Optional memory content to inject. Omitted when
+                empty or whitespace.
 
         Returns:
             A single ChatMessage with role="system"
@@ -573,14 +577,14 @@ class PromptBuilder:
         )
 
         # Assemble the full system message
-        content = "\n\n".join(
-            [
-                persona_block,
-                game_state_block,
-                rules_block,
-                instruction_block,
-            ]
-        )
+        blocks = [persona_block, game_state_block, rules_block]
+        if memory_content.strip():
+            memory_block = prompts.MEMORY_INJECTION.format(
+                full_memory_content=memory_content
+            )
+            blocks.append(memory_block)
+        blocks.append(instruction_block)
+        content = "\n\n".join(blocks)
 
         return ChatMessage(role="system", content=content)
 
@@ -591,6 +595,7 @@ class PromptBuilder:
         game_state: GameState,
         player_name: str,
         personality: str,
+        memory_content: str = "",
     ) -> ChatMessage:
         """
         Build the system message for players to discuss the proposal.
@@ -599,6 +604,7 @@ class PromptBuilder:
         - Base Persona (based on personality)
         - GAME_STATE_BLOCK (formatted with scores/turn order)
         - RULES_BLOCK (formatted with rules)
+        - MEMORY_INJECTION (if memory_content is non-empty)
         - PROPOSAL_BLOCK (formatted with the initial proposal details)
         - INSTRUCTION_DISCUSS
 
@@ -608,6 +614,8 @@ class PromptBuilder:
             game_state: The current game state
             player_name: The name of the player who is discussing
             personality: The persona key ("machiavellian" or "friendly")
+            memory_content: Optional memory content to inject. Omitted when
+                empty or whitespace.
 
         Returns:
             A single ChatMessage with role="system"
@@ -639,15 +647,14 @@ class PromptBuilder:
         )
 
         # Assemble the full system message
-        content = "\n\n".join(
-            [
-                persona_block,
-                game_state_block,
-                rules_block,
-                proposal_block,
-                instruction_block,
-            ]
-        )
+        blocks = [persona_block, game_state_block, rules_block]
+        if memory_content.strip():
+            memory_block = prompts.MEMORY_INJECTION.format(
+                full_memory_content=memory_content
+            )
+            blocks.append(memory_block)
+        blocks.extend([proposal_block, instruction_block])
+        content = "\n\n".join(blocks)
 
         return ChatMessage(role="system", content=content)
 

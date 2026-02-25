@@ -814,6 +814,120 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertEqual(message.role, "user")
         self.assertIn("No discussions yet", message.content)
 
+    # =========================================================================
+    # Tests for memory injection in build_proposer_system_message
+    # =========================================================================
+
+    def test_build_proposer_system_message_with_memory_injects_block(self):
+        """Non-empty memory_content should appear after rules and before
+        the instruction block."""
+        memory = "# Alice's Memory\n\nI want to win."
+        message = self.builder.build_proposer_system_message(
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Alice",
+            personality="machiavellian",
+            memory_content=memory,
+        )
+
+        content = message.content
+        self.assertIn("=== YOUR PRIVATE MEMORY ===", content)
+        self.assertIn("I want to win.", content)
+
+        # Memory block must appear after rules and before instruction
+        rules_pos = content.index("=== ALL CURRENT RULES ===")
+        memory_pos = content.index("=== YOUR PRIVATE MEMORY ===")
+        instruction_pos = content.index("=== YOUR PROPOSAL ===")
+        self.assertLess(rules_pos, memory_pos)
+        self.assertLess(memory_pos, instruction_pos)
+
+    def test_build_proposer_system_message_empty_memory_no_injection(self):
+        """Empty memory_content should produce the same output as omitting
+        the parameter entirely."""
+        baseline = self.builder.build_proposer_system_message(
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Alice",
+            personality="machiavellian",
+        )
+        with_empty = self.builder.build_proposer_system_message(
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Alice",
+            personality="machiavellian",
+            memory_content="",
+        )
+        with_whitespace = self.builder.build_proposer_system_message(
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Alice",
+            personality="machiavellian",
+            memory_content="   \n  ",
+        )
+
+        self.assertEqual(baseline.content, with_empty.content)
+        self.assertEqual(baseline.content, with_whitespace.content)
+        self.assertNotIn("=== YOUR PRIVATE MEMORY ===", baseline.content)
+
+    # =========================================================================
+    # Tests for memory injection in build_discusser_system_message
+    # =========================================================================
+
+    def test_build_discusser_system_message_with_memory_injects_block(self):
+        """Non-empty memory_content should appear after rules and before
+        the instruction block in the discusser message."""
+        memory = "# Charlie's Memory\n\nAlice is dangerous."
+        message = self.builder.build_discusser_system_message(
+            proposal=self.proposal,
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Charlie",
+            personality="machiavellian",
+            memory_content=memory,
+        )
+
+        content = message.content
+        self.assertIn("=== YOUR PRIVATE MEMORY ===", content)
+        self.assertIn("Alice is dangerous.", content)
+
+        # Memory block must appear after rules and before instruction
+        rules_pos = content.index("=== ALL CURRENT RULES ===")
+        memory_pos = content.index("=== YOUR PRIVATE MEMORY ===")
+        instruction_pos = content.index("=== YOUR DISCUSSION ===")
+        self.assertLess(rules_pos, memory_pos)
+        self.assertLess(memory_pos, instruction_pos)
+
+    def test_build_discusser_system_message_empty_memory_no_injection(self):
+        """Empty memory_content should produce the same output as omitting
+        the parameter entirely."""
+        baseline = self.builder.build_discusser_system_message(
+            proposal=self.proposal,
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Charlie",
+            personality="machiavellian",
+        )
+        with_empty = self.builder.build_discusser_system_message(
+            proposal=self.proposal,
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Charlie",
+            personality="machiavellian",
+            memory_content="",
+        )
+        with_whitespace = self.builder.build_discusser_system_message(
+            proposal=self.proposal,
+            rules=self.rules,
+            game_state=self.game_state,
+            player_name="Charlie",
+            personality="machiavellian",
+            memory_content="  \t  ",
+        )
+
+        self.assertEqual(baseline.content, with_empty.content)
+        self.assertEqual(baseline.content, with_whitespace.content)
+        self.assertNotIn("=== YOUR PRIVATE MEMORY ===", baseline.content)
+
 
 if __name__ == "__main__":
     unittest.main()

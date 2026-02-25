@@ -27,6 +27,7 @@ from ..llm import (
     parse_vote_response,
     prompts,
 )
+from ..memory.memory_manager import MemoryManager
 from ..utils.player_label import assemble_player_label
 from .base_player import BasePlayer
 
@@ -47,6 +48,7 @@ class LLMPlayer(BasePlayer):
         model_config: ModelDefinition,
         personality: str = "friendly",
         tuning: EngineTuningConfig | None = None,
+        memory_manager: MemoryManager | None = None,
     ) -> None:
         """
         Initialize an LLM player with a specific model configuration.
@@ -57,11 +59,15 @@ class LLMPlayer(BasePlayer):
                           for this player's LLM.
             personality: Lowercase personality name (e.g. "machiavellian").
                          Must match a file in the ``personalities/`` directory.
+            tuning: Optional engine tuning configuration.
+            memory_manager: Optional MemoryManager for persistent memory
+                injection. When None, no memory is injected.
         """
         super().__init__(player_name)
         self.model_config = model_config
         self.personality = personality
         self.tuning = tuning or EngineTuningConfig()
+        self.memory_manager = memory_manager
         self.api_client = create_api_client(self.model_config)
         self.prompt_builder = PromptBuilder()
         # Stateful conversation history for the current turn
@@ -76,6 +82,12 @@ class LLMPlayer(BasePlayer):
             personality=self.personality,
             model_id=self.model_config.id,
         )
+
+    def _read_own_memory(self) -> str:
+        """Return this player's memory content, or '' if unavailable."""
+        if self.memory_manager is None:
+            return ""
+        return self.memory_manager.read(self.player_name)
 
     def _reset_history(self, system_message: ChatMessage) -> None:
         """
@@ -121,6 +133,7 @@ class LLMPlayer(BasePlayer):
             game_state=game_state,
             player_name=self.player_name,
             personality=self.personality,
+            memory_content=self._read_own_memory(),
         )
 
         # Reset history for a fresh turn, unless this is a pivot retry.
@@ -240,6 +253,7 @@ class LLMPlayer(BasePlayer):
             game_state=game_state,
             player_name=self.player_name,
             personality=self.personality,
+            memory_content=self._read_own_memory(),
         )
         self._reset_history(system_message)
 
