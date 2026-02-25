@@ -16,8 +16,13 @@ from ..constants import (
     RULES_JSONL_FILE,
     RULES_MD_FILE,
 )
-from ..data_models import GameConfig, GameState
+from ..data_models import GameConfig, GameState, JudgeType
 from ..game_logger import GameLogger
+from ..memory.memory_manager import (
+    JUDGE_MEMORY_TEMPLATE,
+    MemoryManager,
+    build_player_memory_template,
+)
 from .rules_manager import RulesManager
 
 logger = logging.getLogger(__name__)
@@ -51,6 +56,7 @@ class GameManager:
         self.game_config: GameConfig | None = None
         self.game_state: GameState | None = None
         self.rules_manager: RulesManager | None = None
+        self.memory_manager: MemoryManager | None = None
 
     def load_game(self) -> None:
         """
@@ -93,6 +99,30 @@ class GameManager:
                 self.rules_jsonl_path
             )
             logger.info(f"Loaded {len(self.rules_manager.rules)} rules")
+
+            # Set up memory manager and ensure memory files exist
+            self.memory_manager = MemoryManager(
+                self.game_dir,
+                self.game_config.llm.memory.max_characters,
+            )
+            self.memory_manager.create_memories_dir()
+
+            all_player_names = [p.name for p in self.game_config.players]
+            for player in self.game_config.players:
+                if player.model_id == "human":
+                    continue
+                other_names = [n for n in all_player_names if n != player.name]
+                if self.game_config.judge_type == JudgeType.LLM:
+                    other_names.append("Judge")
+                template = build_player_memory_template(
+                    player.name, other_names
+                )
+                self.memory_manager.ensure_exists(player.name, template)
+
+            if self.game_config.judge_type == JudgeType.LLM:
+                self.memory_manager.ensure_exists(
+                    "Judge", JUDGE_MEMORY_TEMPLATE
+                )
 
         except FileNotFoundError as e:
             logger.error(f"Game file not found: {e.filename}")

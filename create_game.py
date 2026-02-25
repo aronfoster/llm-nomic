@@ -35,6 +35,11 @@ from src.nomic_engine.data_models import (
     PlayerConfig,
     Rule,
 )
+from src.nomic_engine.memory.memory_manager import (
+    MemoryManager,
+    JUDGE_MEMORY_TEMPLATE,
+    build_player_memory_template,
+)
 from src.nomic_engine.utils.flag_schema import (
     get_flag_defaults,
     load_flag_schema,
@@ -279,8 +284,14 @@ def configure_players(model_library: ModelLibrary) -> list[PlayerConfig]:
             if not name:
                 print("Player name cannot be empty.")
                 continue
-            # Check for duplicate names
-            if any(p.name == name for p in players):
+            # Reserve the name "Judge" for the judge's memory file
+            if name.lower() == "judge":
+                print(
+                    "'Judge' is a reserved name. Please choose a different name."
+                )
+                continue
+            # Check for duplicate names (case-insensitive)
+            if any(p.name.lower() == name.lower() for p in players):
                 print(
                     "A player named '"
                     f"{name}"
@@ -493,6 +504,28 @@ def create_game_files(
     game_transcript_path = game_dir / GAME_TRANSCRIPT_FILE
     logger.info(f"Creating {game_transcript_path}")
     game_transcript_path.touch()
+
+    # 5. Create memory files for LLM players (and LLM judge)
+    memory_manager = MemoryManager(
+        game_dir, game_config.llm.memory.max_characters
+    )
+    memory_manager.create_memories_dir()
+
+    llm_players = [p for p in players if p.model_id != "human"]
+    all_player_names = [p.name for p in players]
+
+    for player in llm_players:
+        # Build observation lines: every other player + Judge
+        other_names = [n for n in all_player_names if n != player.name]
+        if judge_type == JudgeType.LLM:
+            other_names.append("Judge")
+        template = build_player_memory_template(player.name, other_names)
+        memory_manager.ensure_exists(player.name, template)
+        logger.info(f"Created memory file for player: {player.name}")
+
+    if judge_type == JudgeType.LLM:
+        memory_manager.ensure_exists("Judge", JUDGE_MEMORY_TEMPLATE)
+        logger.info("Created memory file for Judge")
 
 
 def main() -> None:

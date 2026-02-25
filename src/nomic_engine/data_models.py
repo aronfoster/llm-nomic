@@ -99,6 +99,26 @@ class PlayerConfig(BaseModel):
     )
 
 
+class LLMMemoryConfig(BaseModel):
+    """Configuration for LLM memory system."""
+
+    max_characters: Optional[int] = Field(
+        default=12000,
+        description=(
+            "Maximum characters for memory files. " "0 or None = unlimited."
+        ),
+    )
+
+
+class LLMLevelConfig(BaseModel):
+    """Top-level LLM configuration block."""
+
+    memory: LLMMemoryConfig = Field(
+        default_factory=LLMMemoryConfig,
+        description="Memory configuration for LLM players.",
+    )
+
+
 class EngineTuningConfig(BaseModel):
     """Engine retry tuning loaded from config.yml."""
 
@@ -193,6 +213,29 @@ class GameConfig(BaseModel):
             "behavior)."
         ),
     )
+    llm: LLMLevelConfig = Field(
+        default_factory=LLMLevelConfig,
+        description="LLM-specific configuration (memory, etc.).",
+    )
+
+    @model_validator(mode="after")
+    def _validate_player_names(self) -> "GameConfig":
+        """Validate player names are unique and not reserved."""
+        seen: set[str] = set()
+        for player in self.players:
+            name_lower = player.name.lower()
+            if name_lower == "judge":
+                raise ValueError(
+                    f"Player name '{player.name}' is reserved. "
+                    "'Judge' cannot be used as a player name."
+                )
+            if name_lower in seen:
+                raise ValueError(
+                    f"Duplicate player name: '{player.name}'. "
+                    "Player names must be unique (case-insensitive)."
+                )
+            seen.add(name_lower)
+        return self
 
 
 # --- Dynamic Game State (for game_state.json) ---
