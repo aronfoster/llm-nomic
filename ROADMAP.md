@@ -148,6 +148,7 @@ This is the long-term backlog and TODO scratchpad.
       * **Engine Logic:** Update `GameLoop._tally_votes` to implement the specific denominator logic for each named mode.
       * **LLM Awareness:** Update `PromptBuilder` to dynamically inject a plain-language explanation of the current `vote_mode` into player prompts, ensuring players understand the tactical weight of an "ABSTAIN" vote.
       * Rule 109 adds another dimension to voting: whether transmute should be unanimous
+      * Also minimum yes votes as a voting mode
   * Create more personalities: chaos monkey: tries to break the engine
   * Think more about the llm model picker
     * Should we allow custom model config per game (e.g., for new/local models not in `models.yml`)?
