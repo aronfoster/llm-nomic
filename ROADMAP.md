@@ -31,6 +31,22 @@ Config schema (`llm.memory.max_characters`), `MemoryManager` utility,
 duplicate/reserved player-name validation.  All covered by unit tests;
 `make ci` passes.
 
+### Task 3 — Update Step ✅ DONE
+`MEMORY_UPDATE_PROMPT` constant added to `prompts.py`.  `LLMPlayer` gains
+`update_memory()`: appends the formatted prompt to `turn_history`, calls the
+API once (no retry), and conditionally writes to `MemoryManager` (skips on
+`None` response or response shorter than 50 characters after stripping).
+`LLMJudge` gains `_judge_turn_responses: list[ChatMessage]` accumulator
+(reset per turn by `GameLoop._reset_judge_turn_state()`), populated after
+each successful parse in `get_veto`, `assess_scores`, and `maintain_state`;
+and gains `update_memory()` which builds a minimal message list
+`[system_message] + _judge_turn_responses + [update_prompt]` and writes with
+key `"Judge"`.  `GameLoop` gains `_reset_judge_turn_state()` (called at the
+very start of every `run_turn()`) and `_update_all_memories()` (called at
+every resolved-turn exit: normal resolution, forfeit, and final withdrawal).
+Memory is not updated on early exit due to an illegal proposal.  All covered
+by unit tests; `make ci` passes.
+
 ### Task 2 — Injection ✅ DONE
 `MEMORY_INJECTION` prompt constant added to `prompts.py`.  `PromptBuilder`
 gains optional `memory_content` on `build_proposer_system_message` and

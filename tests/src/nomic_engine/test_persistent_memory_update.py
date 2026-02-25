@@ -1,0 +1,877 @@
+"""
+Tests for Sprint 34 Task 3: Persistent Memory — Update Step.
+
+Covers:
+- LLMPlayer.update_memory()
+- LLMJudge.update_memory()
+- LLMJudge._judge_turn_responses accumulation (get_veto, assess_scores,
+  maintain_state)
+- GameLoop._reset_judge_turn_state()
+- GameLoop._update_all_memories()
+- GameLoop.run_turn() integration with memory update calls
+"""
+
+from __future__ import annotations
+
+import logging
+from unittest.mock import Mock, patch
+
+import pytest
+
+from src.nomic_engine.core.game_loop import GameLoop
+from src.nomic_engine.core.game_manager import GameManager
+from src.nomic_engine.data_models import (
+    ChatMessage,
+    Discussion,
+    GameState,
+    ModelDefinition,
+    Proposal,
+    ProposalType,
+    Rule,
+    RuleStatus,
+    Vote,
+    WithdrawalPolicy,
+)
+from src.nomic_engine.judge.human_judge import HumanJudge
+from src.nomic_engine.judge.llm_judge import LLMJudge
+from src.nomic_engine.llm import prompts
+from src.nomic_engine.players.base_player import BasePlayer
+from src.nomic_engine.players.llm_player import LLMPlayer
+
+# =====================================================================
+# Shared Fixtures
+# =====================================================================
+
+
+@pytest.fixture
+def model_config() -> ModelDefinition:
+    return ModelDefinition(
+        id="test-model",
+        provider="local",
+        api_model_id="http://localhost:11434",
+        env_key_name=None,
+    )
+
+
+@pytest.fixture
+def mock_memory_manager() -> Mock:
+    mm = Mock()
+    mm.max_characters = 5000
+    return mm
+
+
+@pytest.fixture
+def mock_game_state() -> GameState:
+    return GameState(
+        scores={"Alice": 0, "Bob": 0},
+        current_player_name="Alice",
+        move_number=1,
+        turn_order=["Alice", "Bob"],
+        next_proposal_id=301,
+    )
+
+
+@pytest.fixture
+def mock_rules() -> list[Rule]:
+    return [
+        Rule(
+            rule_id="101",
+            text="Immutable rule.",
+            status=RuleStatus.IMMUTABLE,
+        ),
+        Rule(
+            rule_id="201",
+            text="Mutable rule.",
+            status=RuleStatus.MUTABLE,
+        ),
+    ]
+
+
+@pytest.fixture
+def mock_game_manager(
+    mock_game_state: GameState, mock_rules: list[Rule]
+) -> Mock:
+    manager = Mock(spec=GameManager)
+    manager.game_state = mock_game_state
+
+    rules_manager = Mock()
+    rules_manager.rules = mock_rules
+    rules_manager.apply_proposal = Mock()
+    manager.rules_manager = rules_manager
+
+    game_logger = Mock()
+    game_logger.log_transcript = Mock()
+    game_logger.log_event = Mock()
+    manager.logger = game_logger
+
+    manager.save_game_state = Mock()
+    manager.save_rules = Mock()
+
+    manager.game_config = Mock()
+    manager.game_config.withdrawal_policy = WithdrawalPolicy.FORFEIT
+    manager.game_config.max_withdrawal_retries = 2
+    manager.game_config.retain_discusser_history_on_retry = False
+
+    return manager
+
+
+# =====================================================================
+# Helpers
+# =====================================================================
+
+
+def _make_llm_player(
+    model_config: ModelDefinition,
+    player_name: str = "Alice",
+    memory_manager: Mock | None = None,
+) -> LLMPlayer:
+    """Create an LLMPlayer with mocked internals for testing update_memory."""
+    with (
+        patch("src.nomic_engine.players.llm_player.create_api_client"),
+        patch("src.nomic_engine.players.llm_player.PromptBuilder"),
+    ):
+        player = LLMPlayer(
+            player_name, model_config, memory_manager=memory_manager
+        )
+        player.api_client = Mock()
+        player.turn_history = [ChatMessage(role="system", content="context")]
+        return player
+
+
+def _make_llm_judge(memory_manager: Mock | None = None) -> LLMJudge:
+    """Create an LLMJudge with mocked API client and prompt builder."""
+    prompt_builder = Mock()
+    prompt_builder.build_judge_context_message.return_value = ChatMessage(
+        role="user", content="ctx"
+    )
+    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
+        role="user", content="veto"
+    )
+    prompt_builder.build_judge_score_context_message.return_value = (
+        ChatMessage(role="user", content="score ctx")
+    )
+    prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
+        role="user", content="score"
+    )
+    prompt_builder.build_judge_maintain_state_prompt.return_value = (
+        ChatMessage(role="user", content="maintain")
+    )
+    api_client = Mock()
+    return LLMJudge(
+        Mock(),
+        prompt_builder=prompt_builder,
+        api_client=api_client,
+        memory_manager=memory_manager,
+    )
+
+
+def _make_judge_game_manager() -> Mock:
+    game_state = GameState(
+        scores={"Alice": 0, "Bob": 0},
+        current_player_name="Alice",
+        move_number=1,
+        turn_order=["Alice", "Bob"],
+        next_proposal_id=1,
+    )
+    rules_manager = Mock()
+    rules_manager.rules = [
+        Rule(rule_id="1", text="Follow.", status=RuleStatus.IMMUTABLE)
+    ]
+    manager = Mock()
+    manager.game_state = game_state
+    manager.rules_manager = rules_manager
+    return manager
+
+
+def _simple_players(names: list[str]) -> list[Mock]:
+    """Build plain Mock players that succeed through a full turn."""
+    players = []
+    for name in names:
+        p = Mock()
+        p.player_name = name
+        p.propose = Mock(
+            return_value=Proposal(
+                proposer_name=name,
+                move_number=1,
+                type=ProposalType.ADD,
+                new_text="New rule text.",
+                rationale="A compelling reason.",
+            )
+        )
+        p.begin_discussion_turn = Mock()
+        p.discuss = Mock(
+            return_value=Discussion(
+                player_name=name,
+                text=f"{name} discussion",
+                private_thoughts=None,
+            )
+        )
+        p.vote = Mock(
+            return_value=Vote(player_name=name, vote="YES", reason="Agreed")
+        )
+        # revise: return the proposal unchanged (same object reference)
+        p.revise = Mock(side_effect=lambda proposal, **kw: proposal)
+        p.note_withdrawal_for_retry = Mock()
+        p.on_proposal_updated = Mock()
+        players.append(p)
+    return players
+
+
+# =====================================================================
+# LLMPlayer.update_memory() Tests
+# =====================================================================
+
+
+class TestLLMPlayerUpdateMemory:
+    """Tests for LLMPlayer.update_memory()."""
+
+    def test_no_op_when_memory_manager_is_none(
+        self, model_config: ModelDefinition
+    ):
+        """update_memory() is a no-op when memory_manager is None."""
+        player = _make_llm_player(model_config, memory_manager=None)
+
+        player.update_memory()
+
+        player.api_client.get_completion.assert_not_called()
+
+    def test_writes_response_when_long_enough(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """update_memory() writes to memory when response is ≥ 50 chars."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        long_response = "A" * 100
+        player.api_client.get_completion.return_value = long_response
+
+        player.update_memory()
+
+        mock_memory_manager.write.assert_called_once_with(
+            "Alice", long_response
+        )
+
+    def test_does_not_write_when_response_too_short(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """update_memory() does not write when response < 50 chars."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        player.api_client.get_completion.return_value = "Short"
+
+        player.update_memory()
+
+        mock_memory_manager.write.assert_not_called()
+
+    def test_logs_warning_when_response_too_short(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """update_memory() logs a WARNING when response < 50 chars."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        player.api_client.get_completion.return_value = "Hi"
+
+        with caplog.at_level(logging.WARNING):
+            player.update_memory()
+
+        assert "too short" in caplog.text.lower()
+
+    def test_does_not_write_when_api_returns_none(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """update_memory() does not write when the API returns None."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        player.api_client.get_completion.return_value = None
+
+        player.update_memory()
+
+        mock_memory_manager.write.assert_not_called()
+
+    def test_logs_warning_when_api_returns_none(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """update_memory() logs a WARNING when the API returns None."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        player.api_client.get_completion.return_value = None
+
+        with caplog.at_level(logging.WARNING):
+            player.update_memory()
+
+        assert "api call failed" in caplog.text.lower()
+
+    def test_appends_update_prompt_to_turn_history_before_api_call(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """Appends MEMORY_UPDATE_PROMPT to turn_history before calling API."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        initial_len = len(player.turn_history)
+
+        captured: list[list[ChatMessage]] = []
+
+        def capture_and_return(messages: list[ChatMessage]) -> str:
+            captured.append(list(messages))
+            return "A" * 100
+
+        player.api_client.get_completion.side_effect = capture_and_return
+
+        player.update_memory()
+
+        assert len(captured) == 1
+        sent = captured[0]
+        # The prompt was the last message sent to the API
+        assert len(sent) == initial_len + 1
+        last_sent = sent[-1]
+        assert last_sent.role == "user"
+        assert str(mock_memory_manager.max_characters) in last_sent.content
+
+        # turn_history was mutated in place
+        assert len(player.turn_history) == initial_len + 1
+        appended = player.turn_history[-1]
+        assert appended.role == "user"
+        assert str(mock_memory_manager.max_characters) in appended.content
+
+    def test_appended_message_contains_memory_update_prompt_text(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """The appended message contains the MEMORY_UPDATE_PROMPT lead-in."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        player.api_client.get_completion.return_value = "A" * 100
+
+        player.update_memory()
+
+        last_msg = player.turn_history[-1]
+        assert "update your private memory" in last_msg.content.lower()
+
+    def test_short_check_uses_stripped_length(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """The ≥ 50 threshold is applied after stripping whitespace."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        # 49 real chars padded with spaces → stripped length 49 < 50
+        player.api_client.get_completion.return_value = "  " + "X" * 49 + "  "
+
+        player.update_memory()
+
+        mock_memory_manager.write.assert_not_called()
+
+    def test_exactly_50_chars_stripped_is_accepted(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """update_memory() writes when the stripped response is exactly 50."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        response = "B" * 50
+        player.api_client.get_completion.return_value = response
+
+        player.update_memory()
+
+        mock_memory_manager.write.assert_called_once_with("Alice", response)
+
+
+# =====================================================================
+# LLMJudge._judge_turn_responses accumulation Tests
+# =====================================================================
+
+
+class TestLLMJudgeTurnResponses:
+    """Tests that _judge_turn_responses is accumulated correctly."""
+
+    def test_appends_after_successful_get_veto(self):
+        """Appends to _judge_turn_responses after successful get_veto."""
+        veto_text = '{"private_thoughts":"x","veto":false,"reason":"ok"}'
+        judge = _make_llm_judge()
+        judge.api_client.get_completion.return_value = veto_text
+        gm = _make_judge_game_manager()
+
+        assert len(judge._judge_turn_responses) == 0
+
+        judge.get_veto(gm, Mock(), [], [])
+
+        assert len(judge._judge_turn_responses) == 1
+        assert judge._judge_turn_responses[0].role == "assistant"
+        assert judge._judge_turn_responses[0].content == veto_text
+
+    def test_does_not_append_on_failed_get_veto(self):
+        """Does not append to _judge_turn_responses when get_veto fails."""
+        judge = _make_llm_judge()
+        judge.api_client.get_completion.return_value = "not json"
+        judge.tuning.max_judge_veto_retries = 1
+        gm = _make_judge_game_manager()
+
+        with pytest.raises(RuntimeError):
+            judge.get_veto(gm, Mock(), [], [])
+
+        assert len(judge._judge_turn_responses) == 0
+
+    def test_appends_after_successful_assess_scores(self):
+        """Appends to _judge_turn_responses after successful assess_scores."""
+        score_text = '{"private_thoughts":"ok","score_adjustments":[]}'
+        judge = _make_llm_judge()
+        judge.api_client.get_completion.return_value = score_text
+        gm = _make_judge_game_manager()
+
+        judge.assess_scores(gm, [], Mock(), [], [], proposal_passed=True)
+
+        assert len(judge._judge_turn_responses) == 1
+        assert judge._judge_turn_responses[0].content == score_text
+
+    def test_appends_after_successful_maintain_state(self):
+        """Appends to _judge_turn_responses after successful maintain_state."""
+        state_text = (
+            '{"private_thoughts":"none","flags":{},"target_score":null}'
+        )
+        judge = _make_llm_judge()
+        judge.api_client.get_completion.return_value = state_text
+        gm = _make_judge_game_manager()
+
+        judge.maintain_state(gm, Mock(), None, None)
+
+        assert len(judge._judge_turn_responses) == 1
+        assert judge._judge_turn_responses[0].content == state_text
+
+    def test_accumulates_across_all_three_judge_methods(self):
+        """_judge_turn_responses accumulates across all three judge methods."""
+        veto_text = '{"private_thoughts":"v","veto":false,"reason":"ok"}'
+        score_text = '{"private_thoughts":"s","score_adjustments":[]}'
+        state_text = '{"private_thoughts":"n","flags":{},"target_score":null}'
+
+        judge = _make_llm_judge()
+        judge.api_client.get_completion.side_effect = [
+            veto_text,
+            score_text,
+            state_text,
+        ]
+        gm = _make_judge_game_manager()
+
+        judge.get_veto(gm, Mock(), [], [])
+        judge.assess_scores(gm, [], Mock(), [], [], proposal_passed=True)
+        judge.maintain_state(gm, Mock(), None, None)
+
+        assert len(judge._judge_turn_responses) == 3
+        assert judge._judge_turn_responses[0].content == veto_text
+        assert judge._judge_turn_responses[1].content == score_text
+        assert judge._judge_turn_responses[2].content == state_text
+
+
+# =====================================================================
+# LLMJudge.update_memory() Tests
+# =====================================================================
+
+
+class TestLLMJudgeUpdateMemory:
+    """Tests for LLMJudge.update_memory()."""
+
+    def test_no_op_when_memory_manager_is_none(self):
+        """update_memory() is a no-op when memory_manager is None."""
+        judge = _make_llm_judge(memory_manager=None)
+        judge._judge_turn_responses = [
+            ChatMessage(role="assistant", content="Some reasoning.")
+        ]
+
+        judge.update_memory()
+
+        judge.api_client.get_completion.assert_not_called()
+
+    def test_skips_when_judge_turn_responses_empty(
+        self, caplog: pytest.LogCaptureFixture
+    ):
+        """Skips and logs a WARNING when _judge_turn_responses is empty."""
+        mm = Mock()
+        mm.max_characters = 5000
+        judge = _make_llm_judge(memory_manager=mm)
+        judge._judge_turn_responses = []
+
+        with caplog.at_level(logging.WARNING):
+            judge.update_memory()
+
+        mm.write.assert_not_called()
+        judge.api_client.get_completion.assert_not_called()
+        assert "no turn responses cached" in caplog.text.lower()
+
+    def test_writes_with_judge_key(self):
+        """update_memory() persists memory using the key 'Judge'."""
+        mm = Mock()
+        mm.max_characters = 5000
+        judge = _make_llm_judge(memory_manager=mm)
+        judge._judge_turn_responses = [
+            ChatMessage(role="assistant", content="Turn reasoning here.")
+        ]
+        long_response = "G" * 100
+        judge.api_client.get_completion.return_value = long_response
+
+        judge.update_memory()
+
+        mm.write.assert_called_once_with("Judge", long_response)
+
+    def test_does_not_write_when_api_returns_none(self):
+        """update_memory() does not write when the API returns None."""
+        mm = Mock()
+        mm.max_characters = 5000
+        judge = _make_llm_judge(memory_manager=mm)
+        judge._judge_turn_responses = [
+            ChatMessage(role="assistant", content="Some reasoning.")
+        ]
+        judge.api_client.get_completion.return_value = None
+
+        judge.update_memory()
+
+        mm.write.assert_not_called()
+
+    def test_logs_warning_when_api_returns_none(
+        self, caplog: pytest.LogCaptureFixture
+    ):
+        """update_memory() logs a WARNING when the API returns None."""
+        mm = Mock()
+        mm.max_characters = 5000
+        judge = _make_llm_judge(memory_manager=mm)
+        judge._judge_turn_responses = [
+            ChatMessage(role="assistant", content="Some reasoning.")
+        ]
+        judge.api_client.get_completion.return_value = None
+
+        with caplog.at_level(logging.WARNING):
+            judge.update_memory()
+
+        assert "api call failed" in caplog.text.lower()
+
+    def test_does_not_write_when_response_too_short(self):
+        """update_memory() does not write when response < 50 chars."""
+        mm = Mock()
+        mm.max_characters = 5000
+        judge = _make_llm_judge(memory_manager=mm)
+        judge._judge_turn_responses = [
+            ChatMessage(role="assistant", content="Some reasoning.")
+        ]
+        judge.api_client.get_completion.return_value = "Too short"
+
+        judge.update_memory()
+
+        mm.write.assert_not_called()
+
+    def test_logs_warning_when_response_too_short(
+        self, caplog: pytest.LogCaptureFixture
+    ):
+        """update_memory() logs a WARNING when response < 50 chars."""
+        mm = Mock()
+        mm.max_characters = 5000
+        judge = _make_llm_judge(memory_manager=mm)
+        judge._judge_turn_responses = [
+            ChatMessage(role="assistant", content="Reasoning.")
+        ]
+        judge.api_client.get_completion.return_value = "Hi"
+
+        with caplog.at_level(logging.WARNING):
+            judge.update_memory()
+
+        assert "too short" in caplog.text.lower()
+
+    def test_builds_messages_from_system_turn_responses_and_prompt(self):
+        """Sends [system, cached_responses…, update_prompt] — no game ctx."""
+        mm = Mock()
+        mm.max_characters = 5000
+        judge = _make_llm_judge(memory_manager=mm)
+
+        cached = ChatMessage(
+            role="assistant", content="My veto and score reasoning."
+        )
+        judge._judge_turn_responses = [cached]
+        judge.api_client.get_completion.return_value = "H" * 100
+
+        judge.update_memory()
+
+        judge.api_client.get_completion.assert_called_once()
+        messages: list[ChatMessage] = (
+            judge.api_client.get_completion.call_args[0][0]
+        )
+
+        # [system, cached, update_prompt] — exactly 3 messages
+        assert len(messages) == 3
+        assert messages[0].role == "system"
+        assert prompts.JUDGE_SYSTEM_PROMPT in messages[0].content
+        assert messages[1] == cached
+        assert messages[2].role == "user"
+        assert "update your private memory" in messages[2].content.lower()
+
+    def test_builds_messages_with_multiple_turn_responses(self):
+        """Includes all accumulated responses in the correct order."""
+        mm = Mock()
+        mm.max_characters = 5000
+        judge = _make_llm_judge(memory_manager=mm)
+
+        r1 = ChatMessage(role="assistant", content="Veto reasoning")
+        r2 = ChatMessage(role="assistant", content="Score reasoning")
+        r3 = ChatMessage(role="assistant", content="State reasoning")
+        judge._judge_turn_responses = [r1, r2, r3]
+        judge.api_client.get_completion.return_value = "I" * 100
+
+        judge.update_memory()
+
+        messages: list[ChatMessage] = (
+            judge.api_client.get_completion.call_args[0][0]
+        )
+        # system + 3 responses + update prompt = 5
+        assert len(messages) == 5
+        assert messages[0].role == "system"
+        assert messages[1] is r1
+        assert messages[2] is r2
+        assert messages[3] is r3
+        assert messages[4].role == "user"
+
+
+# =====================================================================
+# GameLoop._reset_judge_turn_state() Tests
+# =====================================================================
+
+
+class TestGameLoopResetJudgeTurnState:
+    """Tests for GameLoop._reset_judge_turn_state()."""
+
+    def test_clears_judge_turn_responses_on_llm_judge(
+        self, mock_game_manager: Mock
+    ):
+        """Empties _judge_turn_responses on an LLMJudge."""
+        judge = LLMJudge(Mock(), api_client=Mock())
+        judge._judge_turn_responses = [
+            ChatMessage(role="assistant", content="Old response")
+        ]
+
+        game_loop = GameLoop(
+            game_manager=mock_game_manager, players=[], judge=judge
+        )
+        game_loop._reset_judge_turn_state()
+
+        assert judge._judge_turn_responses == []
+
+    def test_no_op_on_human_judge(self, mock_game_manager: Mock):
+        """Does not raise and is a no-op for a HumanJudge."""
+        judge = HumanJudge()
+        game_loop = GameLoop(
+            game_manager=mock_game_manager, players=[], judge=judge
+        )
+
+        game_loop._reset_judge_turn_state()  # should not raise
+
+
+# =====================================================================
+# GameLoop._update_all_memories() Tests
+# =====================================================================
+
+
+class TestGameLoopUpdateAllMemories:
+    """Tests for GameLoop._update_all_memories()."""
+
+    def test_calls_update_memory_on_llm_players(self, mock_game_manager: Mock):
+        """Calls update_memory() on every LLM player."""
+        llm_a = Mock(spec=LLMPlayer)
+        llm_a.player_name = "Alice"
+        llm_b = Mock(spec=LLMPlayer)
+        llm_b.player_name = "Bob"
+
+        game_loop = GameLoop(
+            game_manager=mock_game_manager, players=[llm_a, llm_b]
+        )
+        game_loop._update_all_memories()
+
+        llm_a.update_memory.assert_called_once()
+        llm_b.update_memory.assert_called_once()
+
+    def test_skips_human_players(self, mock_game_manager: Mock):
+        """Does not call update_memory() on non-LLM players."""
+        human = Mock(spec=BasePlayer)
+        human.player_name = "Charlie"
+        llm = Mock(spec=LLMPlayer)
+        llm.player_name = "Alice"
+
+        game_loop = GameLoop(
+            game_manager=mock_game_manager, players=[human, llm]
+        )
+        game_loop._update_all_memories()
+
+        llm.update_memory.assert_called_once()
+        # BasePlayer has no update_memory; the method is never reached.
+        # Verify that only the LLM player was called (call_count == 1 above).
+        assert llm.update_memory.call_count == 1
+
+    def test_calls_update_memory_on_llm_judge(self, mock_game_manager: Mock):
+        """Calls update_memory() on an LLMJudge."""
+        llm_judge = Mock(spec=LLMJudge)
+
+        game_loop = GameLoop(
+            game_manager=mock_game_manager, players=[], judge=llm_judge
+        )
+        game_loop._update_all_memories()
+
+        llm_judge.update_memory.assert_called_once()
+
+    def test_skips_human_judge(self, mock_game_manager: Mock):
+        """Does not raise and is a no-op for a HumanJudge."""
+        judge = HumanJudge()
+        game_loop = GameLoop(
+            game_manager=mock_game_manager, players=[], judge=judge
+        )
+
+        game_loop._update_all_memories()  # should not raise
+
+
+# =====================================================================
+# GameLoop.run_turn() Memory Integration Tests
+# =====================================================================
+
+
+class TestGameLoopRunTurnMemoryIntegration:
+    """run_turn() calls memory helpers at the correct exit points."""
+
+    def test_calls_reset_judge_turn_state_at_start(
+        self, mock_game_manager: Mock
+    ):
+        """run_turn() calls _reset_judge_turn_state() before any turn logic."""
+        players = _simple_players(["Alice", "Bob"])
+        game_loop = GameLoop(game_manager=mock_game_manager, players=players)
+        game_loop._reset_judge_turn_state = Mock()
+        game_loop._update_all_memories = Mock()
+
+        with patch.object(game_loop, "_resolve_turn", return_value=False):
+            game_loop.run_turn()
+
+        game_loop._reset_judge_turn_state.assert_called_once()
+
+    def test_calls_update_all_memories_after_resolve_turn(
+        self, mock_game_manager: Mock
+    ):
+        """run_turn() calls _update_all_memories() after _resolve_turn."""
+        players = _simple_players(["Alice", "Bob"])
+        game_loop = GameLoop(game_manager=mock_game_manager, players=players)
+        game_loop._reset_judge_turn_state = Mock()
+        game_loop._update_all_memories = Mock()
+
+        with patch.object(game_loop, "_resolve_turn", return_value=False):
+            game_loop.run_turn()
+
+        game_loop._update_all_memories.assert_called_once()
+
+    def test_calls_update_all_memories_on_game_over_turn(
+        self, mock_game_manager: Mock
+    ):
+        """run_turn() calls _update_all_memories() even on game-over turns."""
+        players = _simple_players(["Alice", "Bob"])
+        game_loop = GameLoop(game_manager=mock_game_manager, players=players)
+        game_loop._reset_judge_turn_state = Mock()
+        game_loop._update_all_memories = Mock()
+
+        with patch.object(game_loop, "_resolve_turn", return_value=True):
+            result = game_loop.run_turn()
+
+        assert result is True
+        game_loop._update_all_memories.assert_called_once()
+
+    def test_calls_update_all_memories_on_forfeit(
+        self,
+        mock_game_manager: Mock,
+        mock_game_state: GameState,
+    ):
+        """Calls _update_all_memories() on withdrawal under FORFEIT."""
+        players = _simple_players(["Alice", "Bob"])
+        players[0].revise = Mock(return_value=None)  # Alice withdraws
+
+        game_loop = GameLoop(game_manager=mock_game_manager, players=players)
+        game_loop._reset_judge_turn_state = Mock()
+        game_loop._update_all_memories = Mock()
+
+        game_loop.run_turn()
+
+        game_loop._update_all_memories.assert_called_once()
+
+    def test_calls_update_all_memories_on_retry_policy_exhausted(
+        self,
+        mock_game_manager: Mock,
+        mock_game_state: GameState,
+    ):
+        """Calls _update_all_memories() when RETRY retries are exhausted."""
+        mock_game_manager.game_config.withdrawal_policy = (
+            WithdrawalPolicy.RETRY
+        )
+        mock_game_manager.game_config.max_withdrawal_retries = 1
+
+        players = _simple_players(["Alice", "Bob"])
+        players[0].revise = Mock(return_value=None)  # always withdraws
+        players[0].propose.side_effect = [
+            Proposal(
+                proposer_name="Alice",
+                move_number=1,
+                type=ProposalType.ADD,
+                new_text="Attempt one.",
+                rationale="First try.",
+            ),
+            Proposal(
+                proposer_name="Alice",
+                move_number=1,
+                type=ProposalType.ADD,
+                new_text="Attempt two.",
+                rationale="Second try.",
+            ),
+        ]
+
+        game_loop = GameLoop(game_manager=mock_game_manager, players=players)
+        game_loop._reset_judge_turn_state = Mock()
+        game_loop._update_all_memories = Mock()
+
+        game_loop.run_turn()
+
+        game_loop._update_all_memories.assert_called_once()
+
+    def test_does_not_call_update_all_memories_on_illegal_proposal(
+        self, mock_game_manager: Mock
+    ):
+        """Does NOT call _update_all_memories() on illegal-proposal exit."""
+        players = _simple_players(["Alice", "Bob"])
+        # AMEND immutable rule 101 — illegal per mock_rules fixture
+        players[0].propose = Mock(
+            return_value=Proposal(
+                proposer_name="Alice",
+                move_number=1,
+                type=ProposalType.AMEND,
+                target_rule_id="101",
+                new_text="Attempting to amend an immutable rule.",
+            )
+        )
+
+        game_loop = GameLoop(game_manager=mock_game_manager, players=players)
+        game_loop._reset_judge_turn_state = Mock()
+        game_loop._update_all_memories = Mock()
+
+        game_loop.run_turn()
+
+        game_loop._update_all_memories.assert_not_called()

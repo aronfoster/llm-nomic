@@ -19,12 +19,14 @@ from ..data_models import (
 )
 from ..judge import BaseJudge
 from ..judge.human_judge import HumanJudge
+from ..judge.llm_judge import LLMJudge
 from ..judge_contracts import (
     JudgeScoreResponse,
     JudgeVetoResponse,
     StateUpdates,
 )
 from ..players.base_player import BasePlayer
+from ..players.llm_player import LLMPlayer
 from ..utils.player_label import format_player_label
 from ..validation.validator import validate_proposal
 from .game_manager import GameManager
@@ -98,6 +100,8 @@ class GameLoop:
         # Type narrowing: These are guaranteed non-None by __init__ validation
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
+
+        self._reset_judge_turn_state()
 
         try:
             logger.info(
@@ -173,6 +177,7 @@ class GameLoop:
                 ):
                     self._advance_turn_state()
                     self.game_manager.save_game_state()
+                    self._update_all_memories()
                     break
 
                 # Log withdrawn proposal to transcript before retry (REQ-1)
@@ -209,6 +214,8 @@ class GameLoop:
                 discussions,
                 original_proposal=original_proposal_for_log,
             )
+
+            self._update_all_memories()
 
             logger.info(f"Completed turn {completed_turn_number}")
 
@@ -1113,6 +1120,28 @@ class GameLoop:
 
         # Check for automatic rule transitions after turn state is updated
         self._check_automatic_transitions()
+
+    def _reset_judge_turn_state(self) -> None:
+        """Reset the judge's per-turn cached responses.
+
+        Clears ``_judge_turn_responses`` on an ``LLMJudge`` so each turn
+        starts with a fresh accumulator. Is a no-op for a ``HumanJudge`` or
+        any other non-LLM judge.
+        """
+        if isinstance(self.judge, LLMJudge):
+            self.judge._judge_turn_responses = []
+
+    def _update_all_memories(self) -> None:
+        """Trigger memory updates for all LLM players and the LLM judge.
+
+        Called after every resolved turn (including forfeit/withdrawal exits).
+        Human players and a ``HumanJudge`` are silently skipped.
+        """
+        for player in self.players:
+            if isinstance(player, LLMPlayer):
+                player.update_memory()
+        if isinstance(self.judge, LLMJudge):
+            self.judge.update_memory()
 
     def _check_automatic_transitions(self) -> None:
         """
