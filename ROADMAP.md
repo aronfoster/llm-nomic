@@ -21,48 +21,50 @@ Our architecture is built on these principles:
 
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
 
-## Sprint 32: Refactoring & Polish
 
-**Theme:** Pay down technical debt accumulated across Sprints 27–31, with no new user-visible features. Every task is a standalone PR that leaves `make ci` green.
+## Sprint 33: GameLoop Mutation Refactoring
+
+**Theme:** Clean up the architectural boundary violations and decompose `_apply_turn_mutations` in `game_loop.py`. No new user-visible features. Two standalone PRs, each leaving `make ci` green.
 
 ---
 
-**Task 1: Quick-win bug fixes/features**
+**Task 1: Move `maintain_state` out of `_apply_turn_mutations`**
 
-Bundle the three trivial low-priority bugs/features that don't deserve individual PRs. ✅ Done:
+Currently `maintain_state` is called inside `_apply_turn_mutations` — a mutation method is making a judge call to decide what to mutate. This is a query hiding inside a side-effect method. Fix the boundary.
 
-- Allow numeric input anywhere the script currently only accepts text (e.g., entering `2` instead of `llm` for player type, `1` instead of `friendly` for personality). Straightforward input normalization with no architectural impact.
-- Fix the initial rule text to match the configured target score when it differs from the default 100.
-- Fix the misleading `RULES_BLOCK` label in `LLMJudge.assess_scores` — it said "ALL CURRENT RULES" but only contained scoring rules; now uses `SCORING_RULES_BLOCK` with accurate header.
-- Add `make fix` as an alias for `make format` in the Makefile.
+- Move the `maintain_state` judge call into `_get_judge_decisions`, alongside the existing `veto` and `assess_scores` calls.
+- Add a `state_updates: StateUpdates` field to `JudgeDecisions`.
+- Remove the `maintain_state` call and its surrounding logic from `_apply_turn_mutations`. The method must make zero judge calls after this change.
+- Update `_apply_turn_mutations` to read `state_updates` from `judge_decisions` instead.
+- The transcript output for state maintenance must be identical before and after this change.
+- `make ci` passes.
 
-**Task 2: Dependency version pinning + update process** ✅ Done:
+**Task 2: Decompose `_apply_turn_mutations` into single-responsibility methods**
 
-- All packages in `requirements.txt` are pinned to exact versions (e.g. `anthropic==0.84.0`), set to the latest available at time of merge.
-- `make update-deps` fetches the latest version of each dependency, rewrites `requirements.txt` with exact pins, installs them, and runs `make ci` to verify nothing broke. Failures are surfaced, not swallowed.
-- The update process is documented in the README (see "Updating Dependencies" section).
-- `make ci` passes against the pinned versions.
+With Task 1 merged, `_apply_turn_mutations` is a pure orchestrator of already-decided changes. Extract each concern into its own private method. The orchestrator body should contain only delegation calls — no inline logic.
 
-**Task 3: Parser return type hardening** ✅ Done:
+Extract the following private methods:
 
-Replace the `dict[str, str | None]` return types in `parsers.py` with proper `TypedDict`s — one per response shape. Defined `VoteResponse`, `DiscussionResponse`, `ProposalResponse`, `RevisionResponse`, `ParseJudgeVetoResponse`, `ParseJudgeScoreResponse`, and `MaintainStateResponse` in `parsers.py`. Updated all parser return annotations and callers in `llm_player.py` and `llm_judge.py`; removed `cast()` calls and `# type: ignore` comments. `make ci` passes with strict mypy.
+- `_apply_score_changes(score_response)` — applies delta adjustments to `game_state.scores`
+- `_apply_engine_state_changes(state_updates)` — applies flag and `target_score` updates to `game_state`
+- `_apply_rule_changes(proposal)` — calls `rules_manager.apply_proposal` and `save_rules`
+- `_increment_proposal_counter()` — increments `game_state.next_proposal_id`
+- `_save_turn()` — persists game state to disk via `save_game_state`
+- `_log_turn(...)` — writes the transcript entry and structured log event
+
+Note: `_save_turn` and `_log_turn` are separate methods. Saving game state and writing a transcript are different concerns and must not be combined.
+
+The resulting `_apply_turn_mutations` orchestrator should read as a plain-English description of what happens at the end of a turn, in order, with no logic of its own.
+
+The existing `_log_and_save_turn` method is superseded by `_save_turn` and `_log_turn` and should be removed.
+
+Behavior must be identical before and after. No changes to transcript format, scoring, or game state values. `make ci` passes.
+
 
 
 ## Future Work
 
 This is the long-term backlog and TODO scratchpad.
-
-### Refactoring (from code review)
-
-* **Decompose `_apply_turn_mutations`:**
-  * This method handles rule application, state maintenance, proposal ID tracking, victory detection, turn advancement, transcript logging, and game-over logging — all in ~80 lines.
-  * Extract rule application + state maintenance into a private `_apply_rule_changes` method.
-  * Extract transcript logging + save into a dedicated method (partially done already with `_log_and_save_turn`).
-  * The guiding principle ("only method with side effects") is good, but it should orchestrate discrete sub-steps rather than implement them inline.
-
-* **Decouple Score Mutation from Judge Methods:** - Integrated into Sprint 27 task 1.
-  * `LLMJudge.assess_scores` directly mutates `game_manager.game_state.scores`. This creates a hidden dependency: `_detect_victory` only works correctly because the judge's side effect already happened.
-  * Consider having the judge *return* score deltas, with `_apply_turn_mutations` being the sole method that writes to game state. This matches the existing architecture's intent.
 
 ### Engine Features
 
