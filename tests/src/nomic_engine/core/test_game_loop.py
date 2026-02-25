@@ -2364,12 +2364,7 @@ def test_get_judge_decisions_with_veto(
     judge.assess_scores.assert_called_once()
 
 
-@patch(
-    "src.nomic_engine.judge.human_judge.HumanJudge.maintain_state",
-    return_value={},
-)
 def test_apply_turn_mutations_passed_proposal(
-    mock_maintain_state: Mock,
     game_loop: GameLoop,
     mock_game_manager: Mock,
     mock_game_state: GameState,
@@ -2408,6 +2403,7 @@ def test_apply_turn_mutations_passed_proposal(
         },
         score_response={"private_thoughts": None, "score_adjustments": []},
         judge_approved=True,
+        state_updates={},
     )
 
     initial_proposal_id = mock_game_state.next_proposal_id
@@ -2481,6 +2477,7 @@ def test_apply_turn_mutations_applies_score_adjustments(
             ],
         },
         judge_approved=False,
+        state_updates={},
     )
 
     game_loop._apply_turn_mutations(
@@ -2535,6 +2532,7 @@ def test_apply_turn_mutations_failed_proposal(
         },
         score_response={"private_thoughts": None, "score_adjustments": []},
         judge_approved=False,
+        state_updates={},
     )
 
     initial_proposal_id = mock_game_state.next_proposal_id
@@ -2599,6 +2597,7 @@ def test_apply_turn_mutations_vetoed_proposal(
         },
         score_response={"private_thoughts": None, "score_adjustments": []},
         judge_approved=False,  # Vetoed
+        state_updates={},
     )
 
     initial_proposal_id = mock_game_state.next_proposal_id
