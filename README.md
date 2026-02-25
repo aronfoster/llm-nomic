@@ -157,6 +157,32 @@ make ci
 
 This ensures your code passes all quality checks (linting, type checking, and tests).
 
+## Updating Dependencies
+
+All packages in `requirements.txt` are pinned to exact versions. To upgrade
+every package to its latest available release and verify the suite still
+passes, run:
+
+```bash
+make update-deps
+```
+
+This command:
+1. Queries PyPI for the latest version of each package in `requirements.txt`
+2. Rewrites `requirements.txt` with the new exact pins
+3. Installs the updated packages
+4. Runs `make ci` to confirm nothing broke
+
+**If `make ci` fails after the update:** the updated `requirements.txt` is left
+on disk so you can see which versions were pulled in. Investigate the failure,
+pin the offending package back to its previous working version by editing
+`requirements.txt` manually, then re-run `make ci` until it is green again.
+Commit the working `requirements.txt` when done.
+
+**How often to update:** run `make update-deps` roughly once a month, or
+before starting any sprint that touches the LLM API clients (`openai`,
+`anthropic`, `google-genai`), which release frequently.
+
 ## Project Structure
 
 ```
