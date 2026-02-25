@@ -36,12 +36,12 @@ Bundle the three trivial low-priority bugs/features that don't deserve individua
 - Fix the misleading `RULES_BLOCK` label in `LLMJudge.assess_scores` — it said "ALL CURRENT RULES" but only contained scoring rules; now uses `SCORING_RULES_BLOCK` with accurate header.
 - Add `make fix` as an alias for `make format` in the Makefile.
 
-**Task 2: Dependency version pinning + update process**
+**Task 2: Dependency version pinning + update process** ✅ Done:
 
-- All packages in `requirements.txt` have pinned minimum and maximum major versions (e.g. `anthropic>=0.20,<1.0`) rather than unpinned names.
-- A script or `make` target exists that fetches the latest available version of each dependency, updates `requirements.txt` to reflect those versions, and runs `make ci` to verify nothing broke. A developer or LLM should be able to run this single command to perform a full dependency update cycle.
-- The update process is documented in the README so that someone unfamiliar with the project can perform a dependency update without guessing.
-- `make ci` passes against the pinned versions before the PR is merged.
+- All packages in `requirements.txt` are pinned to exact versions (e.g. `anthropic==0.84.0`), set to the latest available at time of merge.
+- `make update-deps` fetches the latest version of each dependency, rewrites `requirements.txt` with exact pins, installs them, and runs `make ci` to verify nothing broke. Failures are surfaced, not swallowed.
+- The update process is documented in the README (see "Updating Dependencies" section).
+- `make ci` passes against the pinned versions.
 
 **Task 3: Parser return type hardening**
 
@@ -97,7 +97,7 @@ This is the long-term backlog and TODO scratchpad.
   * Rule 113 asserts that players can quit. Right now we assume all players play forever. Should we remove this rule or add a way to quit the game? Need to track turns differently. Could be part of a more dynamic turn handling system.
 
 * **Tooling & Features:**
-    * Specify versions for dependencies and start managing those (pin at least major versions in `requirements.txt` to prevent breakage from upstream changes)
+    * ~~Specify versions for dependencies and start managing those~~ — Done: all deps pinned with `make update-deps` workflow.
 
 * **Dynamic Game Structure**
   * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.

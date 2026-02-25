@@ -1,19 +1,19 @@
 # Core
-python-dotenv
-pydantic
-pyyaml
-python-json-logger
-cffi
+python-dotenv==1.2.1
+pydantic==2.12.5
+pyyaml==6.0.3
+python-json-logger==4.0.0
+cffi==2.0.0
 
 # API Clients
-openai
-anthropic
-google-genai
+openai==2.24.0
+anthropic==0.84.0
+google-genai==1.64.0
 
 # Testing & Code Quality
-pytest
-mypy
-black
-ruff
-pre-commit
-types-PyYAML
+pytest==9.0.2
+mypy==1.19.1
+black==26.1.0
+ruff==0.15.2
+pre-commit==4.5.1
+types-PyYAML==6.0.12.20250915
