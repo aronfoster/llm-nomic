@@ -43,8 +43,73 @@ a dedicated file. This file is the foundation for cost analysis, caching
 investigation, and future rate limiting or budget enforcement work. It is a
 prerequisite to the caching investigation task.
 
+**New file**  
+`games/<game-name>/token_usage.jsonl` (JSON Lines, one record per completed API call, created automatically by `create_game.py`)
+
+**Exact record schema** (every field must always be present; use `null` when a value is unavailable):
+
+```json
+{
+  "timestamp": "2026-02-25T14:32:01.123Z",
+  "move_number": 4,
+  "player_name": "Alice",
+  "provider": "anthropic",
+  "model_id": "claude-sonnet-4-5",
+  "call_type": "propose",
+  "input_tokens": 3821,
+  "output_tokens": 214,
+  "cache_creation_tokens": 3600,
+  "cache_read_tokens": 0,
+  "reasoning_tokens": null,
+  "finish_reason": "end_turn",
+  "client_latency_ms": 2341,
+  "server_latency_ms": 1890.4,
+  "ttft_ms": 436.4,
+  "mean_itl_ms": 11.1,
+  "request_id": "00-c6b29b304098785563835c9e39972a9f-a7e2a5a3001eed83-01",
+  "ratelimit_remaining_requests": 607,
+  "ratelimit_remaining_tokens": 4000000
+}
+```
+
+**Field requirements**:
+
+| Field                          | Type          | Source / Notes |
+|--------------------------------|---------------|----------------|
+| `timestamp`                    | ISO 8601      | UTC, ends with Z |
+| `move_number`                  | int           | Current game move |
+| `player_name`                  | string        | Player name or "Judge" |
+| `provider`                     | string        | any option from models.yml |
+| `model_id`                     | string        | Exact api_model_id from models.yml |
+| `call_type`                    | string        | propose / discuss / revise / vote / judge_veto / judge_score / judge_maintain_state / memory_update |
+| `input_tokens`                 | int           | Total billed input tokens |
+| `output_tokens`                | int           | Billed output tokens |
+| `cache_creation_tokens`        | int or null   | Provider-specific |
+| `cache_read_tokens`            | int or null   | Provider-specific |
+| `reasoning_tokens`             | int or null   | OpenAI o-series only |
+| `finish_reason`                | string or null| Raw provider value (end_turn, stop, length, etc.) |
+| `client_latency_ms`            | int           | Client-side wall-clock time |
+| `server_latency_ms`            | float or null | xAI (e2e) or Ollama (eval_duration) |
+| `ttft_ms`                      | float or null | xAI only |
+| `mean_itl_ms`                  | float or null | xAI only |
+| `request_id`                   | string or null| x-request-id header |
+| `ratelimit_remaining_requests` | int or null   | Header value |
+| `ratelimit_remaining_tokens`   | int or null   | Header value |
+
+**Requirements**
+- `TokenUsageLogger` class in `src/nomic_engine/utils/token_usage_logger.py` that never raises (failed writes → WARNING only).
+- All API clients return a `CompletionResult` object instead of bare text.
+- `GameManager` creates and passes the logger to `LLMPlayer` and `LLMJudge`.
+- Every call site logs immediately after receiving the result (even on error).
+- `create_game.py` creates an empty `token_usage.jsonl`.
+- Full test coverage for logging, header extraction, and null handling per provider.
+- `make ci` passes with no behaviour change to gameplay.
+
+**Out of scope**  
+Dollar-cost calculation, rate-limit enforcement, analysis scripts.
+
 ### Task 2: Implementation
-Likely need to modify Anthropic handling to use explicit use of `cache_control`
+Require explicit ephemeral cache_control on the system message in every `LLMPlayer` call. Target the exact prefix that repeats within a turn.
 
 ### Task 3: LLMJudge Caching
 `LLMJudge` currently rebuilds its full message list from scratch on each of
@@ -59,7 +124,7 @@ This is the long-term backlog and TODO scratchpad.
 
 ### Engine Features
 
-* **Improve `LLMPlayer`:**
+* **Improve LLM Interactions:**
   * Implement advanced token-saving strategies, especially investigate best use of context caching
   * Implement async behavior (per model provider?)
   * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
