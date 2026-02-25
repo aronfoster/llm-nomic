@@ -847,6 +847,104 @@ class GameLoop:
         )
         return decisions
 
+    def _apply_score_changes(self, score_response: JudgeScoreResponse) -> None:
+        """Apply each score delta in score_response to game_state.scores."""
+        assert self.game_manager.game_state is not None
+
+        for adjustment in score_response.get("score_adjustments", []):
+            player_name = adjustment["player"]
+            delta = adjustment["delta"]
+            reason = adjustment["reason"]
+            self.game_manager.game_state.scores[player_name] += delta
+            logger.info(
+                "Applied score adjustment: %s %+d points (%s)",
+                player_name,
+                delta,
+                reason,
+            )
+
+    def _apply_engine_state_changes(self, state_updates: StateUpdates) -> None:
+        """Apply flag and target_score changes to game_state (if changed)."""
+        assert self.game_manager.game_state is not None
+
+        if "flags" in state_updates:
+            for flag_name, flag_value in state_updates["flags"].items():
+                current_value = self.game_manager.game_state.flags.get(
+                    flag_name
+                )
+                if current_value != flag_value:
+                    self.game_manager.game_state.flags[flag_name] = flag_value
+                    logger.info(
+                        "Updated flag %s from %s to %s",
+                        flag_name,
+                        current_value,
+                        flag_value,
+                    )
+
+        if "target_score" in state_updates:
+            new_score = state_updates["target_score"]
+            current_score = self.game_manager.game_state.target_score
+            if current_score != new_score:
+                self.game_manager.game_state.target_score = new_score
+                logger.info(
+                    "Updated target_score from %s to %s",
+                    current_score,
+                    new_score,
+                )
+
+    def _apply_rule_changes(self, proposal: Proposal) -> None:
+        """Apply the proposal to rules and persist the updated rules."""
+        assert self.game_manager.rules_manager is not None
+
+        logger.debug(
+            f"Applying passed proposal {proposal.proposal_id} to rules"
+        )
+        self.game_manager.rules_manager.apply_proposal(proposal)
+        self.game_manager.save_rules()
+        logger.debug("Proposal applied and rules saved")
+
+    def _increment_proposal_counter(self) -> None:
+        """Increment next_proposal_id by 1."""
+        assert self.game_manager.game_state is not None
+
+        self.game_manager.game_state.next_proposal_id += 1
+        logger.debug(
+            "Proposal ID incremented to %s",
+            self.game_manager.game_state.next_proposal_id,
+        )
+
+    def _save_turn(self) -> None:
+        """Persist the current game state to disk."""
+        self.game_manager.save_game_state()
+        logger.debug("Game state saved")
+
+    def _log_turn(
+        self,
+        proposal: Proposal,
+        votes: list[Vote],
+        discussions: list[Discussion],
+        vote_result: VoteResult,
+        judge_decisions: JudgeDecisions,
+        original_proposal: Proposal | None,
+    ) -> None:
+        """Format and write the transcript entry for this turn."""
+        assert self.game_manager.rules_manager is not None
+
+        transcript_entry = self._format_transcript(
+            proposal,
+            votes,
+            vote_result.passed,
+            judge_decisions.judge_approved,
+            judge_decisions.veto_response,
+            judge_decisions.score_response,
+            discussions,
+            self.game_manager.rules_manager.rules,
+            state_updates=judge_decisions.state_updates,
+            original_proposal=original_proposal,
+        )
+        self.game_manager.logger.log_transcript(transcript_entry)
+        logger.debug("Transcript logged")
+
     def _apply_turn_mutations(
         self,
         proposal: Proposal,
@@ -886,81 +984,22 @@ class GameLoop:
 
         logger.debug("Entering _apply_turn_mutations")
 
-        # Apply judge-provided score deltas (state mutation centralized here)
-        adjustments = judge_decisions.score_response.get(
-            "score_adjustments", []
-        )
-        for adjustment in adjustments:
-            player_name = adjustment["player"]
-            delta = adjustment["delta"]
-            reason = adjustment["reason"]
-            self.game_manager.game_state.scores[player_name] += delta
-            logger.info(
-                "Applied score adjustment: %s %+d points (%s)",
-                player_name,
-                delta,
-                reason,
-            )
+        self._apply_score_changes(judge_decisions.score_response)
 
-        # Apply proposal if passed and approved
         if judge_decisions.judge_approved:
-            state_updates = judge_decisions.state_updates
-
-            # Apply state updates if any (only if values changed)
-            if state_updates:
-                if "flags" in state_updates:
-                    for flag_name, flag_value in state_updates[
-                        "flags"
-                    ].items():
-                        current_value = self.game_manager.game_state.flags.get(
-                            flag_name
-                        )
-                        if current_value != flag_value:
-                            self.game_manager.game_state.flags[flag_name] = (
-                                flag_value
-                            )
-                            logger.info(
-                                "Updated flag %s from %s to %s",
-                                flag_name,
-                                current_value,
-                                flag_value,
-                            )
-                if "target_score" in state_updates:
-                    new_score = state_updates["target_score"]
-                    current_score = self.game_manager.game_state.target_score
-                    if current_score != new_score:
-                        self.game_manager.game_state.target_score = new_score
-                        logger.info(
-                            "Updated target_score from %s to %s",
-                            current_score,
-                            new_score,
-                        )
-
-            logger.debug(
-                f"Applying passed proposal {proposal.proposal_id} to rules"
-            )
-            self.game_manager.rules_manager.apply_proposal(proposal)
-            self.game_manager.save_rules()
-            logger.debug("Proposal applied and rules saved")
-
+            self._apply_engine_state_changes(judge_decisions.state_updates)
+            self._apply_rule_changes(proposal)
         else:
             logger.debug(
                 "Proposal not applied (failed vote or vetoed), "
                 "skipping rule modifications"
             )
 
-        # Increment proposal ID for all valid proposals (Rule 108)
-        self.game_manager.game_state.next_proposal_id += 1
-        logger.debug(
-            "Proposal ID incremented to %s",
-            self.game_manager.game_state.next_proposal_id,
-        )
+        self._increment_proposal_counter()
 
-        # Detect victory
         victory_reached, winners, winning_score = self._detect_victory()
         logger.debug(f"Victory detection: victory_reached={victory_reached}")
 
-        # Advance turn state only if the game is not over
         if not victory_reached:
             logger.debug("No victory, advancing turn state")
             self._advance_turn_state()
@@ -970,21 +1009,16 @@ class GameLoop:
                 "not advancing turn"
             )
 
-        # Log transcript and save state
-        logger.debug("Logging transcript and saving game state")
-        self._log_and_save_turn(
+        self._log_turn(
             proposal,
             votes,
             discussions,
-            vote_result.passed,
-            judge_decisions.judge_approved,
-            judge_decisions.veto_response,
-            judge_decisions.score_response,
-            state_updates=judge_decisions.state_updates,
-            original_proposal=original_proposal,
+            vote_result,
+            judge_decisions,
+            original_proposal,
         )
+        self._save_turn()
 
-        # Log game over if victory reached
         if victory_reached:
             logger.debug("Logging game over event")
             self._log_game_over(winners, winning_score)
@@ -1145,57 +1179,6 @@ class GameLoop:
                 "to 'majority'."
             )
             self.game_manager.logger.log_transcript(transcript_entry)
-
-    def _log_and_save_turn(
-        self,
-        proposal: Proposal,
-        votes: list[Vote],
-        discussions: list[Discussion],
-        proposal_passed: bool,
-        judge_approved: bool,
-        judge_veto_response: JudgeVetoResponse,
-        judge_score_response: JudgeScoreResponse,
-        state_updates: StateUpdates | None = None,
-        original_proposal: Proposal | None = None,
-    ) -> None:
-        """
-        Log the turn transcript and save game state.
-
-        Args:
-            proposal: The proposal that was voted on
-            votes: List of Vote objects from all players
-            discussions: List of Discussion objects from all players
-            proposal_passed: Whether the vote passed
-            judge_approved: Whether the judge approved (not vetoed)
-            judge_veto_response: Data describing the judge's veto decision
-            judge_score_response: Data describing the judge's score assessment
-            state_updates: Engine state changes from maintain_state, or None
-                if maintain_state was not called (failed/vetoed proposal)
-            original_proposal: The proposal before revision, if the proposer
-                chose MODIFY (None when proposal was kept as-is)
-        """
-        assert self.game_manager.game_state is not None
-        assert self.game_manager.rules_manager is not None
-
-        # Format and log transcript
-        transcript_entry = self._format_transcript(
-            proposal,
-            votes,
-            proposal_passed,
-            judge_approved,
-            judge_veto_response,
-            judge_score_response,
-            discussions,
-            self.game_manager.rules_manager.rules,
-            state_updates=state_updates,
-            original_proposal=original_proposal,
-        )
-        self.game_manager.logger.log_transcript(transcript_entry)
-        logger.debug("Transcript logged")
-
-        # Save game state
-        self.game_manager.save_game_state()
-        logger.debug("Game state saved")
 
     def _detect_victory(self) -> tuple[bool, list[str], int]:
         """Determine whether any player has met the target score."""
