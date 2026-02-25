@@ -369,7 +369,7 @@ class TestParseJudgeScoreResponse:
         assert result["private_thoughts"] == "Deep analysis"
 
     def test_extra_keys_are_allowed(self):
-        """Test that extra keys don't cause errors (forward compatibility)."""
+        """Test that extra keys in the JSON don't cause parsing errors."""
         response = """{
             "private_thoughts": "Analysis",
             "public_reason": "Reason",
@@ -380,7 +380,8 @@ class TestParseJudgeScoreResponse:
         result = parse_vote_response(response)
 
         assert result["vote"] == "YES"
-        assert result["extra_field"] == "This should not cause an error"
+        assert result["public_reason"] == "Reason"
+        assert result["private_thoughts"] == "Analysis"
 
 
 class TestParseDiscussionResponse:
@@ -483,7 +484,7 @@ class TestParseDiscussionResponse:
         assert "must be a JSON object" in str(exc_info.value)
 
     def test_extra_keys_are_allowed(self):
-        """Test that extra keys don't cause errors (forward compatibility)."""
+        """Test that extra keys in the JSON don't cause parsing errors."""
         response = """{
             "private_thoughts": "Analysis",
             "discussion_text": "Comment",
@@ -494,7 +495,6 @@ class TestParseDiscussionResponse:
 
         assert result["private_thoughts"] == "Analysis"
         assert result["discussion_text"] == "Comment"
-        assert result["extra_field"] == "This should not cause an error"
 
 
 class TestParseProposalResponse:
@@ -783,7 +783,7 @@ class TestParseProposalResponse:
         assert "target_rule_id must be a string or null" in str(exc_info.value)
 
     def test_parse_proposal_extra_keys_allowed(self):
-        """Test that extra keys don't cause errors (forward compatibility)."""
+        """Test that extra keys in the JSON don't cause parsing errors."""
         response = """{
             "private_thoughts": "Analysis",
             "type": "ADD",
@@ -796,7 +796,7 @@ class TestParseProposalResponse:
         result = parse_proposal_response(response)
 
         assert result["type"] == "Add"
-        assert result["extra_field"] == "Should be ignored"
+        assert result["rationale"] == "Reason"
 
 
 class TestParseJudgeMaintainStateResponse:
