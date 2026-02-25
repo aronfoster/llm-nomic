@@ -108,6 +108,7 @@ def instantiate_players(
                     model_def,
                     player_config.personality,
                     game_manager.game_config.tuning,
+                    memory_manager=game_manager.memory_manager,
                 )
             )
 
@@ -131,6 +132,7 @@ def instantiate_judge(game_manager: GameManager) -> BaseJudge:
         return LLMJudge(
             judge_model,
             tuning=game_manager.game_config.tuning,
+            memory_manager=game_manager.memory_manager,
         )
 
     return HumanJudge()

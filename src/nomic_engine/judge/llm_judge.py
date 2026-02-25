@@ -18,6 +18,7 @@ from ..llm.parsers import (
     parse_judge_score_response,
     parse_judge_veto_response,
 )
+from ..memory.memory_manager import MemoryManager
 from ..utils.rule_filters import filter_scoring_rules
 from .base_judge import BaseJudge
 
@@ -38,6 +39,7 @@ class LLMJudge(BaseJudge):
         prompt_builder: PromptBuilder | None = None,
         api_client: ApiClientProtocol | None = None,
         tuning: EngineTuningConfig | None = None,
+        memory_manager: MemoryManager | None = None,
     ) -> None:
         """Initialize the LLMJudge.
 
@@ -48,16 +50,43 @@ class LLMJudge(BaseJudge):
                 If None, a new PromptBuilder() is created.
             api_client (ApiClientProtocol, optional): API client for LLM
                 calls. If None, create_api_client(model_config) is used.
+            tuning: Optional engine tuning configuration.
+            memory_manager: Optional MemoryManager for persistent memory
+                injection. When None, no memory is injected.
         """
         self.model_config = model_config
         self.tuning = tuning or EngineTuningConfig()
         self.prompt_builder = prompt_builder or PromptBuilder()
         self.api_client = api_client or create_api_client(model_config)
+        self.memory_manager = memory_manager
         logger.info(
             "Initialized LLMJudge with model %s (provider: %s)",
             model_config.api_model_id,
             model_config.provider,
         )
+
+    def _build_judge_system_message(
+        self, memory_content: str = ""
+    ) -> ChatMessage:
+        """Build the judge system message, optionally appending memory.
+
+        Args:
+            memory_content: Optional memory content to append. Omitted when
+                empty or whitespace.
+
+        Returns:
+            A ChatMessage with role="system".
+        """
+        content = llm_prompts.JUDGE_SYSTEM_PROMPT
+        if memory_content.strip():
+            content = (
+                content
+                + "\n\n"
+                + llm_prompts.MEMORY_INJECTION.format(
+                    full_memory_content=memory_content
+                )
+            )
+        return ChatMessage(role="system", content=content)
 
     def _build_messages(
         self,
@@ -77,9 +106,10 @@ class LLMJudge(BaseJudge):
             len(discussions),
         )
 
-        system_message = ChatMessage(
-            role="system", content=llm_prompts.JUDGE_SYSTEM_PROMPT
+        memory_content = (
+            self.memory_manager.read("Judge") if self.memory_manager else ""
         )
+        system_message = self._build_judge_system_message(memory_content)
         context_message = self.prompt_builder.build_judge_context_message(
             rules=game_manager.rules_manager.rules,
             game_state=game_manager.game_state,

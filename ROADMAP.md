@@ -31,6 +31,18 @@ Config schema (`llm.memory.max_characters`), `MemoryManager` utility,
 duplicate/reserved player-name validation.  All covered by unit tests;
 `make ci` passes.
 
+### Task 2 — Injection ✅ DONE
+`MEMORY_INJECTION` prompt constant added to `prompts.py`.  `PromptBuilder`
+gains optional `memory_content` on `build_proposer_system_message` and
+`build_discusser_system_message`; block inserted after rules, before
+instruction.  `LLMPlayer` stores `MemoryManager`, reads own memory once per
+`propose()` / `begin_discussion_turn()`.  `LLMJudge` stores `MemoryManager`,
+new `_build_judge_system_message()` helper injects memory into every judge
+interaction via `_build_messages()`.  `instantiate_players` and
+`instantiate_judge` in `main.py` wire through `game_manager.memory_manager`.
+Empty/missing memory is silently skipped — no behaviour change for games
+without memory configured.  All covered by unit tests; `make ci` passes.
+
 ### Goal
 Add a lightweight, model-agnostic persistent memory system for every **LLM player only** (including Judge when it is an LLM). Each LLM gets its own `*_MEMORY.md` file that survives between turns, rides along in context for the entire turn, and is updated at the very end of every turn. This dramatically improves long-term strategy, consistency, and “aliveness” without touching any existing JSON flows or adding model-specific logic.
 

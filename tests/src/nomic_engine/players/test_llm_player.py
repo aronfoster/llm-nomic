@@ -742,6 +742,7 @@ class TestLLMPlayerDiscuss:
             game_state=game_state,
             player_name="TestPlayer",
             personality="friendly",
+            memory_content="",
         )
 
 
@@ -1114,6 +1115,7 @@ class TestLLMPlayerPropose:
             game_state=game_state,
             player_name="TestPlayer",
             personality="friendly",
+            memory_content="",
         )
 
 
@@ -2103,3 +2105,41 @@ class TestNoDuplicatePrivateThoughtsLog:
         ]
         for record in debug_records:
             assert "hidden revision thoughts" not in record.message
+
+
+class TestLLMPlayerMemory:
+    """Tests for LLMPlayer memory manager integration."""
+
+    @pytest.fixture
+    def model_config(self):
+        return ModelDefinition(
+            id="test-model",
+            provider="local",
+            api_model_id="http://localhost:11434",
+            env_key_name=None,
+        )
+
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    def test_read_own_memory_returns_empty_when_no_manager(
+        self, mock_create_api_client, model_config
+    ):
+        """_read_own_memory() returns '' when memory_manager is None."""
+        mock_create_api_client.return_value = MagicMock()
+        player = LLMPlayer("Alice", model_config)
+        assert player.memory_manager is None
+        assert player._read_own_memory() == ""
+
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    def test_read_own_memory_delegates_to_manager(
+        self, mock_create_api_client, model_config
+    ):
+        """_read_own_memory() calls memory_manager.read(player_name)."""
+        mock_create_api_client.return_value = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.read.return_value = "# Alice's Memory\n\nSome notes."
+
+        player = LLMPlayer("Alice", model_config, memory_manager=mock_manager)
+        result = player._read_own_memory()
+
+        mock_manager.read.assert_called_once_with("Alice")
+        assert result == "# Alice's Memory\n\nSome notes."
