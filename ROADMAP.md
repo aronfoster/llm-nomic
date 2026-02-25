@@ -39,26 +39,22 @@ Currently `maintain_state` is called inside `_apply_turn_mutations` — a mutati
 - The transcript output for state maintenance must be identical before and after this change.
 - `make ci` passes.
 
-**Task 2: Decompose `_apply_turn_mutations` into single-responsibility methods**
+**Task 2: Decompose `_apply_turn_mutations` into single-responsibility methods** ✅ Done
 
 With Task 1 merged, `_apply_turn_mutations` is a pure orchestrator of already-decided changes. Extract each concern into its own private method. The orchestrator body should contain only delegation calls — no inline logic.
 
-Extract the following private methods:
+Extracted private methods:
 
 - `_apply_score_changes(score_response)` — applies delta adjustments to `game_state.scores`
 - `_apply_engine_state_changes(state_updates)` — applies flag and `target_score` updates to `game_state`
 - `_apply_rule_changes(proposal)` — calls `rules_manager.apply_proposal` and `save_rules`
 - `_increment_proposal_counter()` — increments `game_state.next_proposal_id`
 - `_save_turn()` — persists game state to disk via `save_game_state`
-- `_log_turn(...)` — writes the transcript entry and structured log event
+- `_log_turn(...)` — writes the transcript entry
 
-Note: `_save_turn` and `_log_turn` are separate methods. Saving game state and writing a transcript are different concerns and must not be combined.
+`_log_and_save_turn` removed (superseded by `_save_turn` and `_log_turn`).
 
-The resulting `_apply_turn_mutations` orchestrator should read as a plain-English description of what happens at the end of a turn, in order, with no logic of its own.
-
-The existing `_log_and_save_turn` method is superseded by `_save_turn` and `_log_turn` and should be removed.
-
-Behavior must be identical before and after. No changes to transcript format, scoring, or game state values. `make ci` passes.
+Behavior identical before and after. Unit tests added for each extracted method. `make ci` passes.
 
 
 
