@@ -23,129 +23,34 @@ Our architecture is built on these principles:
 - Need to change text on last withdrawal attempt to make it clear that withdrawing is still an option, just skips your turn
 
 
-## Sprint 34: LLM Player Persistent Memory
+## Sprint 36: Investigate and Implement Context Caching
 
-### Task 1 — Infrastructure ✅ DONE
-Config schema (`llm.memory.max_characters`), `MemoryManager` utility,
-`create_game.py` memory initialisation, `GameManager.load_game()` robustness,
-duplicate/reserved player-name validation.  All covered by unit tests;
-`make ci` passes.
+### Background
 
-### Task 3 — Update Step ✅ DONE
-`MEMORY_UPDATE_PROMPT` constant added to `prompts.py`.  `LLMPlayer` gains
-`update_memory()`: appends the formatted prompt to `turn_history`, calls the
-API once (no retry), and conditionally writes to `MemoryManager` (skips on
-`None` response or response shorter than 50 characters after stripping).
-`LLMJudge` gains `_judge_turn_responses: list[ChatMessage]` accumulator
-(reset per turn by `GameLoop._reset_judge_turn_state()`), populated after
-each successful parse in `get_veto`, `assess_scores`, and `maintain_state`;
-and gains `update_memory()` which builds a minimal message list
-`[system_message] + _judge_turn_responses + [update_prompt]` and writes with
-key `"Judge"`.  `GameLoop` gains `_reset_judge_turn_state()` (called at the
-very start of every `run_turn()`) and `_update_all_memories()` (called at
-every resolved-turn exit: normal resolution, forfeit, and final withdrawal).
-Memory is not updated on early exit due to an illegal proposal.  All covered
-by unit tests; `make ci` passes.
+The current codebase makes no explicit use of provider-level prompt caching.
+This means every API call may be re-processing the full input from scratch,
+including the complete ruleset and game state that are re-sent on every turn.
+Caching behaviour varies significantly by provider — some require explicit
+opt-in, some are automatic, and some offer no client-side control at all.
 
-### Task 2 — Injection ✅ DONE
-`MEMORY_INJECTION` prompt constant added to `prompts.py`.  `PromptBuilder`
-gains optional `memory_content` on `build_proposer_system_message` and
-`build_discusser_system_message`; block inserted after rules, before
-instruction.  `LLMPlayer` stores `MemoryManager`, reads own memory once per
-`propose()` / `begin_discussion_turn()`.  `LLMJudge` stores `MemoryManager`,
-new `_build_judge_system_message()` helper injects memory into every judge
-interaction via `_build_messages()`.  `instantiate_players` and
-`instantiate_judge` in `main.py` wire through `game_manager.memory_manager`.
-Empty/missing memory is silently skipped — no behaviour change for games
-without memory configured.  All covered by unit tests; `make ci` passes.
+This task covers investigation first, then implementation. Do not implement
+anything until the investigation phase is complete and costs/savings are
+understood per provider.
 
-### Goal
-Add a lightweight, model-agnostic persistent memory system for every **LLM player only** (including Judge when it is an LLM). Each LLM gets its own `*_MEMORY.md` file that survives between turns, rides along in context for the entire turn, and is updated at the very end of every turn. This dramatically improves long-term strategy, consistency, and “aliveness” without touching any existing JSON flows or adding model-specific logic.
+### Task 1: Investigate
+Record structured token usage data for every API call made during a game into
+a dedicated file. This file is the foundation for cost analysis, caching
+investigation, and future rate limiting or budget enforcement work. It is a
+prerequisite to the caching investigation task.
 
-### Non-Negotiable Requirements
-- Works with **every** model (old/weak/strong/future) — no structured output, no thinking tags, no tools.
-- Zero breakage to existing propose/discuss/vote/judge JSON calls.
-- Memory is injected **exactly once per turn** (in the first message the player receives that turn) and then stays in context naturally via the existing `{"role": "user"}` / `{"role": "assistant"}` conversation history.
-- Humans get **no** memory file at all.
-- LLMs may edit their memory **any way they want** (even if they make it non-human-readable, delete sections, or write gibberish). The engine never sanitizes or rejects content.
-- Update is **mandatory** for every LLM player every turn.
-- Truncation is dumb character slicing only (no token counting, no section parsing).
-- Simple robustness: if a memory file is missing or empty, silently create it with the template.
-- Fix bug to enforce unique Player names
+### Task 2: Implementation
+Likely need to modify Anthropic handling to use explicit use of `cache_control`
 
-### File Structure
-- Directory: `games/<game-name>/memories/` (created automatically)
-- Files: `<PlayerName>_MEMORY.md` (e.g. `Alice_MEMORY.md`, `Judge_MEMORY.md`)
-
-### Memory Template (used only when creating a new/missing file)
-```markdown
-# {PlayerName}'s Private Memory
-
-## Long-term Strategy & Goals
-
-## Observations of Other Players
-- Alice: 
-- Bob: 
-- Carol: 
-...
-- Judge:
-
-## Key Rules & Tactics to Exploit
-
-## Recent Events & Plans
-
-## Private Notes
-```
-(The template explicitly lists every other player so even weak models are forced to consider everyone.)
-
-### Injection (once per turn)
-In the **very first prompt** the LLM player receives in a turn (usually the propose step or first discussion message), insert the full current `MEMORY.md` content using a single string defined in `prompts.py`. This string will be added as a `{"role": "user"}` message, placed before or after the full ruleset (exact placement to be finalized with PM).
-
-Example skeleton (in `prompts.py`):
-```python
-MEMORY_INJECTION = """=== YOUR PRIVATE MEMORY (read-only this turn — you will update it at the very end) ===
-{full_memory_content}
-=== END YOUR PRIVATE MEMORY ==="""
-```
-All later messages in the turn use the normal role-based history, so the memory stays in context automatically via caching. No re-injection.
-
-### Memory Update Step (new final step after scoring)
-After scoring and any rule changes are applied:
-- For **every LLM player only**, append **one final** `{"role": "user"}` message (defined in `prompts.py`) that triggers the update.
-- The model already has the **entire turn history** in context, so no separate summary is sent.
-- The final user message must clearly tell the model:
-  - This is the moment to update its memory based on everything that happened this turn.
-  - The **entirety** of its response will be saved verbatim to its `MEMORY.md` file.
-  - If the response exceeds the configured character limit, it will be truncated by simply cutting off after the limit and appending the exact string:  
-    `[MEMORY TRUNCATED]`
-- The model must figure out on its own whether to delete old content, condense, restructure, etc. (no explicit instructions on pruning).
-
-Exact wording of the final update prompt will be finalized with the PM, but it must include:
-- “Output your complete updated MEMORY.md. The entire response you give will become the new file content (then truncated if too long).”
-- “Start directly with the markdown header if you wish, or any format you prefer — there is no required structure.”
-
-### Truncation (simple & transparent)
-In `config.yaml` (and `GameConfig`):
-```yaml
-llm:
-  memory:
-    max_characters: 12000   # 0 or null = unlimited
-```
-- Before saving a memory:
-  - Log entire repsponse to DEBUG
-  - If longer than limit → `content = content[:max_characters] + "\n[MEMORY TRUNCATED]"`
-	- Log INFO that memory was saved and/or truncated.
-- Truncation happens at save, not injection
-
-### Creation & Robustness
-- New games (`create_game.py`): create `memories/` + one templated file per LLM player.
-- Any game load (old or new): if a required `*_MEMORY.md` is missing or empty → silently create it with the template.  
-  (This prevents crashes even if someone manually deletes a file; no full migration command needed since you own all current games.)
-- Humans: no file created, no update call.
-
-### Error Handling (minimal)
-- If the final update call returns < 50 characters → keep the old memory unchanged and log a warning (do not crash turn).
-- All other responses (even garbage, non-markdown, etc.) are accepted verbatim — LLMs own their memory quality.
+### Task 3: LLMJudge Caching
+`LLMJudge` currently rebuilds its full message list from scratch on each of
+its four per-turn calls (`get_veto`, `assess_scores`, `maintain_state`,
+`update_memory`), re-sending the ruleset many times. Fixing this properly
+requires refactoring `LLMJudge` to maintain stateful per-turn context.
 
 
 ## Future Work
@@ -157,9 +62,6 @@ This is the long-term backlog and TODO scratchpad.
 * **Improve `LLMPlayer`:**
   * Implement advanced token-saving strategies, especially investigate best use of context caching
   * Implement async behavior (per model provider?)
-  * Add a "notepad" feature (e.g., a simple file) for LLMs to save plans and opinions of other players between turns.
-    * For prompt examples, do we use current-game responses instead of static personality file values on turn 2+?
-    * Recommended notepad sections: 1 per other player, long term strategy, rules to watch, more?
   * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
   * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
   * Explore https://openrouter.ai/ support for tokens/models
