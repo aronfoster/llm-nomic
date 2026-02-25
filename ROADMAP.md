@@ -15,7 +15,12 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-- None
+- Player context for creating memories does not include judge outputs but it should
+- Need to add INFO log before starting the request for creating a memory
+  - Example: 🤖 Max (Machiavellian / grok-4-1-fast-non-reasoning) is remembering...
+- Players tend to modify Rule 203 to switch to majority after the first complete circuit (instead of second)
+  - Might just turn this into a flag since it's so common.
+  - What if we modified the judge memory prompt to tell it to remind itself about future game state changes?
 
 ### Low Priority
 
@@ -134,6 +139,7 @@ This is the long-term backlog and TODO scratchpad.
 * **Rate Limiting & Cost Tracking:**
   * Each turn can generate 20+ API calls when retries are involved (propose + discuss × N + revise + vote × N + judge veto + judge score + judge maintain_state, each with up to 2 retries).
   * Add per-turn and per-game token/cost tracking. Log token counts from API responses. Consider adding configurable per-turn cost limits.
+    * Would need to hard code cost/million tokens. Maybe prompt to update during game creation? Harcode defaults and put optional custom values per game?
   
 * **Game State & Rules:**
   * Enhanced Voting Architecture
