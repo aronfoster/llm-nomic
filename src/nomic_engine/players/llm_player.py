@@ -6,7 +6,6 @@ eventually use language models to participate in the game.
 """
 
 import logging
-from typing import Literal
 
 from ..data_models import (
     ChatMessage,
@@ -171,10 +170,10 @@ class LLMPlayer(BasePlayer):
                     move_number=game_state.move_number,
                     type=ProposalType(data["type"]),  # Convert str to enum
                     proposal_id=None,
-                    target_rule_id=data.get("target_rule_id"),
-                    new_text=data.get("new_text"),
-                    rationale=data.get("rationale"),
-                    private_thoughts=data.get("private_thoughts"),
+                    target_rule_id=data["target_rule_id"],
+                    new_text=data["new_text"],
+                    rationale=data["rationale"],
+                    private_thoughts=data["private_thoughts"],
                 )
 
             except ValueError as e:
@@ -302,7 +301,7 @@ class LLMPlayer(BasePlayer):
                 return Discussion(
                     player_name=self.player_name,
                     text=data["discussion_text"],
-                    private_thoughts=data.get("private_thoughts"),
+                    private_thoughts=data["private_thoughts"],
                 )
 
             except ValueError as e:
@@ -412,11 +411,9 @@ class LLMPlayer(BasePlayer):
                     ChatMessage(role="assistant", content=response_text)
                 )
 
-                # Cast vote to Literal type (parser guarantees it's valid)
-                vote_value: Literal["YES", "NO", "ABSTAIN"] = data["vote"]  # type: ignore[assignment]
                 return Vote(
                     player_name=self.player_name,
-                    vote=vote_value,
+                    vote=data["vote"],
                     reason=data["public_reason"],
                     private_thoughts=data["private_thoughts"],
                 )
@@ -578,18 +575,19 @@ class LLMPlayer(BasePlayer):
                 if action == "KEEP":
                     # Create a copy to update private_thoughts
                     kept_proposal = proposal.model_copy()
-                    thoughts = data.get("private_thoughts")
-                    kept_proposal.private_thoughts = thoughts
+                    kept_proposal.private_thoughts = data["private_thoughts"]
                     return kept_proposal
 
                 # action == "MODIFY"
                 # Create a copy and update with new values if provided
                 new_proposal = proposal.model_copy()
-                if data.get("new_text"):
-                    new_proposal.new_text = data["new_text"]
-                if data.get("rationale"):
-                    new_proposal.rationale = data["rationale"]
-                new_proposal.private_thoughts = data.get("private_thoughts")
+                new_text = data["new_text"]
+                if new_text:
+                    new_proposal.new_text = new_text
+                rationale = data["rationale"]
+                if rationale:
+                    new_proposal.rationale = rationale
+                new_proposal.private_thoughts = data["private_thoughts"]
                 return new_proposal
 
             except ValueError as e:

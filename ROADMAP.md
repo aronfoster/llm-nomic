@@ -43,9 +43,9 @@ Bundle the three trivial low-priority bugs/features that don't deserve individua
 - The update process is documented in the README (see "Updating Dependencies" section).
 - `make ci` passes against the pinned versions.
 
-**Task 3: Parser return type hardening**
+**Task 3: Parser return type hardening** ✅ Done:
 
-Replace the `dict[str, str | None]` return types in `parsers.py` with proper `TypedDict`s or dataclasses — one per response shape (`ProposalResponseData`, `VoteResponseData`, etc.). The current types lie (they include booleans and ints), which silences mypy errors that should be caught. Update callers and add regression tests for the new shapes.
+Replace the `dict[str, str | None]` return types in `parsers.py` with proper `TypedDict`s — one per response shape. Defined `VoteResponse`, `DiscussionResponse`, `ProposalResponse`, `RevisionResponse`, `ParseJudgeVetoResponse`, `ParseJudgeScoreResponse`, and `MaintainStateResponse` in `parsers.py`. Updated all parser return annotations and callers in `llm_player.py` and `llm_judge.py`; removed `cast()` calls and `# type: ignore` comments. `make ci` passes with strict mypy.
 
 
 ## Future Work

@@ -7,9 +7,68 @@ particularly for the vote action which requires strict JSON format.
 
 import json
 import logging
-from typing import Any
+from typing import Any, Literal, TypedDict
+
+from ..judge_contracts import ScoreAdjustment
 
 logger = logging.getLogger(__name__)
+
+
+class VoteResponse(TypedDict):
+    """Return type for parse_vote_response."""
+
+    private_thoughts: str
+    public_reason: str
+    vote: Literal["YES", "NO", "ABSTAIN"]
+
+
+class DiscussionResponse(TypedDict):
+    """Return type for parse_discussion_response."""
+
+    private_thoughts: str
+    discussion_text: str
+
+
+class ProposalResponse(TypedDict):
+    """Return type for parse_proposal_response."""
+
+    private_thoughts: str
+    type: Literal["Add", "Amend", "Repeal", "Transmute"]
+    rationale: str
+    target_rule_id: str | None
+    new_text: str | None
+
+
+class RevisionResponse(TypedDict):
+    """Return type for parse_revision_response."""
+
+    private_thoughts: str
+    action: Literal["KEEP", "MODIFY", "WITHDRAW"]
+    new_text: str | None
+    rationale: str | None
+
+
+class ParseJudgeVetoResponse(TypedDict):
+    """Return type for parse_judge_veto_response."""
+
+    private_thoughts: str
+    veto: bool
+    reason: str
+
+
+class ParseJudgeScoreResponse(TypedDict):
+    """Return type for parse_judge_score_response."""
+
+    private_thoughts: str
+    score_adjustments: list[ScoreAdjustment]
+
+
+class MaintainStateResponse(TypedDict):
+    """Return type for parse_judge_maintain_state_response."""
+
+    private_thoughts: str
+    flags: dict[str, Any]
+    target_score: int | None
 
 
 def _extract_json_string(text: str) -> str:
@@ -36,7 +95,7 @@ def _extract_json_string(text: str) -> str:
     return text
 
 
-def parse_vote_response(response_text: str) -> dict[str, str]:
+def parse_vote_response(response_text: str) -> VoteResponse:
     """
     Parse and validate a vote response from an LLM.
 
@@ -51,7 +110,8 @@ def parse_vote_response(response_text: str) -> dict[str, str]:
         response_text: The raw text response from the LLM.
 
     Returns:
-        A validated dictionary with keys: vote, public_reason, private_thoughts
+        A validated VoteResponse with keys: vote, public_reason,
+        private_thoughts
 
     Raises:
         ValueError: If the response is not valid JSON, missing required keys,
@@ -96,15 +156,18 @@ def parse_vote_response(response_text: str) -> dict[str, str]:
 
     # Normalize to uppercase for validation
     vote_normalized = vote_value.upper()
-    valid_votes = ["YES", "NO", "ABSTAIN"]
-    if vote_normalized not in valid_votes:
+    vote_lit_map: dict[str, Literal["YES", "NO", "ABSTAIN"]] = {
+        "YES": "YES",
+        "NO": "NO",
+        "ABSTAIN": "ABSTAIN",
+    }
+    if vote_normalized not in vote_lit_map:
         raise ValueError(
             f"Invalid vote value: '{vote_value}'. "
-            f"Must be one of: {', '.join(valid_votes)} (case-insensitive)."
+            f"Must be one of: {', '.join(vote_lit_map)} (case-insensitive)."
         )
 
-    # Update the vote to normalized uppercase
-    data["vote"] = vote_normalized
+    vote_lit = vote_lit_map[vote_normalized]
 
     # Step 6: Validate that public_reason and private_thoughts are strings
     if not isinstance(data["public_reason"], str):
@@ -119,10 +182,16 @@ def parse_vote_response(response_text: str) -> dict[str, str]:
             f"got {type(data['private_thoughts']).__name__}."
         )
 
-    return data
+    private_thoughts: str = data["private_thoughts"]
+    public_reason: str = data["public_reason"]
+    return VoteResponse(
+        private_thoughts=private_thoughts,
+        public_reason=public_reason,
+        vote=vote_lit,
+    )
 
 
-def parse_discussion_response(response_text: str) -> dict[str, str]:
+def parse_discussion_response(response_text: str) -> DiscussionResponse:
     """
     Parse and validate a discussion response from an LLM.
 
@@ -136,7 +205,8 @@ def parse_discussion_response(response_text: str) -> dict[str, str]:
         response_text: The raw text response from the LLM.
 
     Returns:
-        A validated dictionary with keys: private_thoughts, discussion_text
+        A validated DiscussionResponse with keys: private_thoughts,
+        discussion_text
 
     Raises:
         ValueError: If the response is not valid JSON, missing required keys,
@@ -185,10 +255,15 @@ def parse_discussion_response(response_text: str) -> dict[str, str]:
             f"got {type(data['discussion_text']).__name__}."
         )
 
-    return data
+    private_thoughts: str = data["private_thoughts"]
+    discussion_text: str = data["discussion_text"]
+    return DiscussionResponse(
+        private_thoughts=private_thoughts,
+        discussion_text=discussion_text,
+    )
 
 
-def parse_proposal_response(response_text: str) -> dict[str, str | None]:
+def parse_proposal_response(response_text: str) -> ProposalResponse:
     """
     Parse and validate a proposal response from an LLM.
 
@@ -205,7 +280,7 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
         response_text: The raw text response from the LLM.
 
     Returns:
-        A validated dictionary with keys: private_thoughts, type,
+        A validated ProposalResponse with keys: private_thoughts, type,
         target_rule_id, new_text, rationale
 
     Raises:
@@ -254,7 +329,7 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
     # Normalize to capitalized format matching ProposalType enum values
     proposal_type_upper = proposal_type.upper()
     # Map from uppercase to ProposalType enum values
-    type_map = {
+    type_map: dict[str, Literal["Add", "Amend", "Repeal", "Transmute"]] = {
         "ADD": "Add",
         "AMEND": "Amend",
         "REPEAL": "Repeal",
@@ -267,8 +342,7 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
             f"Must be one of: {valid} (case-insensitive)."
         )
 
-    # Update the type to match ProposalType enum value
-    data["type"] = type_map[proposal_type_upper]
+    type_lit = type_map[proposal_type_upper]
 
     # Step 6: Validate that private_thoughts and rationale are strings
     if not isinstance(data["private_thoughts"], str):
@@ -357,10 +431,22 @@ def parse_proposal_response(response_text: str) -> dict[str, str | None]:
                 "Set new_text to null for TRANSMUTE proposals."
             )
 
-    return data
+    private_thoughts_p: str = data["private_thoughts"]
+    rationale: str = data["rationale"]
+    target_rule_id_val: str | None = target_rule_id
+    new_text_val: str | None = new_text
+    return ProposalResponse(
+        private_thoughts=private_thoughts_p,
+        type=type_lit,
+        rationale=rationale,
+        target_rule_id=target_rule_id_val,
+        new_text=new_text_val,
+    )
 
 
-def parse_judge_veto_response(response_text: str) -> dict[str, str | bool]:
+def parse_judge_veto_response(
+    response_text: str,
+) -> ParseJudgeVetoResponse:
     """Parse and validate a veto decision from the Judge LLM."""
 
     cleaned_text = _extract_json_string(response_text)
@@ -397,13 +483,20 @@ def parse_judge_veto_response(response_text: str) -> dict[str, str | bool]:
     if not isinstance(veto_value, bool):
         raise ValueError("veto must be a boolean (true or false).")
 
-    return data
+    private_thoughts: str = data["private_thoughts"]
+    reason: str = data["reason"]
+    veto: bool = veto_value
+    return ParseJudgeVetoResponse(
+        private_thoughts=private_thoughts,
+        veto=veto,
+        reason=reason,
+    )
 
 
 def parse_judge_score_response(
     response_text: str,
     valid_players: list[str],
-) -> dict[str, Any]:
+) -> ParseJudgeScoreResponse:
     """Parse and validate score adjustments from the Judge LLM."""
 
     cleaned_text = _extract_json_string(response_text)
@@ -437,6 +530,7 @@ def parse_judge_score_response(
     if not isinstance(adjustments, list):
         raise ValueError("score_adjustments must be a list.")
 
+    typed_adjustments: list[ScoreAdjustment] = []
     for idx, adj in enumerate(adjustments):
         if not isinstance(adj, dict):
             raise ValueError(
@@ -468,10 +562,21 @@ def parse_judge_score_response(
         if not isinstance(adj["reason"], str):
             raise ValueError(f"Adjustment #{idx + 1} reason must be a string.")
 
-    return data
+        player: str = adj["player"]
+        delta: int = adj["delta"]
+        adj_reason: str = adj["reason"]
+        typed_adjustments.append(
+            ScoreAdjustment(player=player, delta=delta, reason=adj_reason)
+        )
+
+    private_thoughts_s: str = data["private_thoughts"]
+    return ParseJudgeScoreResponse(
+        private_thoughts=private_thoughts_s,
+        score_adjustments=typed_adjustments,
+    )
 
 
-def parse_revision_response(response_text: str) -> dict[str, str | None]:
+def parse_revision_response(response_text: str) -> RevisionResponse:
     """
     Parse and validate a revision response from an LLM.
 
@@ -487,7 +592,7 @@ def parse_revision_response(response_text: str) -> dict[str, str | None]:
         response_text: The raw text response from the LLM.
 
     Returns:
-        A validated dictionary with keys: private_thoughts, action,
+        A validated RevisionResponse with keys: private_thoughts, action,
         new_text, rationale
 
     Raises:
@@ -535,15 +640,18 @@ def parse_revision_response(response_text: str) -> dict[str, str | None]:
 
     # Normalize to uppercase for validation
     action_normalized = action_value.upper()
-    valid_actions = ["KEEP", "MODIFY", "WITHDRAW"]
-    if action_normalized not in valid_actions:
+    action_lit_map: dict[str, Literal["KEEP", "MODIFY", "WITHDRAW"]] = {
+        "KEEP": "KEEP",
+        "MODIFY": "MODIFY",
+        "WITHDRAW": "WITHDRAW",
+    }
+    if action_normalized not in action_lit_map:
         raise ValueError(
             f"Invalid action value: '{action_value}'. "
-            f"Must be one of: {', '.join(valid_actions)} (case-insensitive)."
+            f"Must be one of: {', '.join(action_lit_map)} (case-insensitive)."
         )
 
-    # Update the action to normalized uppercase
-    data["action"] = action_normalized
+    action_lit = action_lit_map[action_normalized]
 
     # Step 6: Validate that private_thoughts is a string
     if not isinstance(data["private_thoughts"], str):
@@ -578,10 +686,20 @@ def parse_revision_response(response_text: str) -> dict[str, str | None]:
                 "unchanged, use 'KEEP' instead."
             )
 
-    return data
+    private_thoughts_r: str = data["private_thoughts"]
+    new_text_r: str | None = new_text
+    rationale_r: str | None = rationale
+    return RevisionResponse(
+        private_thoughts=private_thoughts_r,
+        action=action_lit,
+        new_text=new_text_r,
+        rationale=rationale_r,
+    )
 
 
-def parse_judge_maintain_state_response(response_text: str) -> dict[str, Any]:
+def parse_judge_maintain_state_response(
+    response_text: str,
+) -> MaintainStateResponse:
     """
     Parse and validate a maintain_state response from the Judge LLM.
 
@@ -596,7 +714,8 @@ def parse_judge_maintain_state_response(response_text: str) -> dict[str, Any]:
         response_text: The raw text response from the LLM.
 
     Returns:
-        A validated dictionary with keys: private_thoughts, flags, target_score
+        A validated MaintainStateResponse with keys: private_thoughts,
+        flags, target_score
 
     Raises:
         ValueError: If the response is not valid JSON, missing required
@@ -667,4 +786,11 @@ def parse_judge_maintain_state_response(response_text: str) -> dict[str, Any]:
     # This will validate flag names and values against the schema
     validate_state_updates(state_updates)
 
-    return data
+    private_thoughts_m: str = data["private_thoughts"]
+    flags_m: dict[str, Any] = flags
+    target_score_m: int | None = target_score
+    return MaintainStateResponse(
+        private_thoughts=private_thoughts_m,
+        flags=flags_m,
+        target_score=target_score_m,
+    )

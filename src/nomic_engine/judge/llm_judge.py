@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from ..data_models import ChatMessage, EngineTuningConfig, ModelDefinition
 from ..judge_contracts import (
@@ -139,14 +139,10 @@ class LLMJudge(BaseJudge):
                     "VETO" if data["veto"] else "ALLOW",
                     data["reason"],
                 )
-                reason = cast(str | None, data.get("reason"))
-                private_thoughts = cast(
-                    str | None, data.get("private_thoughts")
-                )
                 return {
-                    "veto": bool(data["veto"]),
-                    "reason": reason,
-                    "private_thoughts": private_thoughts,
+                    "veto": data["veto"],
+                    "reason": data["reason"],
+                    "private_thoughts": data["private_thoughts"],
                 }
 
             except ValueError as e:
@@ -252,13 +248,13 @@ class LLMJudge(BaseJudge):
                 )
 
                 # Success! Return intended score adjustments (no mutation)
-                adjustments = data.get("score_adjustments", [])
+                adjustments = data["score_adjustments"]
                 if not adjustments:
                     logger.info(
                         "LLM Judge proposed no score changes this turn."
                     )
                     return {
-                        "private_thoughts": data.get("private_thoughts"),
+                        "private_thoughts": data["private_thoughts"],
                         "score_adjustments": [],
                     }
 
@@ -270,7 +266,7 @@ class LLMJudge(BaseJudge):
                         adj["reason"],
                     )
                 return {
-                    "private_thoughts": data.get("private_thoughts"),
+                    "private_thoughts": data["private_thoughts"],
                     "score_adjustments": adjustments,
                 }
 
@@ -374,10 +370,11 @@ class LLMJudge(BaseJudge):
 
                 # Success! Build StateUpdates from parsed data
                 state_updates: StateUpdates = {}
-                if data.get("flags"):
+                if data["flags"]:
                     state_updates["flags"] = data["flags"]
-                if data.get("target_score") is not None:
-                    state_updates["target_score"] = data["target_score"]
+                target_score_val = data["target_score"]
+                if target_score_val is not None:
+                    state_updates["target_score"] = target_score_val
 
                 if state_updates:
                     logger.info(
