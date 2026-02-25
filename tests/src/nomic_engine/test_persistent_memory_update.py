@@ -322,7 +322,7 @@ class TestLLMPlayerUpdateMemory:
         model_config: ModelDefinition,
         mock_memory_manager: Mock,
     ):
-        """Appends MEMORY_UPDATE_PROMPT to turn_history before calling API."""
+        """With a character limit, prompt includes the limit number."""
         player = _make_llm_player(
             model_config, memory_manager=mock_memory_manager
         )
@@ -351,6 +351,22 @@ class TestLLMPlayerUpdateMemory:
         appended = player.turn_history[-1]
         assert appended.role == "user"
         assert str(mock_memory_manager.max_characters) in appended.content
+
+    def test_update_prompt_omits_limit_when_no_max_characters(
+        self,
+        model_config: ModelDefinition,
+    ):
+        """Without a character limit, prompt has no truncation clause."""
+        mm = Mock()
+        mm.max_characters = 0
+        player = _make_llm_player(model_config, memory_manager=mm)
+        player.api_client.get_completion.return_value = "A" * 100
+
+        player.update_memory()
+
+        last_msg = player.turn_history[-1]
+        assert "character limit" not in last_msg.content.lower()
+        assert "truncated" not in last_msg.content.lower()
 
     def test_appended_message_contains_memory_update_prompt_text(
         self,
@@ -649,6 +665,25 @@ class TestLLMJudgeUpdateMemory:
         assert messages[2] is r2
         assert messages[3] is r3
         assert messages[4].role == "user"
+
+    def test_update_prompt_omits_limit_when_no_max_characters(self):
+        """Without a character limit, prompt has no truncation clause."""
+        mm = Mock()
+        mm.max_characters = 0
+        judge = _make_llm_judge(memory_manager=mm)
+        judge._judge_turn_responses = [
+            ChatMessage(role="assistant", content="Turn reasoning.")
+        ]
+        judge.api_client.get_completion.return_value = "J" * 100
+
+        judge.update_memory()
+
+        messages: list[ChatMessage] = (
+            judge.api_client.get_completion.call_args[0][0]
+        )
+        update_msg = messages[-1]
+        assert "character limit" not in update_msg.content.lower()
+        assert "truncated" not in update_msg.content.lower()
 
 
 # =====================================================================

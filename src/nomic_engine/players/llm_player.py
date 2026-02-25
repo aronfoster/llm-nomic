@@ -651,9 +651,12 @@ class LLMPlayer(BasePlayer):
             return
 
         character_limit = self.memory_manager.max_characters or 0
-        update_prompt = prompts.MEMORY_UPDATE_PROMPT.format(
-            character_limit=character_limit
-        )
+        if character_limit:
+            update_prompt = prompts.MEMORY_UPDATE_PROMPT_WITH_LIMIT.format(
+                character_limit=character_limit
+            )
+        else:
+            update_prompt = prompts.MEMORY_UPDATE_PROMPT
         self.turn_history.append(
             ChatMessage(role="user", content=update_prompt)
         )

@@ -483,9 +483,12 @@ class LLMJudge(BaseJudge):
             return
 
         character_limit = self.memory_manager.max_characters or 0
-        update_prompt = llm_prompts.MEMORY_UPDATE_PROMPT.format(
-            character_limit=character_limit
-        )
+        if character_limit:
+            update_prompt = llm_prompts.MEMORY_UPDATE_PROMPT_WITH_LIMIT.format(
+                character_limit=character_limit
+            )
+        else:
+            update_prompt = llm_prompts.MEMORY_UPDATE_PROMPT
         system_message = ChatMessage(
             role="system", content=llm_prompts.JUDGE_SYSTEM_PROMPT
         )
