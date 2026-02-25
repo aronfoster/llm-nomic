@@ -14,7 +14,11 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from .judge_contracts import JudgeScoreResponse, JudgeVetoResponse
+from .judge_contracts import (
+    JudgeScoreResponse,
+    JudgeVetoResponse,
+    StateUpdates,
+)
 
 # --- Enums ---
 
@@ -370,7 +374,7 @@ class JudgeDecisions(BaseModel):
     """
     Consolidates all interpretive data from the Judge.
 
-    This includes veto decisions and score assessments,
+    This includes veto decisions, score assessments, and state updates,
     returned by _get_judge_decisions.
     """
 
@@ -386,4 +390,11 @@ class JudgeDecisions(BaseModel):
     )
     judge_approved: bool = Field(
         ..., description="Whether the judge approved (not vetoed)"
+    )
+    state_updates: StateUpdates = Field(
+        ...,
+        description=(
+            "Engine state changes from maintain_state. Empty dict when "
+            "proposal failed, was vetoed, or was a TRANSMUTE."
+        ),
     )

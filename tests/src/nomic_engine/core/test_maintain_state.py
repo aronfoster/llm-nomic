@@ -2,10 +2,11 @@
 Integration tests for judge maintain_state functionality in GameLoop.
 
 Tests that:
-- maintain_state is called after judge approval, before applying proposal
+- maintain_state is called from _get_judge_decisions after judge approval
 - maintain_state is NOT called for TRANSMUTE proposals
-- StateUpdates are correctly applied to game_state
-- Both HumanJudge and LLMJudge implementations work correctly
+- maintain_state is NOT called when judge_approved is False
+- state_updates in JudgeDecisions reflects maintain_state return value
+- StateUpdates are correctly applied to game_state by _apply_turn_mutations
 """
 
 from unittest.mock import Mock
@@ -118,7 +119,7 @@ def mock_judge() -> Mock:
 
 
 class TestMaintainStateIntegration:
-    """Test maintain_state integration with GameLoop._apply_turn_mutations."""
+    """Test maintain_state integration with GameLoop._get_judge_decisions."""
 
     def test_maintain_state_called_for_add_proposal(
         self, mock_game_manager: Mock, mock_judge: Mock
@@ -145,18 +146,9 @@ class TestMaintainStateIntegration:
             passed=True,
             vote_mode="unanimous",
         )
-        judge_decisions = JudgeDecisions(
-            judge_approved=True,
-            veto_response={
-                "veto": False,
-                "reason": None,
-                "private_thoughts": None,
-            },
-            score_response={"private_thoughts": None, "score_adjustments": []},
-        )
 
-        game_loop._apply_turn_mutations(
-            proposal, votes, discussions, vote_result, judge_decisions
+        game_loop._get_judge_decisions(
+            proposal, votes, discussions, vote_result
         )
 
         # Verify maintain_state was called
@@ -193,18 +185,9 @@ class TestMaintainStateIntegration:
             passed=True,
             vote_mode="unanimous",
         )
-        judge_decisions = JudgeDecisions(
-            judge_approved=True,
-            veto_response={
-                "veto": False,
-                "reason": None,
-                "private_thoughts": None,
-            },
-            score_response={"private_thoughts": None, "score_adjustments": []},
-        )
 
-        game_loop._apply_turn_mutations(
-            proposal, votes, discussions, vote_result, judge_decisions
+        game_loop._get_judge_decisions(
+            proposal, votes, discussions, vote_result
         )
 
         # Verify maintain_state was called with both texts
@@ -248,18 +231,9 @@ class TestMaintainStateIntegration:
             passed=True,
             vote_mode="unanimous",
         )
-        judge_decisions = JudgeDecisions(
-            judge_approved=True,
-            veto_response={
-                "veto": False,
-                "reason": None,
-                "private_thoughts": None,
-            },
-            score_response={"private_thoughts": None, "score_adjustments": []},
-        )
 
-        game_loop._apply_turn_mutations(
-            proposal, votes, discussions, vote_result, judge_decisions
+        game_loop._get_judge_decisions(
+            proposal, votes, discussions, vote_result
         )
 
         # Verify maintain_state was called with original text only
@@ -297,22 +271,15 @@ class TestMaintainStateIntegration:
             passed=True,
             vote_mode="unanimous",
         )
-        judge_decisions = JudgeDecisions(
-            judge_approved=True,
-            veto_response={
-                "veto": False,
-                "reason": None,
-                "private_thoughts": None,
-            },
-            score_response={"private_thoughts": None, "score_adjustments": []},
-        )
 
-        game_loop._apply_turn_mutations(
-            proposal, votes, discussions, vote_result, judge_decisions
+        decisions = game_loop._get_judge_decisions(
+            proposal, votes, discussions, vote_result
         )
 
         # Verify maintain_state was NOT called
         mock_judge.maintain_state.assert_not_called()
+        # TRANSMUTE approved proposals have empty state_updates
+        assert decisions.state_updates == {}
 
     def test_maintain_state_not_called_when_proposal_fails(
         self, mock_game_manager: Mock, mock_judge: Mock
@@ -339,33 +306,98 @@ class TestMaintainStateIntegration:
             passed=False,
             vote_mode="unanimous",
         )
-        judge_decisions = JudgeDecisions(
-            judge_approved=False,  # Not approved
-            veto_response={
-                "veto": True,
-                "reason": "Vetoed",
-                "private_thoughts": None,
-            },
-            score_response={"private_thoughts": None, "score_adjustments": []},
-        )
 
-        game_loop._apply_turn_mutations(
-            proposal, votes, discussions, vote_result, judge_decisions
+        decisions = game_loop._get_judge_decisions(
+            proposal, votes, discussions, vote_result
         )
 
         # Verify maintain_state was NOT called
         mock_judge.maintain_state.assert_not_called()
+        # Failed proposal has empty state_updates
+        assert decisions.state_updates == {}
+
+    def test_judge_not_approved_state_updates_empty_maintain_state_not_called(
+        self, mock_game_manager: Mock, mock_judge: Mock
+    ) -> None:
+        """
+        When judge_approved is False, state_updates is {} and
+        maintain_state is not called.
+        """
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
+
+        proposal = Proposal(
+            proposer_name="Alice",
+            move_number=1,
+            type=ProposalType.ADD,
+            proposal_id="301",
+            new_text="New rule text.",
+            rationale="Adding a new rule.",
+        )
+
+        votes = [Vote(player_name="Alice", vote="NO", reason="Bad idea.")]
+        discussions: list[Discussion] = []
+        # Proposal fails vote → judge_approved will be False
+        vote_result = VoteResult(
+            yes_count=0,
+            no_count=1,
+            abstain_count=0,
+            total_voters=1,
+            passed=False,
+            vote_mode="unanimous",
+        )
+
+        decisions = game_loop._get_judge_decisions(
+            proposal, votes, discussions, vote_result
+        )
+
+        assert decisions.judge_approved is False
+        assert decisions.state_updates == {}
+        mock_judge.maintain_state.assert_not_called()
+
+    def test_judge_approved_true_state_updates_reflects_maintain_state(
+        self, mock_game_manager: Mock, mock_judge: Mock
+    ) -> None:
+        """
+        When judge_approved is True, state_updates reflects what
+        maintain_state returned.
+        """
+        mock_judge.maintain_state.return_value = {
+            "flags": {"vote_mode": "majority"}
+        }
+        game_loop = GameLoop(mock_game_manager, [], mock_judge)
+
+        proposal = Proposal(
+            proposer_name="Alice",
+            move_number=1,
+            type=ProposalType.ADD,
+            proposal_id="301",
+            new_text="Voting requires majority approval.",
+            rationale="Changing voting rules.",
+        )
+
+        votes = [Vote(player_name="Alice", vote="YES", reason="Good idea.")]
+        discussions: list[Discussion] = []
+        vote_result = VoteResult(
+            yes_count=1,
+            no_count=0,
+            abstain_count=0,
+            total_voters=1,
+            passed=True,
+            vote_mode="unanimous",
+        )
+
+        decisions = game_loop._get_judge_decisions(
+            proposal, votes, discussions, vote_result
+        )
+
+        assert decisions.judge_approved is True
+        assert decisions.state_updates == {"flags": {"vote_mode": "majority"}}
 
     def test_state_updates_applied_flags_only(
         self, mock_game_manager: Mock, mock_judge: Mock
     ) -> None:
         """StateUpdates with flags are correctly applied to game_state."""
         game_loop = GameLoop(mock_game_manager, [], mock_judge)
-
-        # Configure judge to return flag updates
-        mock_judge.maintain_state.return_value = {
-            "flags": {"vote_mode": "majority"}
-        }
 
         proposal = Proposal(
             proposer_name="Alice",
@@ -394,6 +426,7 @@ class TestMaintainStateIntegration:
                 "private_thoughts": None,
             },
             score_response={"private_thoughts": None, "score_adjustments": []},
+            state_updates={"flags": {"vote_mode": "majority"}},
         )
 
         game_loop._apply_turn_mutations(
@@ -411,9 +444,6 @@ class TestMaintainStateIntegration:
         game_state.
         """
         game_loop = GameLoop(mock_game_manager, [], mock_judge)
-
-        # Configure judge to return target_score update
-        mock_judge.maintain_state.return_value = {"target_score": 100}
 
         proposal = Proposal(
             proposer_name="Alice",
@@ -442,6 +472,7 @@ class TestMaintainStateIntegration:
                 "private_thoughts": None,
             },
             score_response={"private_thoughts": None, "score_adjustments": []},
+            state_updates={"target_score": 100},
         )
 
         game_loop._apply_turn_mutations(
@@ -456,12 +487,6 @@ class TestMaintainStateIntegration:
     ) -> None:
         """StateUpdates with both flags and target_score are applied."""
         game_loop = GameLoop(mock_game_manager, [], mock_judge)
-
-        # Configure judge to return both updates
-        mock_judge.maintain_state.return_value = {
-            "flags": {"vote_mode": "majority"},
-            "target_score": 50,
-        }
 
         proposal = Proposal(
             proposer_name="Alice",
@@ -490,6 +515,10 @@ class TestMaintainStateIntegration:
                 "private_thoughts": None,
             },
             score_response={"private_thoughts": None, "score_adjustments": []},
+            state_updates={
+                "flags": {"vote_mode": "majority"},
+                "target_score": 50,
+            },
         )
 
         game_loop._apply_turn_mutations(
@@ -505,9 +534,6 @@ class TestMaintainStateIntegration:
     ) -> None:
         """Empty StateUpdates result in no changes to game_state."""
         game_loop = GameLoop(mock_game_manager, [], mock_judge)
-
-        # Configure judge to return empty updates
-        mock_judge.maintain_state.return_value = {}
 
         original_flags = dict(mock_game_manager.game_state.flags)
         original_target_score = mock_game_manager.game_state.target_score
@@ -539,6 +565,7 @@ class TestMaintainStateIntegration:
                 "private_thoughts": None,
             },
             score_response={"private_thoughts": None, "score_adjustments": []},
+            state_updates={},
         )
 
         game_loop._apply_turn_mutations(

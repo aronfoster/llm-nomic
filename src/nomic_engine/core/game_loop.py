@@ -784,10 +784,61 @@ class GameLoop:
         # Calculate approval status
         judge_approved = vote_result.passed and not judge_vetoed
 
+        # Call maintain_state only when judge approved a non-TRANSMUTE proposal
+        if judge_approved and proposal.type != ProposalType.TRANSMUTE:
+            assert self.game_manager.rules_manager is not None
+            logger.debug(
+                "Calling maintain_state for proposal %s",
+                proposal.proposal_id,
+            )
+
+            # Determine original and new rule text based on proposal type
+            original_rule_text = None
+            new_rule_text = None
+
+            if proposal.type == ProposalType.ADD:
+                # ADD: no original text, new text from proposal
+                new_rule_text = proposal.new_text
+            elif proposal.type == ProposalType.AMEND:
+                # AMEND: both texts present
+                if proposal.target_rule_id:
+                    target_rule = (
+                        self.game_manager.rules_manager._find_rule_by_id(
+                            proposal.target_rule_id
+                        )
+                    )
+                    if target_rule:
+                        original_rule_text = target_rule.text
+                new_rule_text = proposal.new_text
+            elif proposal.type == ProposalType.REPEAL:
+                # REPEAL: original text only
+                if proposal.target_rule_id:
+                    target_rule = (
+                        self.game_manager.rules_manager._find_rule_by_id(
+                            proposal.target_rule_id
+                        )
+                    )
+                    if target_rule:
+                        original_rule_text = target_rule.text
+
+            state_updates = self.judge.maintain_state(
+                game_manager=self.game_manager,
+                proposal=proposal,
+                original_rule_text=original_rule_text,
+                new_rule_text=new_rule_text,
+            )
+            logger.debug(
+                "maintain_state returned %d key(s)", len(state_updates)
+            )
+        else:
+            # Proposal failed, was vetoed, or is a TRANSMUTE — no state updates
+            state_updates = {}
+
         decisions = JudgeDecisions(
             veto_response=veto_response,
             score_response=score_response,
             judge_approved=judge_approved,
+            state_updates=state_updates,
         )
 
         logger.debug(
@@ -851,102 +902,39 @@ class GameLoop:
                 reason,
             )
 
-        # Track state updates for transcript logging (REQ-3)
-        # None means maintain_state was not called (proposal failed or vetoed)
-        state_updates_for_log: StateUpdates | None = None
-
         # Apply proposal if passed and approved
         if judge_decisions.judge_approved:
-            # Maintain state before applying proposal (skip for TRANSMUTE)
-            from ..data_models import ProposalType
+            state_updates = judge_decisions.state_updates
 
-            if proposal.type != ProposalType.TRANSMUTE:
-                logger.debug(
-                    "Calling maintain_state for proposal %s",
-                    proposal.proposal_id,
-                )
-
-                # Determine original and new rule text based on proposal type
-                original_rule_text = None
-                new_rule_text = None
-
-                if proposal.type == ProposalType.ADD:
-                    # ADD: no original text, new text from proposal
-                    new_rule_text = proposal.new_text
-                elif proposal.type == ProposalType.AMEND:
-                    # AMEND: both texts present
-                    if proposal.target_rule_id:
-                        target_rule = (
-                            self.game_manager.rules_manager._find_rule_by_id(
-                                proposal.target_rule_id
-                            )
+            # Apply state updates if any (only if values changed)
+            if state_updates:
+                if "flags" in state_updates:
+                    for flag_name, flag_value in state_updates[
+                        "flags"
+                    ].items():
+                        current_value = self.game_manager.game_state.flags.get(
+                            flag_name
                         )
-                        if target_rule:
-                            original_rule_text = target_rule.text
-                    new_rule_text = proposal.new_text
-                elif proposal.type == ProposalType.REPEAL:
-                    # REPEAL: original text only
-                    if proposal.target_rule_id:
-                        target_rule = (
-                            self.game_manager.rules_manager._find_rule_by_id(
-                                proposal.target_rule_id
-                            )
-                        )
-                        if target_rule:
-                            original_rule_text = target_rule.text
-
-                # Call judge's maintain_state method
-                state_updates = self.judge.maintain_state(
-                    game_manager=self.game_manager,
-                    proposal=proposal,
-                    original_rule_text=original_rule_text,
-                    new_rule_text=new_rule_text,
-                )
-                # Capture for transcript logging
-                state_updates_for_log = dict(state_updates)  # type: ignore[assignment]
-
-                # Apply state updates if any (only if values changed)
-                if state_updates:
-                    if "flags" in state_updates:
-                        for flag_name, flag_value in state_updates[
-                            "flags"
-                        ].items():
-                            current_value = (
-                                self.game_manager.game_state.flags.get(
-                                    flag_name
-                                )
-                            )
-                            if current_value != flag_value:
-                                self.game_manager.game_state.flags[
-                                    flag_name
-                                ] = flag_value
-                                logger.info(
-                                    "Updated flag %s from %s to %s",
-                                    flag_name,
-                                    current_value,
-                                    flag_value,
-                                )
-                    if "target_score" in state_updates:
-                        new_score = state_updates["target_score"]
-                        current_score = (
-                            self.game_manager.game_state.target_score
-                        )
-                        if current_score != new_score:
-                            self.game_manager.game_state.target_score = (
-                                new_score
+                        if current_value != flag_value:
+                            self.game_manager.game_state.flags[flag_name] = (
+                                flag_value
                             )
                             logger.info(
-                                "Updated target_score from %s to %s",
-                                current_score,
-                                new_score,
+                                "Updated flag %s from %s to %s",
+                                flag_name,
+                                current_value,
+                                flag_value,
                             )
-            else:
-                logger.debug(
-                    "Skipping maintain_state for TRANSMUTE proposal %s",
-                    proposal.proposal_id,
-                )
-                # TRANSMUTE skips maintain_state; record no changes
-                state_updates_for_log = {}
+                if "target_score" in state_updates:
+                    new_score = state_updates["target_score"]
+                    current_score = self.game_manager.game_state.target_score
+                    if current_score != new_score:
+                        self.game_manager.game_state.target_score = new_score
+                        logger.info(
+                            "Updated target_score from %s to %s",
+                            current_score,
+                            new_score,
+                        )
 
             logger.debug(
                 f"Applying passed proposal {proposal.proposal_id} to rules"
@@ -992,7 +980,7 @@ class GameLoop:
             judge_decisions.judge_approved,
             judge_decisions.veto_response,
             judge_decisions.score_response,
-            state_updates=state_updates_for_log,
+            state_updates=judge_decisions.state_updates,
             original_proposal=original_proposal,
         )
 
