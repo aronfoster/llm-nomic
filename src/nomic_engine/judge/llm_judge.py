@@ -59,6 +59,9 @@ class LLMJudge(BaseJudge):
         self.prompt_builder = prompt_builder or PromptBuilder()
         self.api_client = api_client or create_api_client(model_config)
         self.memory_manager = memory_manager
+        # Accumulates the judge's assistant-role responses during a turn.
+        # Reset each turn by GameLoop._reset_judge_turn_state().
+        self._judge_turn_responses: list[ChatMessage] = []
         logger.info(
             "Initialized LLMJudge with model %s (provider: %s)",
             model_config.api_model_id,
@@ -168,6 +171,9 @@ class LLMJudge(BaseJudge):
                     "LLM Judge veto decision: %s | Reason: %s",
                     "VETO" if data["veto"] else "ALLOW",
                     data["reason"],
+                )
+                self._judge_turn_responses.append(
+                    ChatMessage(role="assistant", content=response_text)
                 )
                 return {
                     "veto": data["veto"],
@@ -279,6 +285,9 @@ class LLMJudge(BaseJudge):
 
                 # Success! Return intended score adjustments (no mutation)
                 adjustments = data["score_adjustments"]
+                self._judge_turn_responses.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
                 if not adjustments:
                     logger.info(
                         "LLM Judge proposed no score changes this turn."
@@ -413,6 +422,9 @@ class LLMJudge(BaseJudge):
                 else:
                     logger.info("LLM Judge recommends no state changes.")
 
+                self._judge_turn_responses.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
                 return state_updates
 
             except ValueError as e:
@@ -451,3 +463,54 @@ class LLMJudge(BaseJudge):
             f"LLM Judge failed to generate a valid maintain_state decision "
             f"after {max_maintain_state_retries} attempts."
         )
+
+    def update_memory(self) -> None:
+        """Update the judge's persistent memory file after a completed turn.
+
+        Builds a minimal message list from the system prompt, the judge's
+        own responses cached during the turn, and the memory update prompt.
+        Calls the API once (no retry) and conditionally writes the response.
+
+        This method is a no-op when ``memory_manager`` is ``None``.
+        """
+        if self.memory_manager is None:
+            return
+
+        if not self._judge_turn_responses:
+            logger.warning(
+                "Judge: no turn responses cached, skipping memory update"
+            )
+            return
+
+        character_limit = self.memory_manager.max_characters or 0
+        if character_limit:
+            update_prompt = llm_prompts.MEMORY_UPDATE_PROMPT_WITH_LIMIT.format(
+                character_limit=character_limit
+            )
+        else:
+            update_prompt = llm_prompts.MEMORY_UPDATE_PROMPT
+        system_message = ChatMessage(
+            role="system", content=llm_prompts.JUDGE_SYSTEM_PROMPT
+        )
+        messages = (
+            [system_message]
+            + self._judge_turn_responses
+            + [ChatMessage(role="user", content=update_prompt)]
+        )
+
+        response = self.api_client.get_completion(messages)
+
+        if response is None:
+            logger.warning(
+                "Judge: memory update API call failed, keeping old memory"
+            )
+            return
+
+        if len(response.strip()) < 50:
+            logger.warning(
+                f"Judge: memory update response too short "
+                f"({len(response.strip())} chars), keeping old memory"
+            )
+            return
+
+        self.memory_manager.write("Judge", response)

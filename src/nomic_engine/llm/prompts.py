@@ -266,6 +266,26 @@ MEMORY_INJECTION = """\
 
 === END YOUR PRIVATE MEMORY ==="""
 
+MEMORY_UPDATE_PROMPT = """\
+The turn is now complete. Update your private memory.
+
+Your entire response will be saved verbatim as your new memory file.
+
+Write your complete updated memory now. You may restructure, condense,
+expand, or rewrite any section however you like. There is no required
+format. Start directly with your content."""
+
+MEMORY_UPDATE_PROMPT_WITH_LIMIT = """\
+The turn is now complete. Update your private memory.
+
+Your entire response will be saved verbatim as your new memory file. If it
+exceeds the character limit of {character_limit} it will be truncated
+automatically.
+
+Write your complete updated memory now. You may restructure, condense,
+expand, or rewrite any section however you like. There is no required
+format. Start directly with your content."""
+
 WITHDRAWAL_RETRY_TEMPLATE = """Your previous proposal was withdrawn \
 after discussion.
 

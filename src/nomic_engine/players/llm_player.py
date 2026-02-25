@@ -638,3 +638,43 @@ class LLMPlayer(BasePlayer):
             f"{max_revision_retries} attempts. Defaulting to KEEP."
         )
         return proposal
+
+    def update_memory(self) -> None:
+        """Update this player's persistent memory file after a completed turn.
+
+        Appends the memory update prompt to the existing turn history, calls
+        the API once (no retry), and conditionally writes the response.
+
+        This method is a no-op when ``memory_manager`` is ``None``.
+        """
+        if self.memory_manager is None:
+            return
+
+        character_limit = self.memory_manager.max_characters or 0
+        if character_limit:
+            update_prompt = prompts.MEMORY_UPDATE_PROMPT_WITH_LIMIT.format(
+                character_limit=character_limit
+            )
+        else:
+            update_prompt = prompts.MEMORY_UPDATE_PROMPT
+        self.turn_history.append(
+            ChatMessage(role="user", content=update_prompt)
+        )
+
+        response = self.api_client.get_completion(self.turn_history)
+
+        if response is None:
+            logger.warning(
+                f"{self.player_name}: memory update API call failed, "
+                "keeping old memory"
+            )
+            return
+
+        if len(response.strip()) < 50:
+            logger.warning(
+                f"{self.player_name}: memory update response too short "
+                f"({len(response.strip())} chars), keeping old memory"
+            )
+            return
+
+        self.memory_manager.write(self.player_name, response)
