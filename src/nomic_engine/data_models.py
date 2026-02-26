@@ -458,6 +458,7 @@ class CompletionResult:
     text: str | None
     raw_response: Any
     client_latency_ms: int
+    raw_http: Any = None
 
 
 class TokenUsageRecord(BaseModel):

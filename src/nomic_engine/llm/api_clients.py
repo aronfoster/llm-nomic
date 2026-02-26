@@ -106,14 +106,18 @@ class OpenAICompatibleApiClient:
                 Iterable[ChatCompletionMessageParam],
                 [msg.model_dump() for msg in messages],
             )
-            openai_response = self._openai_client.chat.completions.create(
-                model=self.model_id_for_api, messages=openai_messages
+            http_response = (
+                self._openai_client.chat.completions.with_raw_response.create(
+                    model=self.model_id_for_api, messages=openai_messages
+                )
             )
+            openai_response = http_response.parse()
             client_latency_ms = int((time.monotonic() - start) * 1000)
             return CompletionResult(
                 text=openai_response.choices[0].message.content,
                 raw_response=openai_response,
                 client_latency_ms=client_latency_ms,
+                raw_http=http_response,
             )
         except OpenAIError as e:
             client_latency_ms = int((time.monotonic() - start) * 1000)
@@ -220,20 +224,20 @@ class AnthropicApiClient:
                 system_prompt = None
 
             client = self._anthropic_client
-            anthropic_response: anthropic.types.Message
             if system_prompt:
-                anthropic_response = client.messages.create(
+                http_response = client.messages.with_raw_response.create(
                     model=self.model_id_for_api,
                     max_tokens=8192,
                     system=system_prompt,
                     messages=anthropic_messages,
                 )
             else:
-                anthropic_response = client.messages.create(
+                http_response = client.messages.with_raw_response.create(
                     model=self.model_id_for_api,
                     max_tokens=8192,
                     messages=anthropic_messages,
                 )
+            anthropic_response = http_response.parse()
 
             client_latency_ms = int((time.monotonic() - start) * 1000)
             first_block = anthropic_response.content[0]
@@ -244,6 +248,7 @@ class AnthropicApiClient:
                 text=text,
                 raw_response=anthropic_response,
                 client_latency_ms=client_latency_ms,
+                raw_http=http_response,
             )
 
         except anthropic.APIError as e:
@@ -430,6 +435,7 @@ def _safe_int(value: Any) -> Optional[int]:
 
 def _extract_anthropic_metadata(
     raw_response: Any,
+    raw_http: Any = None,
 ) -> dict[str, Any]:
     """Extract token usage metadata from an Anthropic Message response."""
     result: dict[str, Any] = {
@@ -460,14 +466,32 @@ def _extract_anthropic_metadata(
         stop_reason = getattr(raw_response, "stop_reason", None)
         if stop_reason is not None:
             result["finish_reason"] = str(stop_reason)
+        _id = getattr(raw_response, "id", None)
+        result["request_id"] = _id if isinstance(_id, str) else None
     except Exception as exc:
         logger.warning("Failed to extract Anthropic token metadata: %s", exc)
+    if raw_http is not None:
+        try:
+            headers = getattr(raw_http, "headers", None)
+            if headers is not None:
+                rid = headers.get("x-request-id")
+                if rid is not None:
+                    result["request_id"] = rid
+                result["ratelimit_remaining_requests"] = _safe_int(
+                    headers.get("anthropic-ratelimit-requests-remaining")
+                )
+                result["ratelimit_remaining_tokens"] = _safe_int(
+                    headers.get("anthropic-ratelimit-tokens-remaining")
+                )
+        except Exception as exc:
+            logger.warning("Failed to extract Anthropic HTTP headers: %s", exc)
     return result
 
 
 def _extract_openai_metadata(
     raw_response: Any,
     provider: str,
+    raw_http: Any = None,
 ) -> dict[str, Any]:
     """Extract token usage metadata from an OpenAI-compatible response."""
     result: dict[str, Any] = {
@@ -503,8 +527,25 @@ def _extract_openai_metadata(
             fr = getattr(choices[0], "finish_reason", None)
             if fr is not None:
                 result["finish_reason"] = str(fr)
+        _id = getattr(raw_response, "id", None)
+        result["request_id"] = _id if isinstance(_id, str) else None
     except Exception as exc:
         logger.warning("Failed to extract OpenAI token metadata: %s", exc)
+    if raw_http is not None:
+        try:
+            headers = getattr(raw_http, "headers", None)
+            if headers is not None:
+                rid = headers.get("x-request-id")
+                if rid is not None:
+                    result["request_id"] = rid
+                result["ratelimit_remaining_requests"] = _safe_int(
+                    headers.get("x-ratelimit-remaining-requests")
+                )
+                result["ratelimit_remaining_tokens"] = _safe_int(
+                    headers.get("x-ratelimit-remaining-tokens")
+                )
+        except Exception as exc:
+            logger.warning("Failed to extract OpenAI HTTP headers: %s", exc)
     return result
 
 
@@ -572,9 +613,13 @@ def build_token_usage_record(
     provider = model_config.provider
 
     if provider == "anthropic":
-        meta = _extract_anthropic_metadata(result.raw_response)
+        meta = _extract_anthropic_metadata(
+            result.raw_response, result.raw_http
+        )
     elif provider in ("openai", "xai", "local"):
-        meta = _extract_openai_metadata(result.raw_response, provider)
+        meta = _extract_openai_metadata(
+            result.raw_response, provider, result.raw_http
+        )
     elif provider == "google":
         meta = _extract_google_metadata(result.raw_response)
     else:

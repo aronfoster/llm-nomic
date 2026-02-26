@@ -276,7 +276,11 @@ def test_get_completion_local_success():
 
     with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = mock_response
+        mock_http_response = MagicMock()
+        mock_http_response.parse.return_value = mock_response
+        mock_client.chat.completions.with_raw_response.create.return_value = (
+            mock_http_response
+        )
         mock_openai.return_value = mock_client
 
         api_client = OpenAICompatibleApiClient(mock_model_def)
@@ -288,7 +292,7 @@ def test_get_completion_local_success():
 
         result = api_client.get_completion(messages)
 
-        mock_client.chat.completions.create.assert_called_once_with(
+        mock_client.chat.completions.with_raw_response.create.assert_called_once_with(
             model="llama2",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
@@ -315,7 +319,11 @@ def test_get_completion_xai_uses_api_model_id(monkeypatch):
 
     with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = mock_response
+        mock_http_response = MagicMock()
+        mock_http_response.parse.return_value = mock_response
+        mock_client.chat.completions.with_raw_response.create.return_value = (
+            mock_http_response
+        )
         mock_openai.return_value = mock_client
 
         api_client = OpenAICompatibleApiClient(mock_model_def)
@@ -324,7 +332,7 @@ def test_get_completion_xai_uses_api_model_id(monkeypatch):
             [ChatMessage(role="user", content="Hello!")]
         )
 
-        mock_client.chat.completions.create.assert_called_once_with(
+        mock_client.chat.completions.with_raw_response.create.assert_called_once_with(
             model="grok-4-1-fast-reasoning",
             messages=[{"role": "user", "content": "Hello!"}],
         )
@@ -342,8 +350,8 @@ def test_get_completion_openai_compatible_openai_error():
 
     with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = OpenAIError(
-            "Connection error"
+        mock_client.chat.completions.with_raw_response.create.side_effect = (
+            OpenAIError("Connection error")
         )
         mock_openai.return_value = mock_client
 
@@ -371,7 +379,11 @@ def test_get_completion_openai_success(monkeypatch):
 
     with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = mock_response
+        mock_http_response = MagicMock()
+        mock_http_response.parse.return_value = mock_response
+        mock_client.chat.completions.with_raw_response.create.return_value = (
+            mock_http_response
+        )
         mock_openai.return_value = mock_client
 
         api_client = OpenAICompatibleApiClient(mock_model_def)
@@ -383,7 +395,7 @@ def test_get_completion_openai_success(monkeypatch):
 
         result = api_client.get_completion(messages)
 
-        mock_client.chat.completions.create.assert_called_once_with(
+        mock_client.chat.completions.with_raw_response.create.assert_called_once_with(
             model="gpt-5.1",
             messages=[
                 {"role": "system", "content": "You are helpful."},
@@ -406,8 +418,8 @@ def test_get_completion_openai_error(monkeypatch):
 
     with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = OpenAIError(
-            "API error"
+        mock_client.chat.completions.with_raw_response.create.side_effect = (
+            OpenAIError("API error")
         )
         mock_openai.return_value = mock_client
 
@@ -443,7 +455,11 @@ def test_get_completion_anthropic_success(monkeypatch):
         "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
     ) as mock_anthropic_class:
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
+        mock_http_response = MagicMock()
+        mock_http_response.parse.return_value = mock_response
+        mock_client.messages.with_raw_response.create.return_value = (
+            mock_http_response
+        )
         mock_anthropic_class.return_value = mock_client
 
         api_client = AnthropicApiClient(mock_model_def)
@@ -457,7 +473,7 @@ def test_get_completion_anthropic_success(monkeypatch):
 
         result = api_client.get_completion(messages)
 
-        call_args = mock_client.messages.create.call_args
+        call_args = mock_client.messages.with_raw_response.create.call_args
         assert call_args.kwargs["model"] == "claude-sonnet-4-5"
         assert call_args.kwargs["max_tokens"] == 8192
         assert call_args.kwargs["system"] == "You are helpful."
@@ -489,7 +505,11 @@ def test_get_completion_anthropic_no_system(monkeypatch):
         "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
     ) as mock_anthropic_class:
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
+        mock_http_response = MagicMock()
+        mock_http_response.parse.return_value = mock_response
+        mock_client.messages.with_raw_response.create.return_value = (
+            mock_http_response
+        )
         mock_anthropic_class.return_value = mock_client
 
         api_client = AnthropicApiClient(mock_model_def)
@@ -497,7 +517,7 @@ def test_get_completion_anthropic_no_system(monkeypatch):
             [ChatMessage(role="user", content="Hello!")]
         )
 
-        call_args = mock_client.messages.create.call_args
+        call_args = mock_client.messages.with_raw_response.create.call_args
         assert "system" not in call_args.kwargs
         assert result.text == "Response"
 
@@ -517,7 +537,7 @@ def test_get_completion_anthropic_error(monkeypatch):
         "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
     ) as mock_anthropic_class:
         mock_client = MagicMock()
-        mock_client.messages.create.side_effect = Exception(
+        mock_client.messages.with_raw_response.create.side_effect = Exception(
             "Anthropic API error"
         )
         mock_anthropic_class.return_value = mock_client
