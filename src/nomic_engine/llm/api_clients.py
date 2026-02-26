@@ -512,10 +512,6 @@ def _extract_openai_metadata(
         return result
     try:
         usage = getattr(raw_response, "usage", None)
-        if provider == "xai":
-            logger.debug(
-                "xAI usage object: %s", vars(usage) if usage else None
-            )
         if usage is not None:
             result["input_tokens"] = getattr(usage, "prompt_tokens", 0) or 0
             result["output_tokens"] = (
@@ -526,6 +522,11 @@ def _extract_openai_metadata(
                 if details is not None:
                     rt = getattr(details, "reasoning_tokens", None)
                     result["reasoning_tokens"] = rt
+            if provider == "xai":
+                ptd = getattr(usage, "prompt_tokens_details", None)
+                if ptd is not None:
+                    ct = getattr(ptd, "cached_tokens", None)
+                    result["cache_read_tokens"] = ct
         choices = getattr(raw_response, "choices", None)
         if choices:
             fr = getattr(choices[0], "finish_reason", None)
