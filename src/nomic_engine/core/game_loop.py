@@ -1137,9 +1137,15 @@ class GameLoop:
         Called after every resolved turn (including forfeit/withdrawal exits).
         Human players and a ``HumanJudge`` are silently skipped.
         """
+        judge_outputs = (
+            self.judge._judge_turn_responses
+            if isinstance(self.judge, LLMJudge)
+            else None
+        )
+
         for player in self.players:
             if isinstance(player, LLMPlayer):
-                player.update_memory()
+                player.update_memory(judge_turn_outputs=judge_outputs)
         if isinstance(self.judge, LLMJudge):
             self.judge.update_memory()
 

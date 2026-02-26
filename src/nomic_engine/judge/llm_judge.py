@@ -476,6 +476,10 @@ class LLMJudge(BaseJudge):
         if self.memory_manager is None:
             return
 
+        logger.info(
+            f"⚖️ Judge ({self.model_config.api_model_id}) is remembering..."
+        )
+
         if not self._judge_turn_responses:
             logger.warning(
                 "Judge: no turn responses cached, skipping memory update"
