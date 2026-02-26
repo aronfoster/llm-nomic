@@ -15,8 +15,6 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-- ~~Player context for creating memories does not include judge outputs but it should~~ ✓ Fixed
-- ~~Need to add INFO log before starting the request for creating a memory~~ ✓ Fixed
 - Players tend to modify Rule 203 to switch to majority after the first complete circuit (instead of second)
   - Might just turn this into a flag since it's so common.
   - What if we modified the judge memory prompt to tell it to remind itself about future game state changes?
@@ -117,7 +115,12 @@ and future rate limiting or budget enforcement work.
 Dollar-cost calculation, rate-limit enforcement, analysis scripts.
 
 ### Task 2: Implementation
-Require explicit ephemeral cache_control on the system message in every `LLMPlayer` call. Target the exact prefix that repeats within a turn.
+When `AnthropicApiClient.get_completion()` processes a message list that contains a system-role message, it must send the system content to the Anthropic API using the content-block format with `cache_control: {"type": "ephemeral"}` on the final block. This must be applied for every call — not conditionally.
+
+There is currently one system message per turn phase. The Developer chooses the implementation approach (e.g., internal to `AnthropicApiClient`, or via changes to `ChatMessage`), so long as:
+- No other provider's behavior changes.
+- The existing `ChatMessage` contract (used throughout the codebase) remains functional.
+- All five existing call types (`propose`, `discuss`, `revise`, `vote`, `memory_update`) must produce functionally identical outputs. Caching must be transparent to the game engine.
 
 ### Task 3: LLMJudge Caching
 `LLMJudge` currently rebuilds its full message list from scratch on each of
@@ -137,17 +140,19 @@ This is the long-term backlog and TODO scratchpad.
   * Implement async behavior (per model provider?)
   * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
   * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
-  * Explore https://openrouter.ai/ support for tokens/models
+  * Explore https://openrouter.ai/ support for tokens/models, along with other providers
+  * Cache token usage tested on xAI and Anthropic. Need to test behavior with Google, OpenAI, and Ollama.
+    * Ollama should correctly log tokens but not use caching
+    * Google and OpenAI should log token usage and show significant caching.
 
 * **Rate Limiting & Cost Tracking:**
-  * Each turn can generate 20+ API calls when retries are involved (propose + discuss × N + revise + vote × N + judge veto + judge score + judge maintain_state, each with up to 2 retries).
-  * Add per-turn and per-game token/cost tracking. Log token counts from API responses. Consider adding configurable per-turn cost limits.
+  * Add per-turn and per-game token/cost tracking. Print token counts from API responses at the end of the turn.
     * Would need to hard code cost/million tokens. Maybe prompt to update during game creation? Harcode defaults and put optional custom values per game?
   
 * **Game State & Rules:**
   * Enhanced Voting Architecture
       * **Task:** Replace binary vote logic with named "Abstention-Aware" modes.
-      * **Data Model:** Expand `VoteMode` enum in `data_models.py` to include `UNANIMOUS_STRICT`, `CONSENSUS`, `MAJORITY_TOTAL`, and `MAJORITY_VOTING`.
+      * **Data Model:** Expand `VoteMode` enum in `data_models.py` to include `UNANIMOUS_STRICT`, `CONSENSUS`, `MAJORITY_TOTAL`, and `MAJORITY_VOTING`?
       * **Engine Logic:** Update `GameLoop._tally_votes` to implement the specific denominator logic for each named mode.
       * **LLM Awareness:** Update `PromptBuilder` to dynamically inject a plain-language explanation of the current `vote_mode` into player prompts, ensuring players understand the tactical weight of an "ABSTAIN" vote.
       * Rule 109 adds another dimension to voting: whether transmute should be unanimous
@@ -164,6 +169,13 @@ This is the long-term backlog and TODO scratchpad.
   * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.
     * Therefore if rules change the turn steps (e.g an additional round of discussion after voting) it can be supported. Might need to ask the judge to define the steps and provide some guidance to the players.
   * Explore tool calling/MCP to allow players+judge to dynamically modify turn processing.
+
+* **Game Loop: Looping**
+  * Explore running more than one turn on application execution
+  * Could turn it into a more mature CLI app:
+    * Pick an existing (unfinished) game or create a new one
+    * Run turns until key press, then finish the in-progress turn
+    * Improve console logging to only show game output, not INFO logging about engine steps
 
 ### Visualization (Web app)
 
