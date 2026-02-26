@@ -517,7 +517,7 @@ def _extract_openai_metadata(
             result["output_tokens"] = (
                 getattr(usage, "completion_tokens", 0) or 0
             )
-            if provider == "openai":
+            if provider in ("openai", "xai"):
                 details = getattr(usage, "completion_tokens_details", None)
                 if details is not None:
                     rt = getattr(details, "reasoning_tokens", None)
@@ -550,14 +550,15 @@ def _extract_openai_metadata(
                     headers.get("x-ratelimit-remaining-tokens")
                 )
                 try:
-                    result["ttft_ms"] = _safe_int(
-                        float(headers.get("x-metrics-ttft-ms", 0) or 0)
+                    result["ttft_ms"] = (
+                        float(headers.get("x-metrics-ttft-ms") or 0) or None
                     )
-                    result["mean_itl_ms"] = _safe_int(
-                        float(headers.get("x-metrics-mean-itl-ms", 0) or 0)
+                    result["mean_itl_ms"] = (
+                        float(headers.get("x-metrics-mean-itl-ms") or 0)
+                        or None
                     )
-                    result["server_latency_ms"] = _safe_int(
-                        float(headers.get("x-metrics-e2e-ms", 0) or 0)
+                    result["server_latency_ms"] = (
+                        float(headers.get("x-metrics-e2e-ms") or 0) or None
                     )
                 except (ValueError, TypeError) as exc:
                     logger.warning(

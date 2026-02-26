@@ -470,8 +470,8 @@ class TestBuildTokenUsageRecordOpenAI:
         )
         assert record.reasoning_tokens == 150
 
-    def test_reasoning_tokens_null_for_xai(self) -> None:
-        """reasoning_tokens should be null for xai provider."""
+    def test_reasoning_tokens_reported_for_xai(self) -> None:
+        """reasoning_tokens should be logged as-reported for xai provider."""
         raw = self._make_openai_response(reasoning_tokens=100)
         result = _make_result(raw_response=raw)
         record = build_token_usage_record(
@@ -481,7 +481,7 @@ class TestBuildTokenUsageRecordOpenAI:
             move_number=1,
             player_name="Alice",
         )
-        assert record.reasoning_tokens is None
+        assert record.reasoning_tokens == 100
 
     def test_reasoning_tokens_null_for_local(self) -> None:
         """reasoning_tokens should be null for local provider."""
