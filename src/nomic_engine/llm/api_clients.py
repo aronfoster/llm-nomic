@@ -512,6 +512,10 @@ def _extract_openai_metadata(
         return result
     try:
         usage = getattr(raw_response, "usage", None)
+        if provider == "xai":
+            logger.debug(
+                "xAI usage object: %s", vars(usage) if usage else None
+            )
         if usage is not None:
             result["input_tokens"] = getattr(usage, "prompt_tokens", 0) or 0
             result["output_tokens"] = (
@@ -544,6 +548,20 @@ def _extract_openai_metadata(
                 result["ratelimit_remaining_tokens"] = _safe_int(
                     headers.get("x-ratelimit-remaining-tokens")
                 )
+                try:
+                    result["ttft_ms"] = _safe_int(
+                        float(headers.get("x-metrics-ttft-ms", 0) or 0)
+                    )
+                    result["mean_itl_ms"] = _safe_int(
+                        float(headers.get("x-metrics-mean-itl-ms", 0) or 0)
+                    )
+                    result["server_latency_ms"] = _safe_int(
+                        float(headers.get("x-metrics-e2e-ms", 0) or 0)
+                    )
+                except (ValueError, TypeError) as exc:
+                    logger.warning(
+                        "Failed to parse xAI timing headers: %s", exc
+                    )
         except Exception as exc:
             logger.warning("Failed to extract OpenAI HTTP headers: %s", exc)
     return result
