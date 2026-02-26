@@ -22,6 +22,7 @@ from src.nomic_engine.core.game_loop import GameLoop
 from src.nomic_engine.core.game_manager import GameManager
 from src.nomic_engine.data_models import (
     ChatMessage,
+    CompletionResult,
     Discussion,
     GameState,
     ModelDefinition,
@@ -245,7 +246,9 @@ class TestLLMPlayerUpdateMemory:
             model_config, memory_manager=mock_memory_manager
         )
         long_response = "A" * 100
-        player.api_client.get_completion.return_value = long_response
+        player.api_client.get_completion.return_value = CompletionResult(
+            text=long_response, raw_response=None, client_latency_ms=0
+        )
 
         player.update_memory()
 
@@ -262,7 +265,9 @@ class TestLLMPlayerUpdateMemory:
         player = _make_llm_player(
             model_config, memory_manager=mock_memory_manager
         )
-        player.api_client.get_completion.return_value = "Short"
+        player.api_client.get_completion.return_value = CompletionResult(
+            text="Short", raw_response=None, client_latency_ms=0
+        )
 
         player.update_memory()
 
@@ -278,7 +283,9 @@ class TestLLMPlayerUpdateMemory:
         player = _make_llm_player(
             model_config, memory_manager=mock_memory_manager
         )
-        player.api_client.get_completion.return_value = "Hi"
+        player.api_client.get_completion.return_value = CompletionResult(
+            text="Hi", raw_response=None, client_latency_ms=0
+        )
 
         with caplog.at_level(logging.WARNING):
             player.update_memory()
@@ -294,7 +301,9 @@ class TestLLMPlayerUpdateMemory:
         player = _make_llm_player(
             model_config, memory_manager=mock_memory_manager
         )
-        player.api_client.get_completion.return_value = None
+        player.api_client.get_completion.return_value = CompletionResult(
+            text=None, raw_response=None, client_latency_ms=0
+        )
 
         player.update_memory()
 
@@ -310,7 +319,9 @@ class TestLLMPlayerUpdateMemory:
         player = _make_llm_player(
             model_config, memory_manager=mock_memory_manager
         )
-        player.api_client.get_completion.return_value = None
+        player.api_client.get_completion.return_value = CompletionResult(
+            text=None, raw_response=None, client_latency_ms=0
+        )
 
         with caplog.at_level(logging.WARNING):
             player.update_memory()
@@ -330,9 +341,13 @@ class TestLLMPlayerUpdateMemory:
 
         captured: list[list[ChatMessage]] = []
 
-        def capture_and_return(messages: list[ChatMessage]) -> str:
+        def capture_and_return(
+            messages: list[ChatMessage],
+        ) -> CompletionResult:
             captured.append(list(messages))
-            return "A" * 100
+            return CompletionResult(
+                text="A" * 100, raw_response=None, client_latency_ms=0
+            )
 
         player.api_client.get_completion.side_effect = capture_and_return
 
@@ -360,7 +375,9 @@ class TestLLMPlayerUpdateMemory:
         mm = Mock()
         mm.max_characters = 0
         player = _make_llm_player(model_config, memory_manager=mm)
-        player.api_client.get_completion.return_value = "A" * 100
+        player.api_client.get_completion.return_value = CompletionResult(
+            text="A" * 100, raw_response=None, client_latency_ms=0
+        )
 
         player.update_memory()
 
@@ -377,7 +394,9 @@ class TestLLMPlayerUpdateMemory:
         player = _make_llm_player(
             model_config, memory_manager=mock_memory_manager
         )
-        player.api_client.get_completion.return_value = "A" * 100
+        player.api_client.get_completion.return_value = CompletionResult(
+            text="A" * 100, raw_response=None, client_latency_ms=0
+        )
 
         player.update_memory()
 
@@ -394,7 +413,11 @@ class TestLLMPlayerUpdateMemory:
             model_config, memory_manager=mock_memory_manager
         )
         # 49 real chars padded with spaces → stripped length 49 < 50
-        player.api_client.get_completion.return_value = "  " + "X" * 49 + "  "
+        player.api_client.get_completion.return_value = CompletionResult(
+            text="  " + "X" * 49 + "  ",
+            raw_response=None,
+            client_latency_ms=0,
+        )
 
         player.update_memory()
 
@@ -410,7 +433,9 @@ class TestLLMPlayerUpdateMemory:
             model_config, memory_manager=mock_memory_manager
         )
         response = "B" * 50
-        player.api_client.get_completion.return_value = response
+        player.api_client.get_completion.return_value = CompletionResult(
+            text=response, raw_response=None, client_latency_ms=0
+        )
 
         player.update_memory()
 
@@ -429,7 +454,9 @@ class TestLLMJudgeTurnResponses:
         """Appends to _judge_turn_responses after successful get_veto."""
         veto_text = '{"private_thoughts":"x","veto":false,"reason":"ok"}'
         judge = _make_llm_judge()
-        judge.api_client.get_completion.return_value = veto_text
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text=veto_text, raw_response=None, client_latency_ms=0
+        )
         gm = _make_judge_game_manager()
 
         assert len(judge._judge_turn_responses) == 0
@@ -443,7 +470,9 @@ class TestLLMJudgeTurnResponses:
     def test_does_not_append_on_failed_get_veto(self):
         """Does not append to _judge_turn_responses when get_veto fails."""
         judge = _make_llm_judge()
-        judge.api_client.get_completion.return_value = "not json"
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text="not json", raw_response=None, client_latency_ms=0
+        )
         judge.tuning.max_judge_veto_retries = 1
         gm = _make_judge_game_manager()
 
@@ -456,7 +485,9 @@ class TestLLMJudgeTurnResponses:
         """Appends to _judge_turn_responses after successful assess_scores."""
         score_text = '{"private_thoughts":"ok","score_adjustments":[]}'
         judge = _make_llm_judge()
-        judge.api_client.get_completion.return_value = score_text
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text=score_text, raw_response=None, client_latency_ms=0
+        )
         gm = _make_judge_game_manager()
 
         judge.assess_scores(gm, [], Mock(), [], [], proposal_passed=True)
@@ -470,7 +501,9 @@ class TestLLMJudgeTurnResponses:
             '{"private_thoughts":"none","flags":{},"target_score":null}'
         )
         judge = _make_llm_judge()
-        judge.api_client.get_completion.return_value = state_text
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text=state_text, raw_response=None, client_latency_ms=0
+        )
         gm = _make_judge_game_manager()
 
         judge.maintain_state(gm, Mock(), None, None)
@@ -486,9 +519,15 @@ class TestLLMJudgeTurnResponses:
 
         judge = _make_llm_judge()
         judge.api_client.get_completion.side_effect = [
-            veto_text,
-            score_text,
-            state_text,
+            CompletionResult(
+                text=veto_text, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=score_text, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=state_text, raw_response=None, client_latency_ms=0
+            ),
         ]
         gm = _make_judge_game_manager()
 
@@ -546,7 +585,9 @@ class TestLLMJudgeUpdateMemory:
             ChatMessage(role="assistant", content="Turn reasoning here.")
         ]
         long_response = "G" * 100
-        judge.api_client.get_completion.return_value = long_response
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text=long_response, raw_response=None, client_latency_ms=0
+        )
 
         judge.update_memory()
 
@@ -560,7 +601,9 @@ class TestLLMJudgeUpdateMemory:
         judge._judge_turn_responses = [
             ChatMessage(role="assistant", content="Some reasoning.")
         ]
-        judge.api_client.get_completion.return_value = None
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text=None, raw_response=None, client_latency_ms=0
+        )
 
         judge.update_memory()
 
@@ -576,7 +619,9 @@ class TestLLMJudgeUpdateMemory:
         judge._judge_turn_responses = [
             ChatMessage(role="assistant", content="Some reasoning.")
         ]
-        judge.api_client.get_completion.return_value = None
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text=None, raw_response=None, client_latency_ms=0
+        )
 
         with caplog.at_level(logging.WARNING):
             judge.update_memory()
@@ -591,7 +636,9 @@ class TestLLMJudgeUpdateMemory:
         judge._judge_turn_responses = [
             ChatMessage(role="assistant", content="Some reasoning.")
         ]
-        judge.api_client.get_completion.return_value = "Too short"
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text="Too short", raw_response=None, client_latency_ms=0
+        )
 
         judge.update_memory()
 
@@ -607,7 +654,9 @@ class TestLLMJudgeUpdateMemory:
         judge._judge_turn_responses = [
             ChatMessage(role="assistant", content="Reasoning.")
         ]
-        judge.api_client.get_completion.return_value = "Hi"
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text="Hi", raw_response=None, client_latency_ms=0
+        )
 
         with caplog.at_level(logging.WARNING):
             judge.update_memory()
@@ -624,7 +673,9 @@ class TestLLMJudgeUpdateMemory:
             role="assistant", content="My veto and score reasoning."
         )
         judge._judge_turn_responses = [cached]
-        judge.api_client.get_completion.return_value = "H" * 100
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text="H" * 100, raw_response=None, client_latency_ms=0
+        )
 
         judge.update_memory()
 
@@ -651,7 +702,9 @@ class TestLLMJudgeUpdateMemory:
         r2 = ChatMessage(role="assistant", content="Score reasoning")
         r3 = ChatMessage(role="assistant", content="State reasoning")
         judge._judge_turn_responses = [r1, r2, r3]
-        judge.api_client.get_completion.return_value = "I" * 100
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text="I" * 100, raw_response=None, client_latency_ms=0
+        )
 
         judge.update_memory()
 
@@ -674,7 +727,9 @@ class TestLLMJudgeUpdateMemory:
         judge._judge_turn_responses = [
             ChatMessage(role="assistant", content="Turn reasoning.")
         ]
-        judge.api_client.get_completion.return_value = "J" * 100
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text="J" * 100, raw_response=None, client_latency_ms=0
+        )
 
         judge.update_memory()
 
@@ -939,9 +994,13 @@ class TestLLMPlayerUpdateMemoryJudgeOutputs:
 
         captured: list[list[ChatMessage]] = []
 
-        def capture_and_return(messages: list[ChatMessage]) -> str:
+        def capture_and_return(
+            messages: list[ChatMessage],
+        ) -> CompletionResult:
             captured.append(list(messages))
-            return "A" * 100
+            return CompletionResult(
+                text="A" * 100, raw_response=None, client_latency_ms=0
+            )
 
         player.api_client.get_completion.side_effect = capture_and_return
 
@@ -972,9 +1031,13 @@ class TestLLMPlayerUpdateMemoryJudgeOutputs:
 
         captured: list[list[ChatMessage]] = []
 
-        def capture_and_return(messages: list[ChatMessage]) -> str:
+        def capture_and_return(
+            messages: list[ChatMessage],
+        ) -> CompletionResult:
             captured.append(list(messages))
-            return "A" * 100
+            return CompletionResult(
+                text="A" * 100, raw_response=None, client_latency_ms=0
+            )
 
         player.api_client.get_completion.side_effect = capture_and_return
 
@@ -998,9 +1061,13 @@ class TestLLMPlayerUpdateMemoryJudgeOutputs:
 
         captured: list[list[ChatMessage]] = []
 
-        def capture_and_return(messages: list[ChatMessage]) -> str:
+        def capture_and_return(
+            messages: list[ChatMessage],
+        ) -> CompletionResult:
             captured.append(list(messages))
-            return "A" * 100
+            return CompletionResult(
+                text="A" * 100, raw_response=None, client_latency_ms=0
+            )
 
         player.api_client.get_completion.side_effect = capture_and_return
 
@@ -1030,7 +1097,9 @@ class TestLLMPlayerUpdateMemoryJudgeOutputs:
             api_model_id="grok-4-1-fast",
             env_key_name=None,
         )
-        player.api_client.get_completion.return_value = "A" * 100
+        player.api_client.get_completion.return_value = CompletionResult(
+            text="A" * 100, raw_response=None, client_latency_ms=0
+        )
 
         with caplog.at_level(logging.INFO):
             player.update_memory()
@@ -1056,9 +1125,13 @@ class TestLLMPlayerUpdateMemoryJudgeOutputs:
 
         captured: list[list[ChatMessage]] = []
 
-        def capture_and_return(messages: list[ChatMessage]) -> str:
+        def capture_and_return(
+            messages: list[ChatMessage],
+        ) -> CompletionResult:
             captured.append(list(messages))
-            return "A" * 100
+            return CompletionResult(
+                text="A" * 100, raw_response=None, client_latency_ms=0
+            )
 
         player.api_client.get_completion.side_effect = capture_and_return
 
@@ -1090,7 +1163,9 @@ class TestLLMJudgeUpdateMemoryInfoLog:
         judge._judge_turn_responses = [
             ChatMessage(role="assistant", content="Some reasoning.")
         ]
-        judge.api_client.get_completion.return_value = "G" * 100
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text="G" * 100, raw_response=None, client_latency_ms=0
+        )
 
         with caplog.at_level(logging.INFO):
             judge.update_memory()

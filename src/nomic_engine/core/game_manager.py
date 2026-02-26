@@ -15,6 +15,7 @@ from ..constants import (
     GAME_STATE_FILE,
     RULES_JSONL_FILE,
     RULES_MD_FILE,
+    TOKEN_USAGE_FILE,
 )
 from ..data_models import GameConfig, GameState, JudgeType
 from ..game_logger import GameLogger
@@ -23,6 +24,7 @@ from ..memory.memory_manager import (
     MemoryManager,
     build_player_memory_template,
 )
+from ..utils.token_usage_logger import TokenUsageLogger
 from .rules_manager import RulesManager
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,7 @@ class GameManager:
         self.game_state_path = self.game_dir / GAME_STATE_FILE
         self.rules_jsonl_path = self.game_dir / RULES_JSONL_FILE
         self.rules_md_path = self.game_dir / RULES_MD_FILE
+        self.token_usage_path = self.game_dir / TOKEN_USAGE_FILE
 
         # Initialize logger
         self.logger = GameLogger(self.game_dir)
@@ -57,6 +60,7 @@ class GameManager:
         self.game_state: GameState | None = None
         self.rules_manager: RulesManager | None = None
         self.memory_manager: MemoryManager | None = None
+        self.token_usage_logger: TokenUsageLogger | None = None
 
     def load_game(self) -> None:
         """
@@ -123,6 +127,13 @@ class GameManager:
                 self.memory_manager.ensure_exists(
                     "Judge", JUDGE_MEMORY_TEMPLATE
                 )
+
+            # Set up token usage logger
+            self.token_usage_logger = TokenUsageLogger(self.token_usage_path)
+            logger.info(
+                "Token usage logger initialised at %s",
+                self.token_usage_path,
+            )
 
         except FileNotFoundError as e:
             logger.error(f"Game file not found: {e.filename}")

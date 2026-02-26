@@ -15,6 +15,7 @@ import pytest
 
 from src.nomic_engine.data_models import (
     ChatMessage,
+    CompletionResult,
     Discussion,
     GameState,
     ModelDefinition,
@@ -109,7 +110,9 @@ class TestLLMPlayerVote:
             "public_reason": "This is good for the game",
             "vote": "YES"
         }"""
-        mock_api_instance.get_completion.return_value = valid_json_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=valid_json_response, raw_response=None, client_latency_ms=0
+        )
 
         # Mock the parser to return valid data
         mock_parse.return_value = {
@@ -178,8 +181,12 @@ class TestLLMPlayerVote:
             "vote": "NO"
         }"""
         mock_api_instance.get_completion.side_effect = [
-            bad_json_response,
-            good_json_response,
+            CompletionResult(
+                text=bad_json_response, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=good_json_response, raw_response=None, client_latency_ms=0
+            ),
         ]
 
         # Mock the parser: raise ValueError first, then return valid data
@@ -248,7 +255,9 @@ class TestLLMPlayerVote:
 
         # Mock the API client to always return bad JSON
         bad_json_response = "This is consistently bad JSON {{{{{{"
-        mock_api_instance.get_completion.return_value = bad_json_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=bad_json_response, raw_response=None, client_latency_ms=0
+        )
 
         # Mock the parser to always raise ValueError
         mock_parse.side_effect = ValueError("Response is not valid JSON")
@@ -309,8 +318,12 @@ class TestLLMPlayerVote:
             "vote": "ABSTAIN"
         }"""
         mock_api_instance.get_completion.side_effect = [
-            None,
-            good_json_response,
+            CompletionResult(
+                text=None, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=good_json_response, raw_response=None, client_latency_ms=0
+            ),
         ]
 
         # Create player with initial history
@@ -357,7 +370,9 @@ class TestLLMPlayerVote:
         )
 
         # Mock the API client to always return None (API error)
-        mock_api_instance.get_completion.return_value = None
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=None, raw_response=None, client_latency_ms=0
+        )
 
         # Create player with initial history
         player = LLMPlayer("TestPlayer", model_config)
@@ -408,9 +423,10 @@ class TestLLMPlayerVote:
         )
 
         # Mock successful API response
-        mock_api_instance.get_completion.return_value = (
-            '{"vote":"YES","public_reason":"Good",'
-            '"private_thoughts":"Analysis"}'
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text='{"vote":"YES","public_reason":"Good","private_thoughts":"Analysis"}',
+            raw_response=None,
+            client_latency_ms=0,
         )
         mock_parse.return_value = {
             "vote": "YES",
@@ -473,7 +489,9 @@ class TestLLMPlayerDiscuss:
             "private_thoughts": "Strategic analysis here",
             "discussion_text": "I think this proposal has merit."
         }"""
-        mock_api_instance.get_completion.return_value = valid_json_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=valid_json_response, raw_response=None, client_latency_ms=0
+        )
 
         # Mock the parser to return valid data
         mock_parse.return_value = {
@@ -524,10 +542,14 @@ class TestLLMPlayerDiscuss:
         pb = mock_prompt_builder_instance
         pb.build_discusser_system_message.return_value = mock_system_message
 
-        mock_api_instance.get_completion.return_value = """{
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text="""{
             "private_thoughts": "I prefer to stay silent.",
             "discussion_text": ""
-        }"""
+        }""",
+            raw_response=None,
+            client_latency_ms=0,
+        )
 
         mock_parse.return_value = {
             "private_thoughts": "I prefer to stay silent.",
@@ -577,8 +599,12 @@ class TestLLMPlayerDiscuss:
             "discussion_text": "Let me reconsider..."
         }"""
         mock_api_instance.get_completion.side_effect = [
-            bad_json_response,
-            good_json_response,
+            CompletionResult(
+                text=bad_json_response, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=good_json_response, raw_response=None, client_latency_ms=0
+            ),
         ]
 
         # Mock the parser: raise ValueError first, then return valid data
@@ -637,7 +663,9 @@ class TestLLMPlayerDiscuss:
 
         # Mock the API client to always return bad JSON
         bad_json_response = "This is consistently bad JSON {{{{{{"
-        mock_api_instance.get_completion.return_value = bad_json_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=bad_json_response, raw_response=None, client_latency_ms=0
+        )
 
         # Mock the parser to always raise ValueError
         mock_parse.side_effect = ValueError("Response is not valid JSON")
@@ -686,7 +714,9 @@ class TestLLMPlayerDiscuss:
         pb.build_discusser_system_message.return_value = mock_system_message
 
         # Mock the API client to always return None (API error)
-        mock_api_instance.get_completion.return_value = None
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=None, raw_response=None, client_latency_ms=0
+        )
 
         # Create player and discuss
         player = LLMPlayer("TestPlayer", model_config)
@@ -784,7 +814,9 @@ class TestLLMPlayerPropose:
             "new_text": "New rule text for testing",
             "rationale": "This is good for the game"
         }"""
-        mock_api_instance.get_completion.return_value = valid_json_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=valid_json_response, raw_response=None, client_latency_ms=0
+        )
 
         # Mock the parser to return valid data
         mock_parse.return_value = {
@@ -840,7 +872,9 @@ class TestLLMPlayerPropose:
         pb = mock_prompt_builder_instance
         pb.build_proposer_system_message.return_value = mock_system_message
 
-        mock_api_instance.get_completion.return_value = "valid json"
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text="valid json", raw_response=None, client_latency_ms=0
+        )
 
         mock_parse.return_value = {
             "private_thoughts": "Analysis",
@@ -889,8 +923,12 @@ class TestLLMPlayerPropose:
         bad_json_response = "This is not valid JSON"
         good_json_response = '{"type": "Add", ...}'
         mock_api_instance.get_completion.side_effect = [
-            bad_json_response,
-            good_json_response,
+            CompletionResult(
+                text=bad_json_response, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=good_json_response, raw_response=None, client_latency_ms=0
+            ),
         ]
 
         # Mock the parser: raise ValueError first, then return valid data
@@ -952,7 +990,9 @@ class TestLLMPlayerPropose:
 
         # Mock the API client to always return bad JSON
         bad_json_response = "This is consistently bad JSON {{{{{{"
-        mock_api_instance.get_completion.return_value = bad_json_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=bad_json_response, raw_response=None, client_latency_ms=0
+        )
 
         # Mock the parser to always raise ValueError
         mock_parse.side_effect = ValueError("Response is not valid JSON")
@@ -1008,8 +1048,12 @@ class TestLLMPlayerPropose:
             "rationale": "Reason"
         }"""
         mock_api_instance.get_completion.side_effect = [
-            None,
-            good_json_response,
+            CompletionResult(
+                text=None, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=good_json_response, raw_response=None, client_latency_ms=0
+            ),
         ]
 
         # Create player and propose
@@ -1048,7 +1092,9 @@ class TestLLMPlayerPropose:
         pb.build_proposer_system_message.return_value = mock_system_message
 
         # Mock the API client to always return None (API error)
-        mock_api_instance.get_completion.return_value = None
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=None, raw_response=None, client_latency_ms=0
+        )
 
         # Create player and propose
         player = LLMPlayer("TestPlayer", model_config)
@@ -1092,9 +1138,10 @@ class TestLLMPlayerPropose:
         pb.build_proposer_system_message.return_value = mock_system_message
 
         # Mock successful API response
-        mock_api_instance.get_completion.return_value = (
-            '{"type":"ADD","private_thoughts":"A","target_rule_id":null,'
-            '"new_text":"text","rationale":"r"}'
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text='{"type":"ADD","private_thoughts":"A","target_rule_id":null,"new_text":"text","rationale":"r"}',
+            raw_response=None,
+            client_latency_ms=0,
         )
         mock_parse.return_value = {
             "type": "Add",
@@ -1150,12 +1197,16 @@ class TestLLMPlayerRevise:
         pb = mock_prompt_builder_instance
         pb.build_revision_instruction.return_value = mock_revision_instruction
 
-        mock_api_instance.get_completion.return_value = """{
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text="""{
             "private_thoughts": "Too much opposition, better to withdraw",
             "action": "WITHDRAW",
             "new_text": null,
             "rationale": null
-        }"""
+        }""",
+            raw_response=None,
+            client_latency_ms=0,
+        )
 
         mock_parse.return_value = {
             "private_thoughts": "Too much opposition, better to withdraw",
@@ -1211,12 +1262,16 @@ class TestLLMPlayerRevise:
         pb = mock_prompt_builder_instance
         pb.build_revision_instruction.return_value = mock_revision_instruction
 
-        mock_api_instance.get_completion.return_value = """{
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text="""{
             "private_thoughts": "Feedback is positive, keep as is",
             "action": "KEEP",
             "new_text": null,
             "rationale": null
-        }"""
+        }""",
+            raw_response=None,
+            client_latency_ms=0,
+        )
 
         mock_parse.return_value = {
             "private_thoughts": "Feedback is positive, keep as is",
@@ -1273,12 +1328,16 @@ class TestLLMPlayerRevise:
         pb = mock_prompt_builder_instance
         pb.build_revision_instruction.return_value = mock_revision_instruction
 
-        mock_api_instance.get_completion.return_value = """{
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text="""{
             "private_thoughts": "Will address the concerns by modifying",
             "action": "MODIFY",
             "new_text": "Modified rule text",
             "rationale": "Improved rationale"
-        }"""
+        }""",
+            raw_response=None,
+            client_latency_ms=0,
+        )
 
         mock_parse.return_value = {
             "private_thoughts": "Will address the concerns by modifying",
@@ -1339,7 +1398,9 @@ class TestLLMPlayerRevise:
         pb = mock_prompt_builder_instance
         pb.build_revision_instruction.return_value = mock_revision_instruction
 
-        mock_api_instance.get_completion.return_value = "valid json"
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text="valid json", raw_response=None, client_latency_ms=0
+        )
 
         mock_parse.return_value = {
             "private_thoughts": "Only updating the text",
@@ -1399,8 +1460,12 @@ class TestLLMPlayerRevise:
             "rationale": null
         }"""
         mock_api_instance.get_completion.side_effect = [
-            bad_json_response,
-            good_json_response,
+            CompletionResult(
+                text=bad_json_response, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=good_json_response, raw_response=None, client_latency_ms=0
+            ),
         ]
 
         mock_parse.side_effect = [
@@ -1464,7 +1529,9 @@ class TestLLMPlayerRevise:
         pb.build_revision_instruction.return_value = mock_revision_instruction
 
         bad_json_response = "This is consistently bad JSON {{{{{{"
-        mock_api_instance.get_completion.return_value = bad_json_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=bad_json_response, raw_response=None, client_latency_ms=0
+        )
 
         mock_parse.side_effect = ValueError("Response is not valid JSON")
 
@@ -1513,7 +1580,9 @@ class TestLLMPlayerRevise:
         pb = mock_prompt_builder_instance
         pb.build_revision_instruction.return_value = mock_revision_instruction
 
-        mock_api_instance.get_completion.return_value = None
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=None, raw_response=None, client_latency_ms=0
+        )
 
         # Create player with initial history (from propose)
         player = LLMPlayer("TestPlayer", model_config)
@@ -1562,9 +1631,10 @@ class TestLLMPlayerRevise:
         pb = mock_prompt_builder_instance
         pb.build_revision_instruction.return_value = mock_revision_instruction
 
-        mock_api_instance.get_completion.return_value = (
-            '{"private_thoughts":"A","action":"KEEP","new_text":null,'
-            '"rationale":null}'
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text='{"private_thoughts":"A","action":"KEEP","new_text":null,"rationale":null}',
+            raw_response=None,
+            client_latency_ms=0,
         )
         mock_parse.return_value = {
             "private_thoughts": "A",
@@ -1629,7 +1699,9 @@ class TestLLMPlayerStatefulHistory:
             "new_text": "New rule",
             "rationale": "Reason"
         }"""
-        mock_api_instance.get_completion.return_value = valid_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=valid_response, raw_response=None, client_latency_ms=0
+        )
 
         mock_parse.return_value = {
             "private_thoughts": "Analysis",
@@ -1688,7 +1760,9 @@ class TestLLMPlayerStatefulHistory:
             "new_text": null,
             "rationale": null
         }"""
-        mock_api_instance.get_completion.return_value = revision_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=revision_response, raw_response=None, client_latency_ms=0
+        )
 
         mock_parse.return_value = {
             "private_thoughts": "I will keep my proposal",
@@ -1757,7 +1831,9 @@ class TestLLMPlayerStatefulHistory:
             "public_reason": "Good proposal",
             "vote": "YES"
         }"""
-        mock_api_instance.get_completion.return_value = vote_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=vote_response, raw_response=None, client_latency_ms=0
+        )
 
         mock_parse.return_value = {
             "private_thoughts": "I will vote yes",
@@ -1821,7 +1897,9 @@ class TestLLMPlayerStatefulHistory:
             "private_thoughts": "Analysis",
             "discussion_text": "I support this"
         }"""
-        mock_api_instance.get_completion.return_value = valid_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=valid_response, raw_response=None, client_latency_ms=0
+        )
 
         mock_parse.return_value = {
             "private_thoughts": "Analysis",
@@ -1872,7 +1950,9 @@ class TestLLMPlayerStatefulHistory:
         pb = mock_prompt_builder_instance
         pb.build_proposer_system_message.return_value = mock_system_message
 
-        mock_api_instance.get_completion.return_value = '{"type": "Add", ...}'
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text='{"type": "Add", ...}', raw_response=None, client_latency_ms=0
+        )
         mock_parse.return_value = {
             "private_thoughts": "Analysis",
             "type": "Add",
@@ -1926,7 +2006,9 @@ class TestLLMPlayerStatefulHistory:
             '{"private_thoughts":"p","type":"Add",'
             '"target_rule_id":null,"new_text":"Pivot","rationale":"r"}'
         )
-        mock_api_instance.get_completion.return_value = valid_response
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=valid_response, raw_response=None, client_latency_ms=0
+        )
         mock_parse.return_value = {
             "private_thoughts": "p",
             "type": "Add",
@@ -2000,7 +2082,9 @@ class TestNoDuplicatePrivateThoughtsLog:
         import logging
 
         mock_api = mock_api_client_class.return_value
-        mock_api.get_completion.return_value = '{"x":"y"}'
+        mock_api.get_completion.return_value = CompletionResult(
+            text='{"x":"y"}', raw_response=None, client_latency_ms=0
+        )
         mock_parse.return_value = {
             "private_thoughts": "secret strategy",
             "discussion_text": "public comment",
@@ -2039,7 +2123,9 @@ class TestNoDuplicatePrivateThoughtsLog:
         import logging
 
         mock_api = mock_api_client_class.return_value
-        mock_api.get_completion.return_value = '{"x":"y"}'
+        mock_api.get_completion.return_value = CompletionResult(
+            text='{"x":"y"}', raw_response=None, client_latency_ms=0
+        )
         mock_pb = mock_prompt_builder_class.return_value
         mock_pb.build_vote_instruction.return_value = ChatMessage(
             role="user", content="vote?"
@@ -2082,7 +2168,9 @@ class TestNoDuplicatePrivateThoughtsLog:
         import logging
 
         mock_api = mock_api_client_class.return_value
-        mock_api.get_completion.return_value = '{"x":"y"}'
+        mock_api.get_completion.return_value = CompletionResult(
+            text='{"x":"y"}', raw_response=None, client_latency_ms=0
+        )
         mock_pb = mock_prompt_builder_class.return_value
         mock_pb.build_revision_instruction.return_value = ChatMessage(
             role="user", content="revise?"

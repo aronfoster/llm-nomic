@@ -9,6 +9,7 @@ Core Pydantic models to enforce data types and structure for:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
@@ -440,4 +441,105 @@ class JudgeDecisions(BaseModel):
             "Engine state changes from maintain_state. Empty dict when "
             "proposal failed, was vetoed, or was a TRANSMUTE."
         ),
+    )
+
+
+# --- LLM API Result and Token Usage Models ---
+
+
+@dataclass
+class CompletionResult:
+    """Result of a single LLM API call.
+
+    Carries the completion text, the raw provider response object (for
+    metadata extraction), and the measured client-side latency.
+    """
+
+    text: str | None
+    raw_response: Any
+    client_latency_ms: int
+    raw_http: Any = None
+
+
+class TokenUsageRecord(BaseModel):
+    """A single structured record of token usage for one LLM API call.
+
+    Written to token_usage.jsonl immediately after each completed call.
+    Every field is always present; use null when a value is unavailable.
+    """
+
+    timestamp: str = Field(
+        description="UTC timestamp in ISO 8601 format, ends with Z."
+    )
+    move_number: int = Field(
+        description="Current game move number at time of call."
+    )
+    player_name: str = Field(
+        description="Player name, or 'Judge' for judge calls."
+    )
+    provider: str = Field(
+        description=(
+            "Provider as defined in models.yml "
+            "(e.g. 'anthropic', 'openai', 'xai', 'google', 'local')."
+        )
+    )
+    model_id: str = Field(description="Exact api_model_id from models.yml.")
+    call_type: str = Field(
+        description=(
+            "One of: propose, discuss, revise, vote, judge_veto, "
+            "judge_score, judge_maintain_state, memory_update."
+        )
+    )
+    input_tokens: int = Field(description="Total billed input tokens.")
+    output_tokens: int = Field(description="Billed output tokens.")
+    cache_creation_tokens: Optional[int] = Field(
+        description=(
+            "Provider-specific cache creation tokens; null when not available."
+        )
+    )
+    cache_read_tokens: Optional[int] = Field(
+        description=(
+            "Provider-specific cache read tokens; null when not available."
+        )
+    )
+    reasoning_tokens: Optional[int] = Field(
+        description="OpenAI o-series only; null otherwise."
+    )
+    finish_reason: Optional[str] = Field(
+        description=(
+            "Raw provider finish reason value "
+            "(e.g. end_turn, stop, length); null when absent."
+        )
+    )
+    client_latency_ms: int = Field(
+        description=(
+            "Wall-clock milliseconds from request send to response received."
+        )
+    )
+    server_latency_ms: Optional[float] = Field(
+        description=(
+            "xAI end-to-end latency or Ollama eval_duration; "
+            "null for other providers."
+        )
+    )
+    ttft_ms: Optional[float] = Field(
+        description="Time to first token in ms; xAI only; null otherwise."
+    )
+    mean_itl_ms: Optional[float] = Field(
+        description=(
+            "Mean inter-token latency in ms; xAI only; null otherwise."
+        )
+    )
+    request_id: Optional[str] = Field(
+        description="x-request-id response header value; null when absent."
+    )
+    ratelimit_remaining_requests: Optional[int] = Field(
+        description=(
+            "x-ratelimit-remaining-requests header value; null when absent."
+        )
+    )
+    ratelimit_remaining_tokens: Optional[int] = Field(
+        description=(
+            "x-ratelimit-remaining-tokens header value; null when absent."
+        )
     )

@@ -41,11 +41,15 @@ This task covers investigation first, then implementation. Do not implement
 anything until the investigation phase is complete and costs/savings are
 understood per provider.
 
-### Task 1: Investigate
-Record structured token usage data for every API call made during a game into
-a dedicated file. This file is the foundation for cost analysis, caching
-investigation, and future rate limiting or budget enforcement work. It is a
-prerequisite to the caching investigation task.
+### ~~Task 1: Investigate~~ ✓ Complete
+~~Record structured token usage data for every API call made during a game into
+a dedicated file.~~ Every API call now appends a `TokenUsageRecord` to
+`games/<game-name>/token_usage.jsonl`. Covers all providers (Anthropic, OpenAI-
+compatible, Google), all call types (`propose`, `discuss`, `revise`, `vote`,
+`judge_veto`, `judge_score`, `judge_maintain_state`, `memory_update`), and
+reports input/output/cache/reasoning tokens, finish reason, and client-side
+latency. This file is the foundation for cost analysis, caching investigation,
+and future rate limiting or budget enforcement work.
 
 **New file**  
 `games/<game-name>/token_usage.jsonl` (JSON Lines, one record per completed API call, created automatically by `create_game.py`)

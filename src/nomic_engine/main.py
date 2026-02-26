@@ -109,6 +109,7 @@ def instantiate_players(
                     player_config.personality,
                     game_manager.game_config.tuning,
                     memory_manager=game_manager.memory_manager,
+                    token_usage_logger=game_manager.token_usage_logger,
                 )
             )
 
@@ -133,6 +134,7 @@ def instantiate_judge(game_manager: GameManager) -> BaseJudge:
             judge_model,
             tuning=game_manager.game_config.tuning,
             memory_manager=game_manager.memory_manager,
+            token_usage_logger=game_manager.token_usage_logger,
         )
 
     return HumanJudge()

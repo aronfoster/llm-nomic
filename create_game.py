@@ -24,6 +24,7 @@ from src.nomic_engine.constants import (
     INITIAL_RULES_FILE,
     RULES_JSONL_FILE,
     RULES_MD_FILE,
+    TOKEN_USAGE_FILE,
 )
 from src.nomic_engine.core.rules_manager import RulesManager
 from src.nomic_engine.data_models import (
@@ -505,6 +506,10 @@ def create_game_files(
     logger.info(f"Creating {game_transcript_path}")
     game_transcript_path.touch()
 
+    token_usage_path = game_dir / TOKEN_USAGE_FILE
+    logger.info(f"Creating {token_usage_path}")
+    token_usage_path.touch()
+
     # 5. Create memory files for LLM players (and LLM judge)
     memory_manager = MemoryManager(
         game_dir, game_config.llm.memory.max_characters
@@ -569,6 +574,7 @@ def main() -> None:
     print(f"  - {game_dir / RULES_MD_FILE}")
     print(f"  - {game_dir / GAME_LOG_FILE}")
     print(f"  - {game_dir / GAME_TRANSCRIPT_FILE}")
+    print(f"  - {game_dir / TOKEN_USAGE_FILE}")
     print()
     print("To start your game, run:")
     print(f"    python -m src.nomic_engine.main --game_dir {game_dir}")
