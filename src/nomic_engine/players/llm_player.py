@@ -639,16 +639,45 @@ class LLMPlayer(BasePlayer):
         )
         return proposal
 
-    def update_memory(self) -> None:
+    def update_memory(
+        self,
+        judge_turn_outputs: list[ChatMessage] | None = None,
+    ) -> None:
         """Update this player's persistent memory file after a completed turn.
 
         Appends the memory update prompt to the existing turn history, calls
         the API once (no retry), and conditionally writes the response.
 
+        Args:
+            judge_turn_outputs: Optional list of judge ChatMessages from the
+                current turn. When provided and non-empty, they are injected
+                between turn_history and MEMORY_UPDATE_PROMPT so the player
+                has full context of judge actions when consolidating memory.
+
         This method is a no-op when ``memory_manager`` is ``None``.
         """
         if self.memory_manager is None:
             return
+
+        logger.info(
+            f"🤖 {self.player_name} ({self.personality} / "
+            f"{self.model_config.api_model_id}) is remembering..."
+        )
+
+        if judge_turn_outputs:
+            judge_block = "\n\n".join(
+                msg.content for msg in judge_turn_outputs
+            )
+            self.turn_history.append(
+                ChatMessage(
+                    role="user",
+                    content=(
+                        "=== JUDGE ACTIONS THIS TURN ===\n"
+                        + judge_block
+                        + "\n=== END JUDGE ACTIONS ==="
+                    ),
+                )
+            )
 
         character_limit = self.memory_manager.max_characters or 0
         if character_limit:

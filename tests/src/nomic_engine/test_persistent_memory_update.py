@@ -763,6 +763,7 @@ class TestGameLoopUpdateAllMemories:
     def test_calls_update_memory_on_llm_judge(self, mock_game_manager: Mock):
         """Calls update_memory() on an LLMJudge."""
         llm_judge = Mock(spec=LLMJudge)
+        llm_judge._judge_turn_responses = []
 
         game_loop = GameLoop(
             game_manager=mock_game_manager, players=[], judge=llm_judge
@@ -910,3 +911,258 @@ class TestGameLoopRunTurnMemoryIntegration:
         game_loop.run_turn()
 
         game_loop._update_all_memories.assert_not_called()
+
+
+# =====================================================================
+# LLMPlayer.update_memory() — judge_turn_outputs & INFO log Tests
+# =====================================================================
+
+
+class TestLLMPlayerUpdateMemoryJudgeOutputs:
+    """Tests for Bug 1 & Bug 2 fixes in LLMPlayer.update_memory()."""
+
+    def test_includes_judge_outputs_in_messages_when_provided(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """Messages sent to the API include judge block when provided."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        initial_len = len(player.turn_history)
+
+        judge_responses = [
+            ChatMessage(role="assistant", content="Veto: allowed."),
+            ChatMessage(role="assistant", content="Score: +1 Alice."),
+        ]
+
+        captured: list[list[ChatMessage]] = []
+
+        def capture_and_return(messages: list[ChatMessage]) -> str:
+            captured.append(list(messages))
+            return "A" * 100
+
+        player.api_client.get_completion.side_effect = capture_and_return
+
+        player.update_memory(judge_turn_outputs=judge_responses)
+
+        assert len(captured) == 1
+        sent = captured[0]
+        # turn_history + judge block + memory update prompt
+        assert len(sent) == initial_len + 2
+
+        judge_msg = sent[initial_len]
+        assert judge_msg.role == "user"
+        assert "=== JUDGE ACTIONS THIS TURN ===" in judge_msg.content
+        assert "Veto: allowed." in judge_msg.content
+        assert "Score: +1 Alice." in judge_msg.content
+        assert "=== END JUDGE ACTIONS ===" in judge_msg.content
+
+    def test_omits_judge_block_when_judge_turn_outputs_is_none(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """Judge block is absent when judge_turn_outputs is None."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        initial_len = len(player.turn_history)
+
+        captured: list[list[ChatMessage]] = []
+
+        def capture_and_return(messages: list[ChatMessage]) -> str:
+            captured.append(list(messages))
+            return "A" * 100
+
+        player.api_client.get_completion.side_effect = capture_and_return
+
+        player.update_memory(judge_turn_outputs=None)
+
+        assert len(captured) == 1
+        sent = captured[0]
+        assert len(sent) == initial_len + 1
+        assert "JUDGE ACTIONS" not in sent[-1].content
+
+    def test_omits_judge_block_when_judge_turn_outputs_is_empty(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """Judge block is absent when judge_turn_outputs is an empty list."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        initial_len = len(player.turn_history)
+
+        captured: list[list[ChatMessage]] = []
+
+        def capture_and_return(messages: list[ChatMessage]) -> str:
+            captured.append(list(messages))
+            return "A" * 100
+
+        player.api_client.get_completion.side_effect = capture_and_return
+
+        player.update_memory(judge_turn_outputs=[])
+
+        assert len(captured) == 1
+        sent = captured[0]
+        assert len(sent) == initial_len + 1
+        assert "JUDGE ACTIONS" not in sent[-1].content
+
+    def test_logs_info_with_player_name_personality_and_model_id(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """update_memory() logs INFO with name, personality, model ID."""
+        player = _make_llm_player(
+            model_config,
+            player_name="Max",
+            memory_manager=mock_memory_manager,
+        )
+        player.personality = "machiavellian"
+        player.model_config = ModelDefinition(
+            id="test-model",
+            provider="local",
+            api_model_id="grok-4-1-fast",
+            env_key_name=None,
+        )
+        player.api_client.get_completion.return_value = "A" * 100
+
+        with caplog.at_level(logging.INFO):
+            player.update_memory()
+
+        assert "Max" in caplog.text
+        assert "machiavellian" in caplog.text.lower()
+        assert "grok-4-1-fast" in caplog.text
+        assert "remembering" in caplog.text.lower()
+
+    def test_judge_responses_separated_by_blank_line(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """Multiple judge responses are separated by a blank line."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        judge_responses = [
+            ChatMessage(role="assistant", content="Response A"),
+            ChatMessage(role="assistant", content="Response B"),
+        ]
+
+        captured: list[list[ChatMessage]] = []
+
+        def capture_and_return(messages: list[ChatMessage]) -> str:
+            captured.append(list(messages))
+            return "A" * 100
+
+        player.api_client.get_completion.side_effect = capture_and_return
+
+        player.update_memory(judge_turn_outputs=judge_responses)
+
+        judge_msg = captured[0][len(player.turn_history) - 2]
+        assert "Response A\n\nResponse B" in judge_msg.content
+
+
+# =====================================================================
+# LLMJudge.update_memory() — INFO log Tests
+# =====================================================================
+
+
+class TestLLMJudgeUpdateMemoryInfoLog:
+    """Tests for Bug 2 fix in LLMJudge.update_memory()."""
+
+    def test_logs_info_with_model_id(self, caplog: pytest.LogCaptureFixture):
+        """update_memory() logs INFO with model ID before API call."""
+        mm = Mock()
+        mm.max_characters = 5000
+        judge = _make_llm_judge(memory_manager=mm)
+        judge.model_config = ModelDefinition(
+            id="test-judge",
+            provider="anthropic",
+            api_model_id="claude-sonnet-4-5",
+            env_key_name=None,
+        )
+        judge._judge_turn_responses = [
+            ChatMessage(role="assistant", content="Some reasoning.")
+        ]
+        judge.api_client.get_completion.return_value = "G" * 100
+
+        with caplog.at_level(logging.INFO):
+            judge.update_memory()
+
+        assert "claude-sonnet-4-5" in caplog.text
+        assert "remembering" in caplog.text.lower()
+
+
+# =====================================================================
+# GameLoop._update_all_memories() — judge_turn_outputs passing Tests
+# =====================================================================
+
+
+class TestGameLoopUpdateAllMemoriesJudgeOutputs:
+    """Tests for judge output passing in GameLoop._update_all_memories()."""
+
+    def test_passes_judge_turn_responses_when_llm_judge(
+        self, mock_game_manager: Mock
+    ):
+        """Passes _judge_turn_responses to players when judge is LLMJudge."""
+        llm_a = Mock(spec=LLMPlayer)
+        llm_a.player_name = "Alice"
+        llm_b = Mock(spec=LLMPlayer)
+        llm_b.player_name = "Bob"
+
+        judge_responses = [
+            ChatMessage(role="assistant", content="Judge output.")
+        ]
+        judge = Mock(spec=LLMJudge)
+        judge._judge_turn_responses = judge_responses
+
+        game_loop = GameLoop(
+            game_manager=mock_game_manager,
+            players=[llm_a, llm_b],
+            judge=judge,
+        )
+        game_loop._update_all_memories()
+
+        llm_a.update_memory.assert_called_once_with(
+            judge_turn_outputs=judge_responses
+        )
+        llm_b.update_memory.assert_called_once_with(
+            judge_turn_outputs=judge_responses
+        )
+
+    def test_passes_none_when_judge_is_not_llm_judge(
+        self, mock_game_manager: Mock
+    ):
+        """Passes None to each player's update_memory for HumanJudge."""
+        llm_a = Mock(spec=LLMPlayer)
+        llm_a.player_name = "Alice"
+
+        judge = HumanJudge()
+
+        game_loop = GameLoop(
+            game_manager=mock_game_manager,
+            players=[llm_a],
+            judge=judge,
+        )
+        game_loop._update_all_memories()
+
+        llm_a.update_memory.assert_called_once_with(judge_turn_outputs=None)
+
+    def test_passes_none_when_no_judge(self, mock_game_manager: Mock):
+        """Passes None to each player's update_memory with no judge."""
+        llm_a = Mock(spec=LLMPlayer)
+        llm_a.player_name = "Alice"
+
+        game_loop = GameLoop(
+            game_manager=mock_game_manager,
+            players=[llm_a],
+        )
+        game_loop._update_all_memories()
+
+        llm_a.update_memory.assert_called_once_with(judge_turn_outputs=None)

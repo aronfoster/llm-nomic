@@ -15,9 +15,8 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-- Player context for creating memories does not include judge outputs but it should
-- Need to add INFO log before starting the request for creating a memory
-  - Example: 🤖 Max (Machiavellian / grok-4-1-fast-non-reasoning) is remembering...
+- ~~Player context for creating memories does not include judge outputs but it should~~ ✓ Fixed
+- ~~Need to add INFO log before starting the request for creating a memory~~ ✓ Fixed
 - Players tend to modify Rule 203 to switch to majority after the first complete circuit (instead of second)
   - Might just turn this into a flag since it's so common.
   - What if we modified the judge memory prompt to tell it to remind itself about future game state changes?
