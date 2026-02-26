@@ -15,6 +15,7 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
+- Revise step is not hitting the cache. See [CACHE_BUG.md](CACHE_BUG.md)
 - Players tend to modify Rule 203 to switch to majority after the first complete circuit (instead of second)
   - Might just turn this into a flag since it's so common.
   - What if we modified the judge memory prompt to tell it to remind itself about future game state changes?
@@ -114,7 +115,7 @@ and future rate limiting or budget enforcement work.
 **Out of scope**  
 Dollar-cost calculation, rate-limit enforcement, analysis scripts.
 
-### Task 2: Implementation
+### ~~Task 2: Implementation~~ ✓ Complete
 When `AnthropicApiClient.get_completion()` processes a message list that contains a system-role message, it must send the system content to the Anthropic API using the content-block format with `cache_control: {"type": "ephemeral"}` on the final block. This must be applied for every call — not conditionally.
 
 There is currently one system message per turn phase. The Developer chooses the implementation approach (e.g., internal to `AnthropicApiClient`, or via changes to `ChatMessage`), so long as:
