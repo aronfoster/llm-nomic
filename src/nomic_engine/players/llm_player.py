@@ -5,7 +5,10 @@ This module provides a stub for an LLM-powered player that will
 eventually use language models to participate in the game.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 from ..data_models import (
     ChatMessage,
@@ -20,6 +23,7 @@ from ..data_models import (
 )
 from ..llm import (
     PromptBuilder,
+    build_token_usage_record,
     create_api_client,
     parse_discussion_response,
     parse_proposal_response,
@@ -30,6 +34,9 @@ from ..llm import (
 from ..memory.memory_manager import MemoryManager
 from ..utils.player_label import assemble_player_label
 from .base_player import BasePlayer
+
+if TYPE_CHECKING:
+    from ..utils.token_usage_logger import TokenUsageLogger
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +56,7 @@ class LLMPlayer(BasePlayer):
         personality: str = "friendly",
         tuning: EngineTuningConfig | None = None,
         memory_manager: MemoryManager | None = None,
+        token_usage_logger: TokenUsageLogger | None = None,
     ) -> None:
         """
         Initialize an LLM player with a specific model configuration.
@@ -62,16 +70,21 @@ class LLMPlayer(BasePlayer):
             tuning: Optional engine tuning configuration.
             memory_manager: Optional MemoryManager for persistent memory
                 injection. When None, no memory is injected.
+            token_usage_logger: Optional TokenUsageLogger for recording token
+                usage after every API call. When None, no usage is recorded.
         """
         super().__init__(player_name)
         self.model_config = model_config
         self.personality = personality
         self.tuning = tuning or EngineTuningConfig()
         self.memory_manager = memory_manager
+        self.token_usage_logger = token_usage_logger
         self.api_client = create_api_client(self.model_config)
         self.prompt_builder = PromptBuilder()
         # Stateful conversation history for the current turn
         self.turn_history: list[ChatMessage] = []
+        # Move number updated on each player action for use in logging
+        self._current_move_number: int = 0
 
     @property
     def player_label(self) -> str:
@@ -100,6 +113,35 @@ class LLMPlayer(BasePlayer):
         """
         self.turn_history = [system_message]
 
+    def _log_usage(self, result: object, call_type: str) -> None:
+        """Extract metadata and log token usage. Never raises.
+
+        Args:
+            result: The CompletionResult returned by get_completion().
+            call_type: One of propose, discuss, revise, vote, memory_update.
+        """
+        if self.token_usage_logger is None:
+            return
+        from ..data_models import CompletionResult
+
+        if not isinstance(result, CompletionResult):
+            return
+        try:
+            record = build_token_usage_record(
+                result=result,
+                model_config=self.model_config,
+                call_type=call_type,
+                move_number=self._current_move_number,
+                player_name=self.player_name,
+            )
+            self.token_usage_logger.log(record)
+        except Exception as exc:
+            logger.warning(
+                "%s: failed to build/log token usage record: %s",
+                self.player_name,
+                exc,
+            )
+
     def propose(
         self,
         game_state: GameState,
@@ -127,6 +169,8 @@ class LLMPlayer(BasePlayer):
             RuntimeError: If the LLM fails to generate a valid proposal
                          after all retry attempts are exhausted.
         """
+        self._current_move_number = game_state.move_number
+
         # Build system message for proposer (starts new turn)
         system_message = self.prompt_builder.build_proposer_system_message(
             rules=rules,
@@ -151,7 +195,9 @@ class LLMPlayer(BasePlayer):
             print(f"\n🤖 {self.player_label} is thinking about a proposal...")
 
             # Get completion from the LLM using turn history
-            response_text = self.api_client.get_completion(self.turn_history)
+            result = self.api_client.get_completion(self.turn_history)
+            self._log_usage(result, "propose")
+            response_text = result.text
 
             # Log raw response for debugging
             logger.info(
@@ -247,6 +293,7 @@ class LLMPlayer(BasePlayer):
             game_state: The current state of the game.
             rules: The current list of all rules.
         """
+        self._current_move_number = game_state.move_number
         system_message = self.prompt_builder.build_discusser_system_message(
             proposal=proposal,
             rules=rules,
@@ -279,6 +326,8 @@ class LLMPlayer(BasePlayer):
             A Discussion object containing the player's discussion.
             If the player abstains, Discussion.text will be empty.
         """
+        self._current_move_number = game_state.move_number
+
         # Retry loop with maximum attempts
         max_discussion_retries = self.tuning.max_discuss_retries
         for attempt in range(max_discussion_retries):
@@ -286,7 +335,9 @@ class LLMPlayer(BasePlayer):
             print(f"\n🤖 {self.player_label} is thinking...")
 
             # Get completion from the LLM using turn history
-            response_text = self.api_client.get_completion(self.turn_history)
+            result = self.api_client.get_completion(self.turn_history)
+            self._log_usage(result, "discuss")
+            response_text = result.text
 
             # Log raw response for debugging
             logger.info(
@@ -379,6 +430,8 @@ class LLMPlayer(BasePlayer):
             A complete Vote object representing the player's vote.
             If all retry attempts fail, returns an ABSTAIN vote.
         """
+        self._current_move_number = game_state.move_number
+
         # Use empty list if discussions not provided
         if discussions is None:
             discussions = []
@@ -400,7 +453,9 @@ class LLMPlayer(BasePlayer):
             print(f"\n🤖 {self.player_label} is thinking...")
 
             # Get completion from the LLM using turn history
-            response_text = self.api_client.get_completion(self.turn_history)
+            result = self.api_client.get_completion(self.turn_history)
+            self._log_usage(result, "vote")
+            response_text = result.text
 
             # Log raw response for debugging
             logger.info(
@@ -541,6 +596,8 @@ class LLMPlayer(BasePlayer):
             The (potentially) revised Proposal object,
             or None if the player chooses to withdraw the proposal.
         """
+        self._current_move_number = game_state.move_number
+
         # Build revision instruction and append to history (continues turn)
         revision_instruction = self.prompt_builder.build_revision_instruction(
             discussions=discussions,
@@ -555,7 +612,9 @@ class LLMPlayer(BasePlayer):
             print(f"\n🤖 {self.player_label} is reviewing feedback...")
 
             # Get completion from the LLM using turn history
-            response_text = self.api_client.get_completion(self.turn_history)
+            result = self.api_client.get_completion(self.turn_history)
+            self._log_usage(result, "revise")
+            response_text = result.text
 
             # Log raw response for debugging
             logger.info(
@@ -690,7 +749,9 @@ class LLMPlayer(BasePlayer):
             ChatMessage(role="user", content=update_prompt)
         )
 
-        response = self.api_client.get_completion(self.turn_history)
+        result = self.api_client.get_completion(self.turn_history)
+        self._log_usage(result, "memory_update")
+        response = result.text
 
         if response is None:
             logger.warning(

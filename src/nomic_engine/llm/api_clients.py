@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import datetime
 import logging
-from typing import Iterable, Protocol, cast
+import time
+from typing import Any, Iterable, Optional, Protocol, cast
 
 import anthropic
 import anthropic.types
@@ -13,7 +15,12 @@ from openai import OpenAI, OpenAIError
 from openai.types.chat import ChatCompletionMessageParam
 
 from ..config import get_api_key_from_env
-from ..data_models import ChatMessage, ModelDefinition
+from ..data_models import (
+    ChatMessage,
+    CompletionResult,
+    ModelDefinition,
+    TokenUsageRecord,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +28,9 @@ logger = logging.getLogger(__name__)
 class ApiClientProtocol(Protocol):
     """Protocol defining the interface for all LLM API clients."""
 
-    def get_completion(self, messages: list[ChatMessage]) -> str | None: ...
+    def get_completion(
+        self, messages: list[ChatMessage]
+    ) -> CompletionResult: ...
 
 
 class OpenAICompatibleApiClient:
@@ -81,15 +90,17 @@ class OpenAICompatibleApiClient:
                 f"{model_config.provider}"
             )
 
-    def get_completion(self, messages: list[ChatMessage]) -> str | None:
+    def get_completion(self, messages: list[ChatMessage]) -> CompletionResult:
         """Get a chat completion from an OpenAI-compatible API.
 
         Args:
             messages: List of ChatMessage objects forming the conversation.
 
         Returns:
-            The completion text from the LLM, or None if an error occurred.
+            A CompletionResult with text (or None on error), the raw
+            response object, and measured client latency.
         """
+        start = time.monotonic()
         try:
             openai_messages = cast(
                 Iterable[ChatCompletionMessageParam],
@@ -98,21 +109,36 @@ class OpenAICompatibleApiClient:
             openai_response = self._openai_client.chat.completions.create(
                 model=self.model_id_for_api, messages=openai_messages
             )
-            return openai_response.choices[0].message.content
+            client_latency_ms = int((time.monotonic() - start) * 1000)
+            return CompletionResult(
+                text=openai_response.choices[0].message.content,
+                raw_response=openai_response,
+                client_latency_ms=client_latency_ms,
+            )
         except OpenAIError as e:
+            client_latency_ms = int((time.monotonic() - start) * 1000)
             logger.error(
                 "OpenAI API error for provider %s: %s",
                 self.model_config.provider,
                 e,
             )
-            return None
+            return CompletionResult(
+                text=None,
+                raw_response=None,
+                client_latency_ms=client_latency_ms,
+            )
         except Exception as e:
+            client_latency_ms = int((time.monotonic() - start) * 1000)
             logger.error(
                 "Error getting completion for provider %s: %s",
                 self.model_config.provider,
                 e,
             )
-            return None
+            return CompletionResult(
+                text=None,
+                raw_response=None,
+                client_latency_ms=client_latency_ms,
+            )
 
 
 class AnthropicApiClient:
@@ -143,15 +169,17 @@ class AnthropicApiClient:
         )
         self.model_id_for_api = self.model_config.api_model_id
 
-    def get_completion(self, messages: list[ChatMessage]) -> str | None:
+    def get_completion(self, messages: list[ChatMessage]) -> CompletionResult:
         """Get a chat completion from the Anthropic API.
 
         Args:
             messages: List of ChatMessage objects forming the conversation.
 
         Returns:
-            The completion text from the LLM, or None if an error occurred.
+            A CompletionResult with text (or None on error), the raw
+            response object, and measured client latency.
         """
+        start = time.monotonic()
         try:
             # Anthropic requires separating system messages from the rest
             system_messages = [
@@ -207,24 +235,40 @@ class AnthropicApiClient:
                     messages=anthropic_messages,
                 )
 
+            client_latency_ms = int((time.monotonic() - start) * 1000)
             first_block = anthropic_response.content[0]
+            text: str | None = None
             if hasattr(first_block, "text"):
-                return str(first_block.text)
-            return None
+                text = str(first_block.text)
+            return CompletionResult(
+                text=text,
+                raw_response=anthropic_response,
+                client_latency_ms=client_latency_ms,
+            )
 
         except anthropic.APIError as e:
+            client_latency_ms = int((time.monotonic() - start) * 1000)
             logger.error(
                 "Anthropic API error: %s",
                 e,
             )
-            return None
+            return CompletionResult(
+                text=None,
+                raw_response=None,
+                client_latency_ms=client_latency_ms,
+            )
         except Exception as e:
+            client_latency_ms = int((time.monotonic() - start) * 1000)
             logger.error(
                 "Error getting completion for provider %s: %s",
                 self.model_config.provider,
                 e,
             )
-            return None
+            return CompletionResult(
+                text=None,
+                raw_response=None,
+                client_latency_ms=client_latency_ms,
+            )
 
 
 class GoogleApiClient:
@@ -253,15 +297,17 @@ class GoogleApiClient:
         self._google_client = genai.Client(api_key=api_key)
         self.model_id_for_api = self.model_config.api_model_id
 
-    def get_completion(self, messages: list[ChatMessage]) -> str | None:
+    def get_completion(self, messages: list[ChatMessage]) -> CompletionResult:
         """Get a chat completion from the Google Gemini API.
 
         Args:
             messages: List of ChatMessage objects forming the conversation.
 
         Returns:
-            The completion text from the LLM, or None if an error occurred.
+            A CompletionResult with text (or None on error), the raw
+            response object, and measured client latency.
         """
+        start = time.monotonic()
         try:
             # Google Gemini requires system prompts to be sent via
             # system_instruction (not as a user role message).
@@ -317,15 +363,25 @@ class GoogleApiClient:
                     else None
                 ),
             )
-            return str(google_response.text)
+            client_latency_ms = int((time.monotonic() - start) * 1000)
+            return CompletionResult(
+                text=str(google_response.text),
+                raw_response=google_response,
+                client_latency_ms=client_latency_ms,
+            )
 
         except Exception as e:
+            client_latency_ms = int((time.monotonic() - start) * 1000)
             logger.error(
                 "Error getting completion for provider %s: %s",
                 self.model_config.provider,
                 e,
             )
-            return None
+            return CompletionResult(
+                text=None,
+                raw_response=None,
+                client_latency_ms=client_latency_ms,
+            )
 
 
 def create_api_client(model_config: ModelDefinition) -> ApiClientProtocol:
@@ -352,3 +408,209 @@ def create_api_client(model_config: ModelDefinition) -> ApiClientProtocol:
 
 # Backward-compatible alias
 ApiClient = create_api_client
+
+
+def _utc_timestamp() -> str:
+    """Return the current UTC time as an ISO 8601 string ending with Z."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    # Format with millisecond precision
+    ms = f"{now.microsecond // 1000:03d}"
+    return now.strftime("%Y-%m-%dT%H:%M:%S.") + ms + "Z"
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    """Convert value to int, returning None on failure."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _extract_anthropic_metadata(
+    raw_response: Any,
+) -> dict[str, Any]:
+    """Extract token usage metadata from an Anthropic Message response."""
+    result: dict[str, Any] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_tokens": None,
+        "cache_read_tokens": None,
+        "reasoning_tokens": None,
+        "finish_reason": None,
+        "server_latency_ms": None,
+        "ttft_ms": None,
+        "mean_itl_ms": None,
+        "request_id": None,
+        "ratelimit_remaining_requests": None,
+        "ratelimit_remaining_tokens": None,
+    }
+    if raw_response is None:
+        return result
+    try:
+        usage = getattr(raw_response, "usage", None)
+        if usage is not None:
+            result["input_tokens"] = getattr(usage, "input_tokens", 0) or 0
+            result["output_tokens"] = getattr(usage, "output_tokens", 0) or 0
+            cct = getattr(usage, "cache_creation_input_tokens", None)
+            result["cache_creation_tokens"] = cct
+            crt = getattr(usage, "cache_read_input_tokens", None)
+            result["cache_read_tokens"] = crt
+        stop_reason = getattr(raw_response, "stop_reason", None)
+        if stop_reason is not None:
+            result["finish_reason"] = str(stop_reason)
+    except Exception as exc:
+        logger.warning("Failed to extract Anthropic token metadata: %s", exc)
+    return result
+
+
+def _extract_openai_metadata(
+    raw_response: Any,
+    provider: str,
+) -> dict[str, Any]:
+    """Extract token usage metadata from an OpenAI-compatible response."""
+    result: dict[str, Any] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_tokens": None,
+        "cache_read_tokens": None,
+        "reasoning_tokens": None,
+        "finish_reason": None,
+        "server_latency_ms": None,
+        "ttft_ms": None,
+        "mean_itl_ms": None,
+        "request_id": None,
+        "ratelimit_remaining_requests": None,
+        "ratelimit_remaining_tokens": None,
+    }
+    if raw_response is None:
+        return result
+    try:
+        usage = getattr(raw_response, "usage", None)
+        if usage is not None:
+            result["input_tokens"] = getattr(usage, "prompt_tokens", 0) or 0
+            result["output_tokens"] = (
+                getattr(usage, "completion_tokens", 0) or 0
+            )
+            if provider == "openai":
+                details = getattr(usage, "completion_tokens_details", None)
+                if details is not None:
+                    rt = getattr(details, "reasoning_tokens", None)
+                    result["reasoning_tokens"] = rt
+        choices = getattr(raw_response, "choices", None)
+        if choices:
+            fr = getattr(choices[0], "finish_reason", None)
+            if fr is not None:
+                result["finish_reason"] = str(fr)
+    except Exception as exc:
+        logger.warning("Failed to extract OpenAI token metadata: %s", exc)
+    return result
+
+
+def _extract_google_metadata(raw_response: Any) -> dict[str, Any]:
+    """Extract token usage metadata from a Google GenerateContentResponse."""
+    result: dict[str, Any] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_tokens": None,
+        "cache_read_tokens": None,
+        "reasoning_tokens": None,
+        "finish_reason": None,
+        "server_latency_ms": None,
+        "ttft_ms": None,
+        "mean_itl_ms": None,
+        "request_id": None,
+        "ratelimit_remaining_requests": None,
+        "ratelimit_remaining_tokens": None,
+    }
+    if raw_response is None:
+        return result
+    try:
+        usage = getattr(raw_response, "usage_metadata", None)
+        if usage is not None:
+            result["input_tokens"] = (
+                getattr(usage, "prompt_token_count", 0) or 0
+            )
+            result["output_tokens"] = (
+                getattr(usage, "candidates_token_count", 0) or 0
+            )
+        candidates = getattr(raw_response, "candidates", None)
+        if candidates:
+            fr = getattr(candidates[0], "finish_reason", None)
+            if fr is not None:
+                result["finish_reason"] = str(fr)
+    except Exception as exc:
+        logger.warning("Failed to extract Google token metadata: %s", exc)
+    return result
+
+
+def build_token_usage_record(
+    result: CompletionResult,
+    model_config: ModelDefinition,
+    call_type: str,
+    move_number: int,
+    player_name: str,
+) -> TokenUsageRecord:
+    """Build a fully populated TokenUsageRecord from a CompletionResult.
+
+    Performs provider-specific extraction of token counts, finish reason,
+    and other metadata from CompletionResult.raw_response. Fields that
+    cannot be extracted are set to null. All exceptions are caught and
+    logged as warnings so this function never raises.
+
+    Args:
+        result: The CompletionResult returned by get_completion().
+        model_config: The ModelDefinition used for this call.
+        call_type: The type of call (propose, discuss, vote, etc.).
+        move_number: The current game move number.
+        player_name: The player name (or "Judge" for judge calls).
+
+    Returns:
+        A fully populated TokenUsageRecord ready for logging.
+    """
+    provider = model_config.provider
+
+    if provider == "anthropic":
+        meta = _extract_anthropic_metadata(result.raw_response)
+    elif provider in ("openai", "xai", "local"):
+        meta = _extract_openai_metadata(result.raw_response, provider)
+    elif provider == "google":
+        meta = _extract_google_metadata(result.raw_response)
+    else:
+        meta = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_creation_tokens": None,
+            "cache_read_tokens": None,
+            "reasoning_tokens": None,
+            "finish_reason": None,
+            "server_latency_ms": None,
+            "ttft_ms": None,
+            "mean_itl_ms": None,
+            "request_id": None,
+            "ratelimit_remaining_requests": None,
+            "ratelimit_remaining_tokens": None,
+        }
+
+    return TokenUsageRecord(
+        timestamp=_utc_timestamp(),
+        move_number=move_number,
+        player_name=player_name,
+        provider=provider,
+        model_id=model_config.api_model_id,
+        call_type=call_type,
+        input_tokens=meta["input_tokens"],
+        output_tokens=meta["output_tokens"],
+        cache_creation_tokens=meta["cache_creation_tokens"],
+        cache_read_tokens=meta["cache_read_tokens"],
+        reasoning_tokens=meta["reasoning_tokens"],
+        finish_reason=meta["finish_reason"],
+        client_latency_ms=result.client_latency_ms,
+        server_latency_ms=meta["server_latency_ms"],
+        ttft_ms=meta["ttft_ms"],
+        mean_itl_ms=meta["mean_itl_ms"],
+        request_id=meta["request_id"],
+        ratelimit_remaining_requests=meta["ratelimit_remaining_requests"],
+        ratelimit_remaining_tokens=meta["ratelimit_remaining_tokens"],
+    )

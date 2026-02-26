@@ -6,6 +6,7 @@ import pytest
 
 from src.nomic_engine.data_models import (
     ChatMessage,
+    CompletionResult,
     GameState,
     Rule,
     RuleStatus,
@@ -56,8 +57,10 @@ def test_get_veto_returns_bool(mock_game_manager):
     )
 
     api_client = Mock()
-    api_client.get_completion.return_value = (
-        '{"private_thoughts":"x","veto":true,"reason":"conflict"}'
+    api_client.get_completion.return_value = CompletionResult(
+        text='{"private_thoughts":"x","veto":true,"reason":"conflict"}',
+        raw_response=None,
+        client_latency_ms=0,
     )
 
     judge = LLMJudge(
@@ -84,9 +87,13 @@ def test_assess_scores_returns_adjustments_without_mutation(mock_game_manager):
     )
 
     api_client = Mock()
-    api_client.get_completion.return_value = (
-        '{"private_thoughts":"ok","score_adjustments":[{'
-        '"player":"Alice","delta":2,"reason":"bonus"}]}'
+    api_client.get_completion.return_value = CompletionResult(
+        text=(
+            '{"private_thoughts":"ok","score_adjustments":[{'
+            '"player":"Alice","delta":2,"reason":"bonus"}]}'
+        ),
+        raw_response=None,
+        client_latency_ms=0,
     )
 
     judge = LLMJudge(
@@ -126,8 +133,16 @@ def test_get_veto_retries_on_malformed_json(mock_game_manager):
     # First call: malformed JSON (extra closing brace)
     # Second call: valid JSON
     api_client.get_completion.side_effect = [
-        '{"private_thoughts":"x","veto":true,"reason":"conflict"}\n}',
-        '{"private_thoughts":"x","veto":true,"reason":"conflict"}',
+        CompletionResult(
+            text='{"private_thoughts":"x","veto":true,"reason":"conflict"}\n}',
+            raw_response=None,
+            client_latency_ms=0,
+        ),
+        CompletionResult(
+            text='{"private_thoughts":"x","veto":true,"reason":"conflict"}',
+            raw_response=None,
+            client_latency_ms=0,
+        ),
     ]
 
     judge = LLMJudge(
@@ -154,7 +169,9 @@ def test_get_veto_raises_after_max_retries(mock_game_manager):
 
     api_client = Mock()
     # All attempts return malformed JSON
-    api_client.get_completion.return_value = "not valid json"
+    api_client.get_completion.return_value = CompletionResult(
+        text="not valid json", raw_response=None, client_latency_ms=0
+    )
 
     judge = LLMJudge(
         Mock(), prompt_builder=prompt_builder, api_client=api_client
@@ -188,8 +205,12 @@ def test_get_veto_retries_on_api_error(mock_game_manager):
     # First call: API error (None)
     # Second call: valid JSON
     api_client.get_completion.side_effect = [
-        None,
-        '{"private_thoughts":"x","veto":false,"reason":"ok"}',
+        CompletionResult(text=None, raw_response=None, client_latency_ms=0),
+        CompletionResult(
+            text='{"private_thoughts":"x","veto":false,"reason":"ok"}',
+            raw_response=None,
+            client_latency_ms=0,
+        ),
     ]
 
     judge = LLMJudge(
@@ -216,8 +237,10 @@ def test_get_veto_raises_on_missing_required_key(mock_game_manager):
 
     api_client = Mock()
     # Missing "reason" key
-    api_client.get_completion.return_value = (
-        '{"private_thoughts":"x","veto":true}'
+    api_client.get_completion.return_value = CompletionResult(
+        text='{"private_thoughts":"x","veto":true}',
+        raw_response=None,
+        client_latency_ms=0,
     )
 
     judge = LLMJudge(
@@ -246,8 +269,14 @@ def test_assess_scores_retries_on_malformed_json(mock_game_manager):
     # First call: malformed JSON
     # Second call: valid JSON
     api_client.get_completion.side_effect = [
-        "invalid json",
-        '{"private_thoughts":"ok","score_adjustments":[]}',
+        CompletionResult(
+            text="invalid json", raw_response=None, client_latency_ms=0
+        ),
+        CompletionResult(
+            text='{"private_thoughts":"ok","score_adjustments":[]}',
+            raw_response=None,
+            client_latency_ms=0,
+        ),
     ]
 
     judge = LLMJudge(
@@ -276,7 +305,9 @@ def test_assess_scores_raises_after_max_retries(mock_game_manager):
 
     api_client = Mock()
     # All attempts return malformed JSON
-    api_client.get_completion.return_value = "not valid json"
+    api_client.get_completion.return_value = CompletionResult(
+        text="not valid json", raw_response=None, client_latency_ms=0
+    )
 
     judge = LLMJudge(
         Mock(), prompt_builder=prompt_builder, api_client=api_client
@@ -310,7 +341,9 @@ def test_assess_scores_no_partial_application_on_failure(mock_game_manager):
 
     api_client = Mock()
     # All attempts return malformed JSON
-    api_client.get_completion.return_value = "not valid json"
+    api_client.get_completion.return_value = CompletionResult(
+        text="not valid json", raw_response=None, client_latency_ms=0
+    )
 
     judge = LLMJudge(
         Mock(), prompt_builder=prompt_builder, api_client=api_client
@@ -345,10 +378,22 @@ def test_assess_scores_retries_on_invalid_player_name(mock_game_manager):
     # First call: references non-existent player "Charlie"
     # Second call: valid response
     api_client.get_completion.side_effect = [
-        '{"private_thoughts":"ok","score_adjustments":[{'
-        '"player":"Charlie","delta":5,"reason":"bonus"}]}',
-        '{"private_thoughts":"ok","score_adjustments":[{'
-        '"player":"Alice","delta":3,"reason":"bonus"}]}',
+        CompletionResult(
+            text=(
+                '{"private_thoughts":"ok","score_adjustments":[{'
+                '"player":"Charlie","delta":5,"reason":"bonus"}]}'
+            ),
+            raw_response=None,
+            client_latency_ms=0,
+        ),
+        CompletionResult(
+            text=(
+                '{"private_thoughts":"ok","score_adjustments":[{'
+                '"player":"Alice","delta":3,"reason":"bonus"}]}'
+            ),
+            raw_response=None,
+            client_latency_ms=0,
+        ),
     ]
 
     judge = LLMJudge(

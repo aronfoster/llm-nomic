@@ -6,6 +6,7 @@ from .api_clients import (
     ApiClientProtocol,
     GoogleApiClient,
     OpenAICompatibleApiClient,
+    build_token_usage_record,
     create_api_client,
 )
 from .parsers import (
@@ -27,6 +28,7 @@ __all__ = [
     "GoogleApiClient",
     "OpenAICompatibleApiClient",
     "PromptBuilder",
+    "build_token_usage_record",
     "create_api_client",
     "load_personality",
     "parse_section_fields",

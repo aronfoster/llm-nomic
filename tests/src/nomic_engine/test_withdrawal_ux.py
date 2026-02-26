@@ -13,6 +13,7 @@ import pytest
 
 from src.nomic_engine.data_models import (
     ChatMessage,
+    CompletionResult,
     Discussion,
     GameConfig,
     GameState,
@@ -349,7 +350,9 @@ class TestLLMPlayerBeginDiscussionTurn:
         mock_pb.build_discusser_system_message.return_value = ChatMessage(
             role="system", content="Should not appear"
         )
-        mock_api.get_completion.return_value = '{"x":"y"}'
+        mock_api.get_completion.return_value = CompletionResult(
+            text='{"x":"y"}', raw_response=None, client_latency_ms=0
+        )
         mock_parse.return_value = {
             "private_thoughts": "t",
             "discussion_text": "my take",
@@ -390,7 +393,9 @@ class TestLLMPlayerBeginDiscussionTurn:
         mock_pb.build_discusser_system_message.return_value = ChatMessage(
             role="system", content="Fresh context"
         )
-        mock_api.get_completion.return_value = '{"x":"y"}'
+        mock_api.get_completion.return_value = CompletionResult(
+            text='{"x":"y"}', raw_response=None, client_latency_ms=0
+        )
         mock_parse.return_value = {
             "private_thoughts": "t",
             "discussion_text": "fresh take",
@@ -421,7 +426,9 @@ class TestLLMPlayerBeginDiscussionTurn:
     ) -> None:
         """Skipping begin_discussion_turn() retains accumulated history."""
         mock_api = mock_api_client_class.return_value
-        mock_api.get_completion.return_value = '{"x":"y"}'
+        mock_api.get_completion.return_value = CompletionResult(
+            text='{"x":"y"}', raw_response=None, client_latency_ms=0
+        )
         mock_parse.return_value = {
             "private_thoughts": "t",
             "discussion_text": "retained",

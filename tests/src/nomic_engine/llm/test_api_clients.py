@@ -8,7 +8,10 @@ import pytest
 from google.genai import types as google_types
 from openai import OpenAIError
 
-from src.nomic_engine.data_models import ChatMessage, ModelDefinition
+from src.nomic_engine.data_models import (
+    ChatMessage,
+    ModelDefinition,
+)
 from src.nomic_engine.llm.api_clients import (
     AnthropicApiClient,
     GoogleApiClient,
@@ -292,7 +295,7 @@ def test_get_completion_local_success():
                 {"role": "user", "content": "Hello!"},
             ],
         )
-        assert result == "This is a test response"
+        assert result.text == "This is a test response"
 
 
 def test_get_completion_xai_uses_api_model_id(monkeypatch):
@@ -325,7 +328,7 @@ def test_get_completion_xai_uses_api_model_id(monkeypatch):
             model="grok-4-1-fast-reasoning",
             messages=[{"role": "user", "content": "Hello!"}],
         )
-        assert result == "Grok says hello"
+        assert result.text == "Grok says hello"
 
 
 def test_get_completion_openai_compatible_openai_error():
@@ -348,7 +351,7 @@ def test_get_completion_openai_compatible_openai_error():
         result = api_client.get_completion(
             [ChatMessage(role="user", content="Hello!")]
         )
-        assert result is None
+        assert result.text is None
 
 
 def test_get_completion_openai_success(monkeypatch):
@@ -387,7 +390,7 @@ def test_get_completion_openai_success(monkeypatch):
                 {"role": "user", "content": "Hello!"},
             ],
         )
-        assert result == "OpenAI response"
+        assert result.text == "OpenAI response"
 
 
 def test_get_completion_openai_error(monkeypatch):
@@ -412,7 +415,7 @@ def test_get_completion_openai_error(monkeypatch):
         result = api_client.get_completion(
             [ChatMessage(role="user", content="Hello!")]
         )
-        assert result is None
+        assert result.text is None
 
 
 # ---------------------------------------------------------------------------
@@ -463,7 +466,7 @@ def test_get_completion_anthropic_success(monkeypatch):
             {"role": "assistant", "content": "Hi there!"},
             {"role": "user", "content": "How are you?"},
         ]
-        assert result == "Anthropic response"
+        assert result.text == "Anthropic response"
 
 
 def test_get_completion_anthropic_no_system(monkeypatch):
@@ -496,7 +499,7 @@ def test_get_completion_anthropic_no_system(monkeypatch):
 
         call_args = mock_client.messages.create.call_args
         assert "system" not in call_args.kwargs
-        assert result == "Response"
+        assert result.text == "Response"
 
 
 def test_get_completion_anthropic_error(monkeypatch):
@@ -523,7 +526,7 @@ def test_get_completion_anthropic_error(monkeypatch):
         result = api_client.get_completion(
             [ChatMessage(role="user", content="Hello!")]
         )
-        assert result is None
+        assert result.text is None
 
 
 # ---------------------------------------------------------------------------
@@ -583,7 +586,7 @@ def test_get_completion_google_success(monkeypatch):
         assert call_args.kwargs["config"] == {
             "system_instruction": "You are helpful.",
         }
-        assert result == "Google response"
+        assert result.text == "Google response"
 
 
 def test_get_completion_google_error(monkeypatch):
@@ -610,7 +613,7 @@ def test_get_completion_google_error(monkeypatch):
         result = api_client.get_completion(
             [ChatMessage(role="user", content="Hello!")]
         )
-        assert result is None
+        assert result.text is None
 
 
 def test_get_completion_google_system_messages_use_system_instruction(
@@ -656,7 +659,7 @@ def test_get_completion_google_system_messages_use_system_instruction(
         assert call_args.kwargs["config"] == {
             "system_instruction": "System 1\n\nSystem 2"
         }
-        assert result == "Google response"
+        assert result.text == "Google response"
 
 
 def test_get_completion_google_system_only_falls_back_to_user_message(
@@ -698,4 +701,4 @@ def test_get_completion_google_system_only_falls_back_to_user_message(
             ),
         ]
         assert call_args.kwargs["config"] is None
-        assert result == "Google response"
+        assert result.text == "Google response"

@@ -11,7 +11,12 @@ from ..judge_contracts import (
     JudgeVetoResponse,
     StateUpdates,
 )
-from ..llm import ApiClientProtocol, PromptBuilder, create_api_client
+from ..llm import (
+    ApiClientProtocol,
+    PromptBuilder,
+    build_token_usage_record,
+    create_api_client,
+)
 from ..llm import prompts as llm_prompts
 from ..llm.parsers import (
     parse_judge_maintain_state_response,
@@ -24,8 +29,9 @@ from .base_judge import BaseJudge
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
-    from ..data_models import Discussion, Proposal, Vote
+    from ..data_models import CompletionResult, Discussion, Proposal, Vote
     from ..players.base_player import BasePlayer
+    from ..utils.token_usage_logger import TokenUsageLogger
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +46,7 @@ class LLMJudge(BaseJudge):
         api_client: ApiClientProtocol | None = None,
         tuning: EngineTuningConfig | None = None,
         memory_manager: MemoryManager | None = None,
+        token_usage_logger: TokenUsageLogger | None = None,
     ) -> None:
         """Initialize the LLMJudge.
 
@@ -53,15 +60,20 @@ class LLMJudge(BaseJudge):
             tuning: Optional engine tuning configuration.
             memory_manager: Optional MemoryManager for persistent memory
                 injection. When None, no memory is injected.
+            token_usage_logger: Optional TokenUsageLogger for recording token
+                usage after every API call. When None, no usage is recorded.
         """
         self.model_config = model_config
         self.tuning = tuning or EngineTuningConfig()
         self.prompt_builder = prompt_builder or PromptBuilder()
         self.api_client = api_client or create_api_client(model_config)
         self.memory_manager = memory_manager
+        self.token_usage_logger = token_usage_logger
         # Accumulates the judge's assistant-role responses during a turn.
         # Reset each turn by GameLoop._reset_judge_turn_state().
         self._judge_turn_responses: list[ChatMessage] = []
+        # Move number updated on each judge action for use in logging
+        self._current_move_number: int = 0
         logger.info(
             "Initialized LLMJudge with model %s (provider: %s)",
             model_config.api_model_id,
@@ -122,6 +134,30 @@ class LLMJudge(BaseJudge):
         )
         return [system_message, context_message]
 
+    def _log_usage(self, result: CompletionResult, call_type: str) -> None:
+        """Extract metadata and log token usage. Never raises.
+
+        Args:
+            result: The CompletionResult returned by get_completion().
+            call_type: One of judge_veto, judge_score, judge_maintain_state,
+                memory_update.
+        """
+        if self.token_usage_logger is None:
+            return
+        try:
+            record = build_token_usage_record(
+                result=result,
+                model_config=self.model_config,
+                call_type=call_type,
+                move_number=self._current_move_number,
+                player_name="Judge",
+            )
+            self.token_usage_logger.log(record)
+        except Exception as exc:
+            logger.warning(
+                "Judge: failed to build/log token usage record: %s", exc
+            )
+
     def get_veto(
         self,
         game_manager: "GameManager",
@@ -129,6 +165,9 @@ class LLMJudge(BaseJudge):
         votes: list["Vote"],
         discussions: list["Discussion"],
     ) -> JudgeVetoResponse:
+        assert game_manager.game_state is not None
+        self._current_move_number = game_manager.game_state.move_number
+
         base_messages = self._build_messages(
             game_manager, proposal, votes, discussions
         )
@@ -149,7 +188,9 @@ class LLMJudge(BaseJudge):
             # Use base_messages for first attempt, rebuild for retries
             messages = base_messages.copy()
 
-            response_text = self.api_client.get_completion(messages)
+            result = self.api_client.get_completion(messages)
+            self._log_usage(result, "judge_veto")
+            response_text = result.text
 
             # Handle API errors (None response)
             if response_text is None:
@@ -228,6 +269,8 @@ class LLMJudge(BaseJudge):
         assert game_manager.rules_manager is not None
         _ = players
 
+        self._current_move_number = game_manager.game_state.move_number
+
         # Filter rules to only scoring-relevant ones
         scoring_rules = filter_scoring_rules(game_manager.rules_manager.rules)
 
@@ -263,7 +306,9 @@ class LLMJudge(BaseJudge):
             # Use base_messages for first attempt, rebuild for retries
             messages = base_messages.copy()
 
-            response_text = self.api_client.get_completion(messages)
+            result = self.api_client.get_completion(messages)
+            self._log_usage(result, "judge_score")
+            response_text = result.text
 
             # Handle API errors (None response)
             if response_text is None:
@@ -358,6 +403,8 @@ class LLMJudge(BaseJudge):
         """
         assert game_manager.game_state is not None
 
+        self._current_move_number = game_manager.game_state.move_number
+
         # Build minimal context: just system message and maintain_state
         # prompt
         system_message = ChatMessage(
@@ -388,7 +435,9 @@ class LLMJudge(BaseJudge):
             # Use base_messages for first attempt, rebuild for retries
             messages = base_messages.copy()
 
-            response_text = self.api_client.get_completion(messages)
+            result = self.api_client.get_completion(messages)
+            self._log_usage(result, "judge_maintain_state")
+            response_text = result.text
 
             # Handle API errors (None response)
             if response_text is None:
@@ -502,7 +551,9 @@ class LLMJudge(BaseJudge):
             + [ChatMessage(role="user", content=update_prompt)]
         )
 
-        response = self.api_client.get_completion(messages)
+        result = self.api_client.get_completion(messages)
+        self._log_usage(result, "memory_update")
+        response = result.text
 
         if response is None:
             logger.warning(
