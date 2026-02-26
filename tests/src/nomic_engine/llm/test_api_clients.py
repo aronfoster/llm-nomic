@@ -476,6 +476,7 @@ def test_get_completion_anthropic_success(monkeypatch):
         call_args = mock_client.messages.with_raw_response.create.call_args
         assert call_args.kwargs["model"] == "claude-sonnet-4-5"
         assert call_args.kwargs["max_tokens"] == 8192
+        assert call_args.kwargs["cache_control"] == {"type": "ephemeral"}
         assert call_args.kwargs["system"] == "You are helpful."
         assert call_args.kwargs["messages"] == [
             {"role": "user", "content": "Hello!"},
@@ -519,7 +520,57 @@ def test_get_completion_anthropic_no_system(monkeypatch):
 
         call_args = mock_client.messages.with_raw_response.create.call_args
         assert "system" not in call_args.kwargs
+        assert call_args.kwargs["cache_control"] == {"type": "ephemeral"}
         assert result.text == "Response"
+
+
+def test_get_completion_anthropic_automatic_cache_control_always_sent(
+    monkeypatch,
+):
+    """cache_control is sent on every Anthropic call for automatic caching."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="claude-sonnet-4-5",
+        provider="anthropic",
+        api_model_id="claude-sonnet-4-5",
+        env_key_name="ANTHROPIC_API_KEY",
+    )
+
+    mock_text_block = MagicMock()
+    mock_text_block.text = "Cached response"
+    mock_response = MagicMock()
+    mock_response.content = [mock_text_block]
+
+    with patch(
+        "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
+    ) as mock_anthropic_class:
+        mock_client = MagicMock()
+        mock_http_response = MagicMock()
+        mock_http_response.parse.return_value = mock_response
+        mock_client.messages.with_raw_response.create.return_value = (
+            mock_http_response
+        )
+        mock_anthropic_class.return_value = mock_client
+
+        api_client = AnthropicApiClient(mock_model_def)
+
+        # With system message
+        api_client.get_completion(
+            [
+                ChatMessage(role="system", content="System prompt."),
+                ChatMessage(role="user", content="Hello!"),
+            ]
+        )
+        call_args = mock_client.messages.with_raw_response.create.call_args
+        assert call_args.kwargs["cache_control"] == {"type": "ephemeral"}
+        assert call_args.kwargs["system"] == "System prompt."
+
+        # Without system message
+        api_client.get_completion([ChatMessage(role="user", content="Hello!")])
+        call_args = mock_client.messages.with_raw_response.create.call_args
+        assert call_args.kwargs["cache_control"] == {"type": "ephemeral"}
+        assert "system" not in call_args.kwargs
 
 
 def test_get_completion_anthropic_error(monkeypatch):

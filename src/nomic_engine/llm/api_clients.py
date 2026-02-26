@@ -228,6 +228,7 @@ class AnthropicApiClient:
                 http_response = client.messages.with_raw_response.create(
                     model=self.model_id_for_api,
                     max_tokens=8192,
+                    cache_control={"type": "ephemeral"},
                     system=system_prompt,
                     messages=anthropic_messages,
                 )
@@ -235,6 +236,7 @@ class AnthropicApiClient:
                 http_response = client.messages.with_raw_response.create(
                     model=self.model_id_for_api,
                     max_tokens=8192,
+                    cache_control={"type": "ephemeral"},
                     messages=anthropic_messages,
                 )
             anthropic_response = http_response.parse()
