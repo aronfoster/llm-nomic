@@ -315,8 +315,9 @@ class TestLLMPlayerBeginDiscussionTurn:
     ) -> None:
         """begin_discussion_turn() must reset history to the new system msg."""
         mock_pb = mock_prompt_builder_class.return_value
-        mock_pb.build_discusser_system_message.return_value = ChatMessage(
-            role="system", content="New system msg"
+        mock_pb.build_discusser_system_message.return_value = (
+            ChatMessage(role="system", content="New system msg"),
+            ChatMessage(role="user", content="New user msg"),
         )
 
         player = LLMPlayer("Bob", model_config)
@@ -328,8 +329,9 @@ class TestLLMPlayerBeginDiscussionTurn:
 
         player.begin_discussion_turn(proposal, game_state, rules)
 
-        assert len(player.turn_history) == 1
+        assert len(player.turn_history) == 2
         assert player.turn_history[0].content == "New system msg"
+        assert player.turn_history[1].content == "New user msg"
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.create_api_client")
@@ -347,8 +349,9 @@ class TestLLMPlayerBeginDiscussionTurn:
         """discuss() must not reset history — it uses whatever is in place."""
         mock_api = mock_api_client_class.return_value
         mock_pb = mock_prompt_builder_class.return_value
-        mock_pb.build_discusser_system_message.return_value = ChatMessage(
-            role="system", content="Should not appear"
+        mock_pb.build_discusser_system_message.return_value = (
+            ChatMessage(role="system", content="Should not appear"),
+            ChatMessage(role="user", content="Should not appear user"),
         )
         mock_api.get_completion.return_value = CompletionResult(
             text='{"x":"y"}', raw_response=None, client_latency_ms=0
@@ -390,8 +393,9 @@ class TestLLMPlayerBeginDiscussionTurn:
         """begin_discussion_turn() followed by discuss() uses fresh context."""
         mock_api = mock_api_client_class.return_value
         mock_pb = mock_prompt_builder_class.return_value
-        mock_pb.build_discusser_system_message.return_value = ChatMessage(
-            role="system", content="Fresh context"
+        mock_pb.build_discusser_system_message.return_value = (
+            ChatMessage(role="system", content="Fresh context"),
+            ChatMessage(role="user", content="Fresh user context"),
         )
         mock_api.get_completion.return_value = CompletionResult(
             text='{"x":"y"}', raw_response=None, client_latency_ms=0
@@ -408,8 +412,8 @@ class TestLLMPlayerBeginDiscussionTurn:
 
         result = player.discuss(proposal, game_state, rules)
         assert result.text == "fresh take"
-        # History: [system] + [assistant response]
-        assert len(player.turn_history) == 2
+        # History: [system, user] + [assistant response]
+        assert len(player.turn_history) == 3
 
     @patch("src.nomic_engine.players.llm_player.PromptBuilder")
     @patch("src.nomic_engine.players.llm_player.create_api_client")

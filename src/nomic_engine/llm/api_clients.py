@@ -211,18 +211,6 @@ class AnthropicApiClient:
                         msg.role,
                     )
 
-            # Anthropic requires at least one user message.
-            # If all messages were system-role, use the system prompt
-            # as a user message instead.
-            if not anthropic_messages and system_prompt:
-                anthropic_messages = [
-                    cast(
-                        anthropic.types.MessageParam,
-                        {"role": "user", "content": system_prompt},
-                    )
-                ]
-                system_prompt = None
-
             client = self._anthropic_client
             if system_prompt:
                 http_response = client.messages.with_raw_response.create(

@@ -102,16 +102,21 @@ class LLMPlayer(BasePlayer):
             return ""
         return self.memory_manager.read(self.player_name)
 
-    def _reset_history(self, system_message: ChatMessage) -> None:
+    def _reset_history(
+        self, system_message: ChatMessage, user_message: ChatMessage
+    ) -> None:
         """
         Reset the conversation history for a new turn/action.
 
-        Clears the turn_history and starts fresh with the given system message.
+        Clears turn_history and initialises it with [system, user] so that
+        every API call — including the very first — has at least one user
+        message. This ensures cache prefix matching works from call 1.
 
         Args:
-            system_message: The system message to start the new context.
+            system_message: The stable system message (cacheable prefix).
+            user_message: The phase-specific user message.
         """
-        self.turn_history = [system_message]
+        self.turn_history = [system_message, user_message]
 
     def _log_usage(self, result: object, call_type: str) -> None:
         """Extract metadata and log token usage. Never raises.
@@ -171,22 +176,24 @@ class LLMPlayer(BasePlayer):
         """
         self._current_move_number = game_state.move_number
 
-        # Build system message for proposer (starts new turn)
-        system_message = self.prompt_builder.build_proposer_system_message(
-            rules=rules,
-            game_state=game_state,
-            player_name=self.player_name,
-            personality=self.personality,
-            memory_content=self._read_own_memory(),
+        # Build system + user messages for proposer (starts new turn)
+        system_msg, user_msg = (
+            self.prompt_builder.build_proposer_system_message(
+                rules=rules,
+                game_state=game_state,
+                player_name=self.player_name,
+                personality=self.personality,
+                memory_content=self._read_own_memory(),
+            )
         )
 
         # Reset history for a fresh turn, unless this is a pivot retry.
         if not continue_turn:
-            self._reset_history(system_message)
+            self._reset_history(system_msg, user_msg)
         elif not self.turn_history:
             # Defensive fallback: initialize context if history is unexpectedly
             # empty even though caller requested a cumulative retry.
-            self._reset_history(system_message)
+            self._reset_history(system_msg, user_msg)
 
         # Retry loop with maximum attempts
         max_proposal_retries = self.tuning.max_propose_retries
@@ -294,15 +301,17 @@ class LLMPlayer(BasePlayer):
             rules: The current list of all rules.
         """
         self._current_move_number = game_state.move_number
-        system_message = self.prompt_builder.build_discusser_system_message(
-            proposal=proposal,
-            rules=rules,
-            game_state=game_state,
-            player_name=self.player_name,
-            personality=self.personality,
-            memory_content=self._read_own_memory(),
+        system_msg, user_msg = (
+            self.prompt_builder.build_discusser_system_message(
+                proposal=proposal,
+                rules=rules,
+                game_state=game_state,
+                player_name=self.player_name,
+                personality=self.personality,
+                memory_content=self._read_own_memory(),
+            )
         )
-        self._reset_history(system_message)
+        self._reset_history(system_msg, user_msg)
 
     def discuss(
         self,
