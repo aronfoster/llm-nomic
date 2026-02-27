@@ -358,49 +358,57 @@ class TestPromptBuilder(unittest.TestCase):
         )
         mock_prompts.JSON_FORMAT_ENFORCEMENT = "JSON_ENFORCE"
 
-        message = self.builder.build_proposer_system_message(
+        system_msg, user_msg = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
             player_name="Alice",
             personality="machiavellian",
         )
 
-        # Verify returns single system message
-        self.assertIsInstance(message, ChatMessage)
-        self.assertEqual(message.role, "system")
+        # Verify returns (system, user) tuple
+        self.assertIsInstance(system_msg, ChatMessage)
+        self.assertIsInstance(user_msg, ChatMessage)
+        self.assertEqual(system_msg.role, "system")
+        self.assertEqual(user_msg.role, "user")
 
-        # Verify content includes all blocks
-        self.assertIn("PERSONA:Alice", message.content)
-        self.assertIn("STATE:5,", message.content)
-        self.assertIn("1 of 3", message.content)  # player position
-        self.assertIn("RULES:", message.content)
-        self.assertIn("PROPOSE:JSON_ENFORCE", message.content)
-        self.assertIn('"type": "ADD"', message.content)
+        # Stable context in system message
+        self.assertIn("PERSONA:Alice", system_msg.content)
+        self.assertIn("STATE:5,", system_msg.content)
+        self.assertIn("1 of 3", system_msg.content)  # player position
+        self.assertIn("RULES:", system_msg.content)
+
+        # Phase-specific instruction in user message
+        self.assertIn("PROPOSE:JSON_ENFORCE", user_msg.content)
+        self.assertIn('"type": "ADD"', user_msg.content)
 
     def test_build_proposer_system_message_integration(self):
         """Integration test using real templates (not mocked)."""
-        message = self.builder.build_proposer_system_message(
+        system_msg, user_msg = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
             player_name="Alice",
             personality="machiavellian",
         )
 
-        # Verify single system message
-        self.assertIsInstance(message, ChatMessage)
-        self.assertEqual(message.role, "system")
+        # Verify (system, user) tuple
+        self.assertIsInstance(system_msg, ChatMessage)
+        self.assertIsInstance(user_msg, ChatMessage)
+        self.assertEqual(system_msg.role, "system")
+        self.assertEqual(user_msg.role, "user")
 
-        # Verify content includes expected data
-        self.assertIn("Alice", message.content)  # player name in persona
-        self.assertIn("Move #5", message.content)  # from game state
-        self.assertIn("1 of 3", message.content)  # Alice's position
-        self.assertIn("101", message.content)  # rule ID
-        self.assertIn("ADD", message.content)  # from instruction
-        self.assertIn("OUTPUT REQUIREMENTS", message.content)  # JSON format
+        # Stable context in system message
+        self.assertIn("Alice", system_msg.content)  # player name in persona
+        self.assertIn("Move #5", system_msg.content)  # from game state
+        self.assertIn("1 of 3", system_msg.content)  # Alice's position
+        self.assertIn("101", system_msg.content)  # rule ID
+
+        # Phase-specific instruction in user message
+        self.assertIn("ADD", user_msg.content)  # from instruction
+        self.assertIn("OUTPUT REQUIREMENTS", user_msg.content)  # JSON format
 
     def test_build_proposer_system_message_friendly_personality(self):
         """Friendly personality produces correct, distinct output."""
-        message = self.builder.build_proposer_system_message(
+        system_msg, user_msg = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
             player_name="Alice",
@@ -408,22 +416,25 @@ class TestPromptBuilder(unittest.TestCase):
         )
 
         # Verify message structure
-        self.assertIsInstance(message, ChatMessage)
-        self.assertEqual(message.role, "system")
-        self.assertIn("Alice", message.content)
+        self.assertIsInstance(system_msg, ChatMessage)
+        self.assertEqual(system_msg.role, "system")
+        self.assertIn("Alice", system_msg.content)
 
         # Verify friendly produces different content than machiavellian
-        machiavellian_message = self.builder.build_proposer_system_message(
+        mach_sys, mach_usr = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
             player_name="Alice",
             personality="machiavellian",
         )
-        self.assertNotEqual(message.content, machiavellian_message.content)
+        self.assertNotEqual(
+            system_msg.content + user_msg.content,
+            mach_sys.content + mach_usr.content,
+        )
 
     def test_build_proposer_system_message_none_personality(self):
         """Test proposer message with none personality."""
-        message = self.builder.build_proposer_system_message(
+        system_msg, user_msg = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
             player_name="Alice",
@@ -431,22 +442,22 @@ class TestPromptBuilder(unittest.TestCase):
         )
 
         # Verify none persona is used - minimal, no strategy guidance
-        self.assertIn("Alice", message.content)
-        self.assertIn("player in a game of Nomic", message.content)
-        self.assertNotIn("cooperative player", message.content)
-        self.assertNotIn("ruthlessly competitive", message.content)
+        self.assertIn("Alice", system_msg.content)
+        self.assertIn("player in a game of Nomic", system_msg.content)
+        self.assertNotIn("cooperative player", system_msg.content)
+        self.assertNotIn("ruthlessly competitive", system_msg.content)
 
     def test_build_proposer_system_message_empty_rules(self):
         """Test proposer message handles empty rule lists."""
-        message = self.builder.build_proposer_system_message(
+        system_msg, user_msg = self.builder.build_proposer_system_message(
             rules=[],
             game_state=self.game_state,
             player_name="Alice",
             personality="machiavellian",
         )
 
-        self.assertEqual(message.role, "system")
-        self.assertIn("No rules defined", message.content)
+        self.assertEqual(system_msg.role, "system")
+        self.assertIn("No rules defined", system_msg.content)
 
     def test_build_proposer_system_message_player_not_found(self):
         """Test proposer message raises ValueError for unknown player."""
@@ -494,7 +505,7 @@ class TestPromptBuilder(unittest.TestCase):
         )
         mock_prompts.JSON_FORMAT_ENFORCEMENT = "JSON_ENFORCE"
 
-        message = self.builder.build_discusser_system_message(
+        system_msg, user_msg = self.builder.build_discusser_system_message(
             proposal=self.proposal,
             rules=self.rules,
             game_state=self.game_state,
@@ -502,21 +513,25 @@ class TestPromptBuilder(unittest.TestCase):
             personality="friendly",
         )
 
-        # Verify returns single system message
-        self.assertIsInstance(message, ChatMessage)
-        self.assertEqual(message.role, "system")
+        # Verify returns (system, user) tuple
+        self.assertIsInstance(system_msg, ChatMessage)
+        self.assertIsInstance(user_msg, ChatMessage)
+        self.assertEqual(system_msg.role, "system")
+        self.assertEqual(user_msg.role, "user")
 
-        # Verify content includes all blocks
-        self.assertIn("PERSONA:Charlie", message.content)
-        self.assertIn("STATE:5,", message.content)
-        self.assertIn("RULES:", message.content)
-        self.assertIn("PROPOSAL:304", message.content)
-        self.assertIn("DISCUSS:JSON_ENFORCE", message.content)
-        self.assertIn('"discussion_text"', message.content)
+        # Stable context in system message
+        self.assertIn("PERSONA:Charlie", system_msg.content)
+        self.assertIn("STATE:5,", system_msg.content)
+        self.assertIn("RULES:", system_msg.content)
+
+        # Phase-specific content in user message
+        self.assertIn("PROPOSAL:304", user_msg.content)
+        self.assertIn("DISCUSS:JSON_ENFORCE", user_msg.content)
+        self.assertIn('"discussion_text"', user_msg.content)
 
     def test_build_discusser_system_message_integration(self):
         """Integration test using real templates (not mocked)."""
-        message = self.builder.build_discusser_system_message(
+        system_msg, user_msg = self.builder.build_discusser_system_message(
             proposal=self.proposal,
             rules=self.rules,
             game_state=self.game_state,
@@ -524,22 +539,26 @@ class TestPromptBuilder(unittest.TestCase):
             personality="machiavellian",
         )
 
-        # Verify single system message
-        self.assertIsInstance(message, ChatMessage)
-        self.assertEqual(message.role, "system")
+        # Verify (system, user) tuple
+        self.assertIsInstance(system_msg, ChatMessage)
+        self.assertIsInstance(user_msg, ChatMessage)
+        self.assertEqual(system_msg.role, "system")
+        self.assertEqual(user_msg.role, "user")
 
-        # Verify content includes expected data
-        self.assertIn("Charlie", message.content)  # player name
-        self.assertIn("Move #5", message.content)  # from game state
-        self.assertIn("3 of 3", message.content)  # Charlie's position
-        self.assertIn("304", message.content)  # proposal ID
-        self.assertIn("Bob", message.content)  # proposer name
-        self.assertIn("Amend", message.content)  # proposal type
-        self.assertIn("discussion_text", message.content)  # from instruction
+        # Stable context in system message
+        self.assertIn("Charlie", system_msg.content)  # player name
+        self.assertIn("Move #5", system_msg.content)  # from game state
+        self.assertIn("3 of 3", system_msg.content)  # Charlie's position
+
+        # Phase-specific content in user message
+        self.assertIn("304", user_msg.content)  # proposal ID
+        self.assertIn("Bob", user_msg.content)  # proposer name
+        self.assertIn("Amend", user_msg.content)  # proposal type
+        self.assertIn("discussion_text", user_msg.content)  # from instruction
 
     def test_build_discusser_system_message_self_proposal(self):
         """Test discusser message marks (YOU) when discussing own proposal."""
-        message = self.builder.build_discusser_system_message(
+        system_msg, user_msg = self.builder.build_discusser_system_message(
             proposal=self.proposal,
             rules=self.rules,
             game_state=self.game_state,
@@ -547,7 +566,7 @@ class TestPromptBuilder(unittest.TestCase):
             personality="machiavellian",
         )
 
-        self.assertIn("Bob (YOU)", message.content)
+        self.assertIn("Bob (YOU)", user_msg.content)
 
     def test_build_discusser_system_message_handles_none_values(self):
         """Test discusser message handles None in proposal fields."""
@@ -561,7 +580,7 @@ class TestPromptBuilder(unittest.TestCase):
             rationale=None,
         )
 
-        message = self.builder.build_discusser_system_message(
+        system_msg, user_msg = self.builder.build_discusser_system_message(
             proposal=minimal_proposal,
             rules=self.rules,
             game_state=self.game_state,
@@ -569,9 +588,9 @@ class TestPromptBuilder(unittest.TestCase):
             personality="machiavellian",
         )
 
-        self.assertEqual(message.role, "system")
-        self.assertIn("N/A", message.content)
-        self.assertIn("No rationale provided", message.content)
+        self.assertEqual(system_msg.role, "system")
+        self.assertIn("N/A", user_msg.content)
+        self.assertIn("No rationale provided", user_msg.content)
 
     # =========================================================================
     # Tests for build_revision_instruction (with mocking)
@@ -819,10 +838,10 @@ class TestPromptBuilder(unittest.TestCase):
     # =========================================================================
 
     def test_build_proposer_system_message_with_memory_injects_block(self):
-        """Non-empty memory_content should appear after rules and before
-        the instruction block."""
+        """Non-empty memory_content should appear in system message after
+        rules; instruction goes in user message."""
         memory = "# Alice's Memory\n\nI want to win."
-        message = self.builder.build_proposer_system_message(
+        system_msg, user_msg = self.builder.build_proposer_system_message(
             rules=self.rules,
             game_state=self.game_state,
             player_name="Alice",
@@ -830,54 +849,61 @@ class TestPromptBuilder(unittest.TestCase):
             memory_content=memory,
         )
 
-        content = message.content
-        self.assertIn("=== YOUR PRIVATE MEMORY ===", content)
-        self.assertIn("I want to win.", content)
+        # Memory is in the stable system message
+        self.assertIn("=== YOUR PRIVATE MEMORY ===", system_msg.content)
+        self.assertIn("I want to win.", system_msg.content)
 
-        # Memory block must appear after rules and before instruction
-        rules_pos = content.index("=== ALL CURRENT RULES ===")
-        memory_pos = content.index("=== YOUR PRIVATE MEMORY ===")
-        instruction_pos = content.index("=== YOUR PROPOSAL ===")
+        # Memory appears after rules within the system message
+        rules_pos = system_msg.content.index("=== ALL CURRENT RULES ===")
+        memory_pos = system_msg.content.index("=== YOUR PRIVATE MEMORY ===")
         self.assertLess(rules_pos, memory_pos)
-        self.assertLess(memory_pos, instruction_pos)
+
+        # Instruction is in the user message
+        self.assertIn("=== YOUR PROPOSAL ===", user_msg.content)
 
     def test_build_proposer_system_message_empty_memory_no_injection(self):
         """Empty memory_content should produce the same output as omitting
         the parameter entirely."""
-        baseline = self.builder.build_proposer_system_message(
-            rules=self.rules,
-            game_state=self.game_state,
-            player_name="Alice",
-            personality="machiavellian",
+        baseline_sys, baseline_usr = (
+            self.builder.build_proposer_system_message(
+                rules=self.rules,
+                game_state=self.game_state,
+                player_name="Alice",
+                personality="machiavellian",
+            )
         )
-        with_empty = self.builder.build_proposer_system_message(
-            rules=self.rules,
-            game_state=self.game_state,
-            player_name="Alice",
-            personality="machiavellian",
-            memory_content="",
+        with_empty_sys, with_empty_usr = (
+            self.builder.build_proposer_system_message(
+                rules=self.rules,
+                game_state=self.game_state,
+                player_name="Alice",
+                personality="machiavellian",
+                memory_content="",
+            )
         )
-        with_whitespace = self.builder.build_proposer_system_message(
-            rules=self.rules,
-            game_state=self.game_state,
-            player_name="Alice",
-            personality="machiavellian",
-            memory_content="   \n  ",
+        with_whitespace_sys, with_whitespace_usr = (
+            self.builder.build_proposer_system_message(
+                rules=self.rules,
+                game_state=self.game_state,
+                player_name="Alice",
+                personality="machiavellian",
+                memory_content="   \n  ",
+            )
         )
 
-        self.assertEqual(baseline.content, with_empty.content)
-        self.assertEqual(baseline.content, with_whitespace.content)
-        self.assertNotIn("=== YOUR PRIVATE MEMORY ===", baseline.content)
+        self.assertEqual(baseline_sys.content, with_empty_sys.content)
+        self.assertEqual(baseline_sys.content, with_whitespace_sys.content)
+        self.assertNotIn("=== YOUR PRIVATE MEMORY ===", baseline_sys.content)
 
     # =========================================================================
     # Tests for memory injection in build_discusser_system_message
     # =========================================================================
 
     def test_build_discusser_system_message_with_memory_injects_block(self):
-        """Non-empty memory_content should appear after rules and before
-        the instruction block in the discusser message."""
+        """Non-empty memory_content should appear in system message after
+        rules; proposal and instruction go in user message."""
         memory = "# Charlie's Memory\n\nAlice is dangerous."
-        message = self.builder.build_discusser_system_message(
+        system_msg, user_msg = self.builder.build_discusser_system_message(
             proposal=self.proposal,
             rules=self.rules,
             game_state=self.game_state,
@@ -886,47 +912,54 @@ class TestPromptBuilder(unittest.TestCase):
             memory_content=memory,
         )
 
-        content = message.content
-        self.assertIn("=== YOUR PRIVATE MEMORY ===", content)
-        self.assertIn("Alice is dangerous.", content)
+        # Memory is in the stable system message
+        self.assertIn("=== YOUR PRIVATE MEMORY ===", system_msg.content)
+        self.assertIn("Alice is dangerous.", system_msg.content)
 
-        # Memory block must appear after rules and before instruction
-        rules_pos = content.index("=== ALL CURRENT RULES ===")
-        memory_pos = content.index("=== YOUR PRIVATE MEMORY ===")
-        instruction_pos = content.index("=== YOUR DISCUSSION ===")
+        # Memory appears after rules within the system message
+        rules_pos = system_msg.content.index("=== ALL CURRENT RULES ===")
+        memory_pos = system_msg.content.index("=== YOUR PRIVATE MEMORY ===")
         self.assertLess(rules_pos, memory_pos)
-        self.assertLess(memory_pos, instruction_pos)
+
+        # Instruction is in the user message
+        self.assertIn("=== YOUR DISCUSSION ===", user_msg.content)
 
     def test_build_discusser_system_message_empty_memory_no_injection(self):
         """Empty memory_content should produce the same output as omitting
         the parameter entirely."""
-        baseline = self.builder.build_discusser_system_message(
-            proposal=self.proposal,
-            rules=self.rules,
-            game_state=self.game_state,
-            player_name="Charlie",
-            personality="machiavellian",
+        baseline_sys, baseline_usr = (
+            self.builder.build_discusser_system_message(
+                proposal=self.proposal,
+                rules=self.rules,
+                game_state=self.game_state,
+                player_name="Charlie",
+                personality="machiavellian",
+            )
         )
-        with_empty = self.builder.build_discusser_system_message(
-            proposal=self.proposal,
-            rules=self.rules,
-            game_state=self.game_state,
-            player_name="Charlie",
-            personality="machiavellian",
-            memory_content="",
+        with_empty_sys, with_empty_usr = (
+            self.builder.build_discusser_system_message(
+                proposal=self.proposal,
+                rules=self.rules,
+                game_state=self.game_state,
+                player_name="Charlie",
+                personality="machiavellian",
+                memory_content="",
+            )
         )
-        with_whitespace = self.builder.build_discusser_system_message(
-            proposal=self.proposal,
-            rules=self.rules,
-            game_state=self.game_state,
-            player_name="Charlie",
-            personality="machiavellian",
-            memory_content="  \t  ",
+        with_whitespace_sys, with_whitespace_usr = (
+            self.builder.build_discusser_system_message(
+                proposal=self.proposal,
+                rules=self.rules,
+                game_state=self.game_state,
+                player_name="Charlie",
+                personality="machiavellian",
+                memory_content="  \t  ",
+            )
         )
 
-        self.assertEqual(baseline.content, with_empty.content)
-        self.assertEqual(baseline.content, with_whitespace.content)
-        self.assertNotIn("=== YOUR PRIVATE MEMORY ===", baseline.content)
+        self.assertEqual(baseline_sys.content, with_empty_sys.content)
+        self.assertEqual(baseline_sys.content, with_whitespace_sys.content)
+        self.assertNotIn("=== YOUR PRIVATE MEMORY ===", baseline_sys.content)
 
 
 if __name__ == "__main__":

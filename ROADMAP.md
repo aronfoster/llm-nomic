@@ -15,7 +15,6 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-- Revise step is not hitting the cache. See [CACHE_BUG.md](CACHE_BUG.md)
 - Players tend to modify Rule 203 to switch to majority after the first complete circuit (instead of second)
   - Might just turn this into a flag since it's so common.
   - What if we modified the judge memory prompt to tell it to remind itself about future game state changes?
@@ -124,6 +123,20 @@ There is currently one system message per turn phase. The Developer chooses the 
 - No other provider's behavior changes.
 - The existing `ChatMessage` contract (used throughout the codebase) remains functional.
 - All five existing call types (`propose`, `discuss`, `revise`, `vote`, `memory_update`) must produce functionally identical outputs. Caching must be transparent to the game engine.
+
+### ~~Task 4: Fix Cache Miss on First→Second Call~~ ✓ Complete
+The monolithic system message design caused Anthropic to demote system-only
+messages to user messages (api_clients.py), producing different wire formats
+on call 1 vs. call 2 and breaking cache prefix matching. The same structural
+mismatch affected xAI's automatic prefix caching.
+
+**Fix:** Split `build_proposer_system_message()` and
+`build_discusser_system_message()` to return `tuple[ChatMessage, ChatMessage]`
+(system + user), and updated `_reset_history()` to initialise `turn_history`
+with `[system, user]`. Every API call — including the very first — now starts
+with an identical system prefix, enabling cache hits from call 2 onward.
+Removed the demotion fallback from `AnthropicApiClient` as it is no longer
+reachable. Expected saving: ~150K tokens per game.
 
 ### Task 3: LLMJudge Caching
 `LLMJudge` currently rebuilds its full message list from scratch on each of

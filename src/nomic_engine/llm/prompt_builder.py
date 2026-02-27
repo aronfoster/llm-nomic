@@ -531,16 +531,15 @@ class PromptBuilder:
         player_name: str,
         personality: str,
         memory_content: str = "",
-    ) -> ChatMessage:
+    ) -> tuple[ChatMessage, ChatMessage]:
         """
-        Build the system message for the Proposer at the start of their turn.
+        Build the system and user messages for the Proposer at turn start.
 
-        Sets the stage for the Proposer by assembling:
-        - Base Persona (based on personality)
-        - GAME_STATE_BLOCK (formatted with scores/turn order)
-        - RULES_BLOCK (formatted with rules)
-        - MEMORY_INJECTION (if memory_content is non-empty)
-        - INSTRUCTION_PROPOSE (formatted with JSON format enforcement)
+        Splits context into two messages so every API call starts with
+        [system, user], enabling cache prefix reuse from the first call:
+        - system: stable identity and context (persona, game state, rules,
+          memory)
+        - user: phase-specific instruction (INSTRUCTION_PROPOSE)
 
         Args:
             rules: All current rules in the game
@@ -551,7 +550,7 @@ class PromptBuilder:
                 empty or whitespace.
 
         Returns:
-            A single ChatMessage with role="system"
+            A (system_message, user_message) tuple of ChatMessage objects.
 
         Raises:
             ValueError: If player_name is not in turn_order
@@ -570,23 +569,25 @@ class PromptBuilder:
         rules_text = self._format_rules(rules)
         rules_block = prompts.RULES_BLOCK.format(rules_text=rules_text)
 
-        # Format instruction block with personality-specific examples
+        # Assemble stable system message (cacheable prefix)
+        system_blocks = [persona_block, game_state_block, rules_block]
+        if memory_content.strip():
+            memory_block = prompts.MEMORY_INJECTION.format(
+                full_memory_content=memory_content
+            )
+            system_blocks.append(memory_block)
+        system_content = "\n\n".join(system_blocks)
+
+        # Phase-specific instruction goes in user message
         instruction_block = prompts.INSTRUCTION_PROPOSE.format(
             json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
             personality_examples=self._build_propose_examples(personality),
         )
 
-        # Assemble the full system message
-        blocks = [persona_block, game_state_block, rules_block]
-        if memory_content.strip():
-            memory_block = prompts.MEMORY_INJECTION.format(
-                full_memory_content=memory_content
-            )
-            blocks.append(memory_block)
-        blocks.append(instruction_block)
-        content = "\n\n".join(blocks)
-
-        return ChatMessage(role="system", content=content)
+        return (
+            ChatMessage(role="system", content=system_content),
+            ChatMessage(role="user", content=instruction_block),
+        )
 
     def build_discusser_system_message(
         self,
@@ -596,17 +597,15 @@ class PromptBuilder:
         player_name: str,
         personality: str,
         memory_content: str = "",
-    ) -> ChatMessage:
+    ) -> tuple[ChatMessage, ChatMessage]:
         """
-        Build the system message for players to discuss the proposal.
+        Build the system and user messages for players discussing a proposal.
 
-        Sets the stage for other players by assembling:
-        - Base Persona (based on personality)
-        - GAME_STATE_BLOCK (formatted with scores/turn order)
-        - RULES_BLOCK (formatted with rules)
-        - MEMORY_INJECTION (if memory_content is non-empty)
-        - PROPOSAL_BLOCK (formatted with the initial proposal details)
-        - INSTRUCTION_DISCUSS
+        Splits context into two messages so every API call starts with
+        [system, user], enabling cache prefix reuse from the first call:
+        - system: stable identity and context (persona, game state, rules,
+          memory)
+        - user: phase-specific content (proposal block + INSTRUCTION_DISCUSS)
 
         Args:
             proposal: The proposal being discussed
@@ -618,7 +617,7 @@ class PromptBuilder:
                 empty or whitespace.
 
         Returns:
-            A single ChatMessage with role="system"
+            A (system_message, user_message) tuple of ChatMessage objects.
 
         Raises:
             ValueError: If player_name is not in turn_order
@@ -637,26 +636,27 @@ class PromptBuilder:
         rules_text = self._format_rules(rules)
         rules_block = prompts.RULES_BLOCK.format(rules_text=rules_text)
 
-        # Format proposal block
-        proposal_block = self._format_proposal(proposal, rules, player_name)
-
-        # Format instruction block with personality-specific examples
-        instruction_block = prompts.INSTRUCTION_DISCUSS.format(
-            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
-            personality_examples=self._build_discuss_examples(personality),
-        )
-
-        # Assemble the full system message
-        blocks = [persona_block, game_state_block, rules_block]
+        # Assemble stable system message (cacheable prefix)
+        system_blocks = [persona_block, game_state_block, rules_block]
         if memory_content.strip():
             memory_block = prompts.MEMORY_INJECTION.format(
                 full_memory_content=memory_content
             )
-            blocks.append(memory_block)
-        blocks.extend([proposal_block, instruction_block])
-        content = "\n\n".join(blocks)
+            system_blocks.append(memory_block)
+        system_content = "\n\n".join(system_blocks)
 
-        return ChatMessage(role="system", content=content)
+        # Phase-specific content (proposal + instruction) goes in user message
+        proposal_block = self._format_proposal(proposal, rules, player_name)
+        instruction_block = prompts.INSTRUCTION_DISCUSS.format(
+            json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+            personality_examples=self._build_discuss_examples(personality),
+        )
+        user_content = "\n\n".join([proposal_block, instruction_block])
+
+        return (
+            ChatMessage(role="system", content=system_content),
+            ChatMessage(role="user", content=user_content),
+        )
 
     def build_revision_instruction(
         self,
