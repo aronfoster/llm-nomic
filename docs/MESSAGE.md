@@ -1,0 +1,162 @@
+# Message Structure and Prompt Caching
+
+This document explains how LLM messages are constructed in the engine, why
+the system + user split matters for prompt caching, and the failure mode that
+led to the current design.
+
+---
+
+## How Messages Are Built
+
+Each player turn is driven by a series of API calls (propose → revise →
+vote → memory_update for the proposer; begin_discussion + discuss for
+discussers). Two builder methods produce the initial message pair that
+anchors each session:
+
+- `PromptBuilder.build_proposer_system_message()` — returns
+  `tuple[ChatMessage, ChatMessage]`
+- `PromptBuilder.build_discusser_system_message()` — returns
+  `tuple[ChatMessage, ChatMessage]`
+
+Both return a `(system_message, user_message)` tuple. The caller unpacks
+the pair and passes it to `LLMPlayer._reset_history()`, which initialises
+`turn_history` with `[system, user]`.
+
+### What goes in each message
+
+**System message** — stable context that does not change across the calls
+within a session:
+
+| Block | Content |
+|-------|---------|
+| Persona | Player name + personality text (`PERSONA`, `STRATEGIC_GUIDANCE`) |
+| Game state | Scores, move number, turn order, leaderboard context |
+| Rules | Full current rule list |
+| Memory | Player's private memory (omitted when empty) |
+
+**User message** — phase-specific instruction that varies per call:
+
+| Phase | User message content |
+|-------|----------------------|
+| propose | `INSTRUCTION_PROPOSE` (JSON schema, examples) |
+| discuss | Proposal block + `INSTRUCTION_DISCUSS` |
+| revise | Discussion summaries + `INSTRUCTION_REVISE` (appended in subsequent call) |
+| vote | Vote instruction (appended in subsequent call) |
+| memory_update | Memory update prompt (appended in subsequent call) |
+
+For the second call onward in a session, the phase instruction is **appended**
+to the growing `turn_history` as an additional user message. The initial
+`[system, user]` pair is never replaced — it anchors the cache prefix.
+
+---
+
+## Why This Helps Caching
+
+Both Anthropic and xAI use **prefix-based prompt caching**: a cached entry is
+reused when the beginning of a new request exactly matches the beginning of a
+previously cached request.
+
+### The invariant that makes caching work
+
+```
+Every API call in a session sends:
+
+  system: [persona + game_state + rules + memory]   ← byte-identical every time
+  messages: [
+    {role: "user",      content: INSTRUCTION_PROPOSE},    ← call 1 onward
+    {role: "assistant", content: <proposal>},             ← call 2 onward
+    {role: "user",      content: <discussions + REVISE>}, ← call 3 onward
+    ...
+  ]
+```
+
+Because the system block is byte-identical on every call, the provider can
+return a cache hit on calls 2, 3, and 4. Only the first call in a session
+incurs cache-write cost.
+
+### Anthropic
+
+Anthropic's caching is explicit. `AnthropicApiClient` sends
+`cache_control: {"type": "ephemeral"}` on every call. The cache is keyed
+on the full prefix up to the marked block. When the system content is
+identical, Anthropic returns `cache_read_input_tokens > 0` from call 2
+onward and charges at the reduced cache-read rate (~10% of full price).
+
+### xAI
+
+xAI's caching is automatic prefix matching. No explicit parameter is needed.
+The cache key is derived from the prefix of the message list. When the system
+message is identical, xAI reports `cached_tokens` in the usage object.
+
+---
+
+## The Failure Mode This Replaces
+
+Before the fix, both builder methods returned a single
+`ChatMessage(role="system")`, and `_reset_history()` set
+`turn_history = [system_message]`.
+
+**Call 1 (propose):** `turn_history` contained only a system message. The
+Anthropic client requires at least one user message. When none was present, it
+fell back to promoting the entire system content to a user message and
+clearing `system_prompt`:
+
+```python
+# Old demotion fallback (removed)
+if not anthropic_messages and system_prompt:
+    anthropic_messages = [{"role": "user", "content": system_prompt}]
+    system_prompt = None
+```
+
+This produced:
+
+```
+# Call 1 (propose) — BEFORE fix
+system: null
+messages: [{role: "user", content: EVERYTHING}]
+
+# Call 2 (revise) — BEFORE fix
+system: EVERYTHING
+messages: [{role: "assistant", ...}, {role: "user", ...}]
+```
+
+Zero shared prefix → complete cache miss on every first→second transition.
+For xAI the same structural mismatch (`[system]` alone vs.
+`[system, assistant, user]`) broke automatic prefix matching.
+
+The token log evidence from `CACHE_BUG.md`:
+
+| Phase | cache_write | cache_read | Expected |
+|-------|-------------|------------|----------|
+| propose | 5,159 | 0 | — (cold) |
+| **revise** | **6,361** | **0** | **~5,159** |
+| vote | 0 | 6,361 | ✓ |
+| memory_update | 0 | 7,215 | ✓ |
+
+Revise was re-writing the entire system prompt from scratch instead of reading
+it from cache.
+
+---
+
+## Token Savings
+
+For a typical proposer session (~5,000 system tokens):
+
+| | propose | revise | vote | memory_update |
+|-|---------|--------|------|---------------|
+| Before | write 5K | **write 5K** | read 5K | read 6K |
+| After  | write 5K | read 5K | read 5K | read 6K |
+
+At 3 players × ~10 moves, that is approximately **150,000 tokens saved per
+game**, plus the price differential between cache-write and cache-read rates.
+
+---
+
+## Implementation Reference
+
+| File | Role |
+|------|------|
+| `src/nomic_engine/llm/prompt_builder.py` | `build_proposer_system_message()` and `build_discusser_system_message()` — return `(system, user)` tuples |
+| `src/nomic_engine/players/llm_player.py` | `_reset_history(system, user)` — initialises `turn_history = [system, user]`; `propose()` and `begin_discussion_turn()` unpack the tuple |
+| `src/nomic_engine/llm/api_clients.py` | `AnthropicApiClient` — sends `cache_control: {"type": "ephemeral"}` on every call; demotion fallback removed |
+| `src/nomic_engine/utils/token_usage_logger.py` | Logs `cache_creation_tokens` and `cache_read_tokens` per call to `token_usage.jsonl` |
