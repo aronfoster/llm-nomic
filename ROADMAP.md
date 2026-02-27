@@ -141,8 +141,10 @@ reachable. Expected saving: ~150K tokens per game.
 ### ~~Task 3: LLMJudge Caching~~ ✓ Complete
 `LLMJudge` now maintains a stateful `_turn_history: list[ChatMessage]` across
 all four per-turn calls. `get_veto` initialises the history with
-`[system, context, veto_prompt]`; `assess_scores` and `maintain_state` each
-append only their specific prompt (no re-send of ruleset/context);
+`[system_with_context, veto_prompt]` — the system message embeds the full
+turn context (rules, proposal, votes, scores, discussions) so the context is
+part of the cached prefix; `assess_scores` and `maintain_state` each append
+only their specific prompt (no re-send of ruleset/context);
 `update_memory` sends `_turn_history + [memory_prompt]`. The system message
 (judge persona + optional memory injection) is byte-identical on every call,
 enabling Anthropic/xAI cache hits from the second call onward. Since
@@ -152,10 +154,15 @@ the ROADMAP bug). `_judge_turn_responses` continues to be populated for
 `LLMPlayer.update_memory()` calls. Both accumulators are reset by
 `GameLoop._reset_judge_turn_state()` at the start of each turn.
 
-**Design decision:** `build_judge_score_context_message` is no longer called
-by `assess_scores`. The full ruleset is already in `_turn_history` from
-`get_veto`, and the `JUDGE_SCORE_TEMPLATE` provides sufficient framing about
-the outcome and scoring scope without re-sending the rules.
+**Design decisions:**
+- The full turn context (rules, proposal, votes, scores) is embedded in the
+  system message (not a separate user message), so every API call starts with
+  a byte-identical cached prefix that includes the context.
+- `build_judge_context_message` is removed from `PromptBuilder`; replaced by
+  `build_judge_context_block` which returns a `str` for embedding in the
+  system message. `build_judge_score_context_message` is also removed.
+- `assess_scores` no longer calls any context-building method — the full
+  context is already in `_turn_history[0]` from `get_veto`.
 
 
 ## Future Work

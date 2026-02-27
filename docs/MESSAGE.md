@@ -163,10 +163,13 @@ game**, plus the price differential between cache-write and cache-read rates.
 
 ---
 
-## LLMJudge Caching (Sprint 36, Task 3)
+## LLMJudge Caching (Sprint 36, Task 3 + Amendment)
 
 `LLMJudge` applies the same stateful-history pattern to its four per-turn
 calls, enabling cache hits from the second call onward within a turn.
+The amendment moved the expensive turn context (rules, proposal, votes,
+scores) from the first user message into the system message, so the entire
+stable context is part of the cached prefix.
 
 ### The `_turn_history` pattern
 
@@ -176,22 +179,23 @@ calls, enabling cache hits from the second call onward within a turn.
 ```
 After get_veto succeeds:
   _turn_history = [
-    {role: "system",    content: JUDGE_SYSTEM_PROMPT [+ memory]},  ← cached
-    {role: "user",      content: <rules, proposal, votes, scores>},
+    {role: "system",    content: JUDGE_SYSTEM_PROMPT
+                                 + rules + proposal + votes + scores
+                                 [+ memory]},                    ← cached
     {role: "user",      content: JUDGE_VETO_TEMPLATE},
     {role: "assistant", content: <veto JSON>},
   ]
 
 After assess_scores appends:
   _turn_history = [
-    ...same four messages as above...
+    ...same three messages as above...
     {role: "user",      content: JUDGE_SCORE_TEMPLATE},
     {role: "assistant", content: <score JSON>},
   ]
 
 After maintain_state appends:
   _turn_history = [
-    ...same six messages as above...
+    ...same five messages as above...
     {role: "user",      content: JUDGE_MAINTAIN_STATE_TEMPLATE},
     {role: "assistant", content: <state JSON>},
   ]
@@ -200,41 +204,54 @@ update_memory sends:
   _turn_history + [{role: "user", content: MEMORY_UPDATE_PROMPT}]
 ```
 
+### Wire format per call
+
+| Call | System (cached) | Messages |
+|------|-----------------|----------|
+| `get_veto` | persona + rules + proposal + votes + scores [+ memory] | `[veto_instruction]` |
+| `assess_scores` | ← byte-identical, cache hit | `[…, veto_assistant, score_instruction]` |
+| `maintain_state` | ← byte-identical, cache hit | `[…, score_assistant, maintain_instruction]` |
+| `update_memory` | ← byte-identical, cache hit | `[…, maintain_assistant, memory_instruction]` |
+
 ### Why the system message is byte-identical on every call
 
-`get_veto` calls `_build_judge_system_message(memory_content)` once and
-stores the result as `_turn_history[0]`. Every subsequent call within the
-same turn sends exactly this same `ChatMessage` object. Anthropic therefore
-returns `cache_read_input_tokens > 0` on calls 2, 3, and 4 without a new
-cache-write.
+`get_veto` calls `_build_judge_system_message(rules, game_state, proposal,
+votes, discussions, memory_content)` once and stores the result as
+`_turn_history[0]`. Every subsequent call within the same turn sends exactly
+this same `ChatMessage` object. Anthropic therefore returns
+`cache_read_input_tokens > 0` on calls 2, 3, and 4 without a new cache-write.
+
+### Context in the system message (amendment)
+
+`_build_judge_system_message()` calls
+`PromptBuilder.build_judge_context_block(rules, game_state, proposal, votes,
+discussions)` which returns the context as a plain string. This string is
+concatenated with `JUDGE_SYSTEM_PROMPT` (and optionally the memory block)
+to form the system message. The old `build_judge_context_message()` (which
+returned a `ChatMessage` for a separate user message) is removed, along with
+the unused `build_judge_score_context_message()`.
 
 ### assess_scores: no re-send of ruleset
 
-`build_judge_score_context_message` is no longer called. The full ruleset,
-proposal, votes, and discussion context are already present in `_turn_history`
-from `get_veto`. Only `build_judge_score_prompt` (the scoring instruction) is
-appended. This removes a duplicate context block from every scoring API call.
+No context-building call is made by `assess_scores`. The full ruleset,
+proposal, votes, and discussion context are already present in
+`_turn_history[0]` (the system message) from `get_veto`. Only
+`build_judge_score_prompt` (the scoring instruction) is appended. This
+removes a duplicate context block from every scoring API call.
 
 ### update_memory: cache hit, no cache-write charge
 
-The previous implementation built a fresh `[system, responses, prompt]` list
-for `update_memory`. The system message was `JUDGE_SYSTEM_PROMPT` alone (no
-memory injection), so it differed from the one used in the earlier calls and
-caused a cache miss — paying `cache_creation_tokens` for a cache entry that
-was immediately discarded.
-
-With `_turn_history`, the system message at `_turn_history[0]` is identical
-to what was cached by `get_veto`. `update_memory` appends only the memory
-prompt and sends `_turn_history + [memory_prompt]`. Anthropic sees the same
-cached prefix and returns a cache hit — no cache-write charge on the memory
-step.
+`update_memory` appends only the memory prompt and sends
+`_turn_history + [memory_prompt]`. The system message at `_turn_history[0]`
+is byte-identical to what was cached by `get_veto`. Anthropic returns a
+cache hit — no cache-write charge on the memory step.
 
 ### Turn reset
 
 `GameLoop._reset_judge_turn_state()` clears both `_judge_turn_responses` and
 `_turn_history` at the start of each turn. `get_veto` (always the first judge
 call per turn) then re-initialises `_turn_history` fresh with the current
-turn's system message and context.
+turn's system message (which includes the full context for that turn).
 
 ### `_judge_turn_responses` still populated
 
@@ -247,7 +264,8 @@ the judge's reasoning when writing their own memories.
 
 | File | Role |
 |------|------|
-| `src/nomic_engine/judge/llm_judge.py` | `_turn_history` accumulator; `get_veto` initialises it; `assess_scores` and `maintain_state` append prompts and responses; `update_memory` sends it |
+| `src/nomic_engine/judge/llm_judge.py` | `_turn_history` accumulator; `get_veto` builds system message with full context and initialises `[system, veto_prompt]`; `assess_scores` and `maintain_state` append prompts and responses; `update_memory` sends it |
+| `src/nomic_engine/llm/prompt_builder.py` | `build_judge_context_block()` — returns context as a plain string for embedding in the system message |
 | `src/nomic_engine/core/game_loop.py` | `_reset_judge_turn_state()` — clears both `_judge_turn_responses` and `_turn_history` |
 | `tests/src/nomic_engine/judge/test_llm_judge.py` | Unit tests for `_turn_history` initialisation, accumulation, retry growth, and message structure |
 | `tests/src/nomic_engine/test_persistent_memory_update.py` | Integration tests for turn reset, `update_memory` message structure, and `_judge_turn_responses` accumulation |

@@ -142,14 +142,9 @@ def _make_llm_player(
 def _make_llm_judge(memory_manager: Mock | None = None) -> LLMJudge:
     """Create an LLMJudge with mocked API client and prompt builder."""
     prompt_builder = Mock()
-    prompt_builder.build_judge_context_message.return_value = ChatMessage(
-        role="user", content="ctx"
-    )
+    prompt_builder.build_judge_context_block.return_value = "ctx"
     prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
         role="user", content="veto"
-    )
-    prompt_builder.build_judge_score_context_message.return_value = (
-        ChatMessage(role="user", content="score ctx")
     )
     prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
         role="user", content="score"
@@ -552,7 +547,12 @@ class TestLLMJudgeTurnResponses:
 
     def test_turn_history_grows_across_all_three_judge_methods(self):
         """_turn_history accumulates across get_veto, assess_scores, and
-        maintain_state — each appending its prompt and response."""
+        maintain_state — each appending its prompt and response.
+
+        After the amendment the system message embeds the full turn
+        context, so get_veto produces [system_with_ctx, veto_prompt,
+        veto_response] = 3 items instead of 4.
+        """
         veto_text = '{"private_thoughts":"v","veto":false,"reason":"ok"}'
         score_text = '{"private_thoughts":"s","score_adjustments":[]}'
         state_text = '{"private_thoughts":"n","flags":{},"target_score":null}'
@@ -572,31 +572,30 @@ class TestLLMJudgeTurnResponses:
         gm = _make_judge_game_manager()
 
         judge.get_veto(gm, Mock(), [], [])
-        # After get_veto: [system, context, veto_prompt, veto_response]
-        assert len(judge._turn_history) == 4
+        # After get_veto: [system_with_ctx, veto_prompt, veto_response]
+        assert len(judge._turn_history) == 3
 
         judge.assess_scores(gm, [], Mock(), [], [], proposal_passed=True)
         # After assess_scores: [..., score_prompt, score_response]
-        assert len(judge._turn_history) == 6
+        assert len(judge._turn_history) == 5
 
         judge.maintain_state(gm, Mock(), None, None)
         # After maintain_state: [..., maintain_prompt, maintain_response]
-        assert len(judge._turn_history) == 8
+        assert len(judge._turn_history) == 7
 
         # Verify roles at known positions
-        assert judge._turn_history[0].role == "system"
-        assert judge._turn_history[1].role == "user"  # context
-        assert judge._turn_history[2].role == "user"  # veto prompt
-        assert judge._turn_history[3].role == "assistant"  # veto response
-        assert judge._turn_history[4].role == "user"  # score prompt
-        assert judge._turn_history[5].role == "assistant"  # score response
-        assert judge._turn_history[6].role == "user"  # maintain prompt
-        assert judge._turn_history[7].role == "assistant"  # maintain response
+        assert judge._turn_history[0].role == "system"  # system+context
+        assert judge._turn_history[1].role == "user"  # veto prompt
+        assert judge._turn_history[2].role == "assistant"  # veto response
+        assert judge._turn_history[3].role == "user"  # score prompt
+        assert judge._turn_history[4].role == "assistant"  # score response
+        assert judge._turn_history[5].role == "user"  # maintain prompt
+        assert judge._turn_history[6].role == "assistant"  # maintain response
 
         # Content is correct
-        assert judge._turn_history[3].content == veto_text
-        assert judge._turn_history[5].content == score_text
-        assert judge._turn_history[7].content == state_text
+        assert judge._turn_history[2].content == veto_text
+        assert judge._turn_history[4].content == score_text
+        assert judge._turn_history[6].content == state_text
 
 
 # =====================================================================
@@ -612,19 +611,23 @@ class TestLLMJudgeUpdateMemory:
         memory_manager: Mock | None = None,
     ) -> tuple["LLMJudge", list[ChatMessage]]:
         """Create an LLMJudge whose _turn_history simulates a completed
-        get_veto + assess_scores + maintain_state sequence.
+        get_veto sequence.
+
+        After the amendment the system message embeds the full turn
+        context, so history is [system_with_ctx, veto_prompt, veto_resp]
+        — 3 items instead of 4.
 
         Returns the judge and the list of history messages so tests can
         assert on their positions in the sent message list.
         """
         judge = _make_llm_judge(memory_manager=memory_manager)
         sys_msg = ChatMessage(
-            role="system", content=prompts.JUDGE_SYSTEM_PROMPT
+            role="system",
+            content=prompts.JUDGE_SYSTEM_PROMPT + "\n\nturn context",
         )
-        ctx_msg = ChatMessage(role="user", content="turn context")
         veto_prompt = ChatMessage(role="user", content="veto prompt")
         veto_resp = ChatMessage(role="assistant", content="veto response")
-        history = [sys_msg, ctx_msg, veto_prompt, veto_resp]
+        history = [sys_msg, veto_prompt, veto_resp]
         judge._turn_history = history
         judge._judge_turn_responses = [veto_resp]
         return judge, history
@@ -751,7 +754,7 @@ class TestLLMJudgeUpdateMemory:
             judge.api_client.get_completion.call_args[0][0]
         )
 
-        # _turn_history (4 msgs) + update_prompt = 5 messages
+        # _turn_history (3 msgs) + update_prompt = 4 messages
         assert len(messages) == len(history) + 1
         for i, hist_msg in enumerate(history):
             assert messages[i] is hist_msg
@@ -759,16 +762,22 @@ class TestLLMJudgeUpdateMemory:
         assert "update your private memory" in messages[-1].content.lower()
 
     def test_builds_messages_with_full_judge_reasoning(self):
-        """update_memory includes all accumulated judge reasoning."""
+        """update_memory includes all accumulated judge reasoning.
+
+        After the amendment the turn context is embedded in the system
+        message, so there is no separate context user message. History
+        has 7 items (was 8) and the total sent is 8 (was 9).
+        """
         mm = Mock()
         mm.max_characters = 5000
         judge = _make_llm_judge(memory_manager=mm)
 
-        # Set up turn history that includes all three judge interactions
+        # Set up turn history that includes all three judge interactions.
+        # System message now embeds the full turn context.
         sys_msg = ChatMessage(
-            role="system", content=prompts.JUDGE_SYSTEM_PROMPT
+            role="system",
+            content=prompts.JUDGE_SYSTEM_PROMPT + "\n\ncontext",
         )
-        ctx_msg = ChatMessage(role="user", content="context")
         veto_p = ChatMessage(role="user", content="veto prompt")
         veto_r = ChatMessage(role="assistant", content="Veto reasoning")
         score_p = ChatMessage(role="user", content="score prompt")
@@ -777,7 +786,6 @@ class TestLLMJudgeUpdateMemory:
         state_r = ChatMessage(role="assistant", content="State reasoning")
         history = [
             sys_msg,
-            ctx_msg,
             veto_p,
             veto_r,
             score_p,
@@ -796,15 +804,14 @@ class TestLLMJudgeUpdateMemory:
         messages: list[ChatMessage] = (
             judge.api_client.get_completion.call_args[0][0]
         )
-        # 8 history messages + update_prompt = 9
-        assert len(messages) == 9
+        # 7 history messages + update_prompt = 8
+        assert len(messages) == 8
         assert messages[0] is sys_msg
         assert messages[0].role == "system"
-        assert messages[1] is ctx_msg
-        assert messages[3] is veto_r
-        assert messages[5] is score_r
-        assert messages[7] is state_r
-        assert messages[8].role == "user"
+        assert messages[2] is veto_r
+        assert messages[4] is score_r
+        assert messages[6] is state_r
+        assert messages[7].role == "user"
 
     def test_update_prompt_omits_limit_when_no_max_characters(self):
         """Without a character limit, prompt has no truncation clause."""

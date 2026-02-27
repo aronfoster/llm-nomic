@@ -28,7 +28,14 @@ from .base_judge import BaseJudge
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
-    from ..data_models import CompletionResult, Discussion, Proposal, Vote
+    from ..data_models import (
+        CompletionResult,
+        Discussion,
+        GameState,
+        Proposal,
+        Rule,
+        Vote,
+    )
     from ..players.base_player import BasePlayer
     from ..utils.token_usage_logger import TokenUsageLogger
 
@@ -89,18 +96,45 @@ class LLMJudge(BaseJudge):
         )
 
     def _build_judge_system_message(
-        self, memory_content: str = ""
+        self,
+        rules: list["Rule"],
+        game_state: "GameState",
+        proposal: "Proposal",
+        votes: list["Vote"],
+        discussions: list["Discussion"],
+        memory_content: str = "",
     ) -> ChatMessage:
-        """Build the judge system message, optionally appending memory.
+        """Build the judge system message with embedded turn context.
+
+        Combines JUDGE_SYSTEM_PROMPT, the full turn context (rules,
+        proposal, votes, scores, discussions), and an optional memory
+        block. The memory block is always last so that it is the closest
+        context to the model's next response.
+
+        The returned message is byte-identical on every subsequent call
+        within the same turn, enabling Anthropic/xAI cache hits from the
+        second call onward.
 
         Args:
-            memory_content: Optional memory content to append. Omitted when
-                empty or whitespace.
+            rules: The current list of rules.
+            game_state: The current game state (scores, flags, etc.).
+            proposal: The proposal being evaluated this turn.
+            votes: The votes cast on the proposal.
+            discussions: The discussion contributions for this turn.
+            memory_content: Optional memory content to append. Omitted
+                when empty or whitespace.
 
         Returns:
             A ChatMessage with role="system".
         """
-        content = llm_prompts.JUDGE_SYSTEM_PROMPT
+        context_block = self.prompt_builder.build_judge_context_block(
+            rules=rules,
+            game_state=game_state,
+            proposal=proposal,
+            votes=votes,
+            discussions=discussions,
+        )
+        content = llm_prompts.JUDGE_SYSTEM_PROMPT + "\n\n" + context_block
         if memory_content.strip():
             content = (
                 content
@@ -110,37 +144,6 @@ class LLMJudge(BaseJudge):
                 )
             )
         return ChatMessage(role="system", content=content)
-
-    def _build_messages(
-        self,
-        game_manager: "GameManager",
-        proposal: "Proposal",
-        votes: list["Vote"],
-        discussions: list["Discussion"],
-    ) -> list[ChatMessage]:
-        assert game_manager.rules_manager is not None
-        assert game_manager.game_state is not None
-
-        logger.debug(
-            "Building judge context for proposal %s with %d votes and %d "
-            "discussions",
-            proposal.proposal_id,
-            len(votes),
-            len(discussions),
-        )
-
-        memory_content = (
-            self.memory_manager.read("Judge") if self.memory_manager else ""
-        )
-        system_message = self._build_judge_system_message(memory_content)
-        context_message = self.prompt_builder.build_judge_context_message(
-            rules=game_manager.rules_manager.rules,
-            game_state=game_manager.game_state,
-            proposal=proposal,
-            votes=votes,
-            discussions=discussions,
-        )
-        return [system_message, context_message]
 
     def _log_usage(self, result: CompletionResult, call_type: str) -> None:
         """Extract metadata and log token usage. Never raises.
@@ -174,19 +177,35 @@ class LLMJudge(BaseJudge):
         discussions: list["Discussion"],
     ) -> JudgeVetoResponse:
         assert game_manager.game_state is not None
+        assert game_manager.rules_manager is not None
         self._current_move_number = game_manager.game_state.move_number
 
         # Initialize turn history for this turn.
-        # The system message (judge persona + memory injection) is byte-
-        # identical on every subsequent call within the turn, enabling
-        # Anthropic/xAI cache hits from the second call onward.
-        base_messages = self._build_messages(
-            game_manager, proposal, votes, discussions
+        # The system message (judge persona + full turn context + optional
+        # memory) is byte-identical on every subsequent call within the
+        # turn, enabling Anthropic/xAI cache hits from the second call.
+        memory_content = (
+            self.memory_manager.read("Judge") if self.memory_manager else ""
+        )
+        logger.debug(
+            "Building judge system message for proposal %s with %d votes"
+            " and %d discussions",
+            proposal.proposal_id,
+            len(votes),
+            len(discussions),
+        )
+        system_msg = self._build_judge_system_message(
+            rules=game_manager.rules_manager.rules,
+            game_state=game_manager.game_state,
+            proposal=proposal,
+            votes=votes,
+            discussions=discussions,
+            memory_content=memory_content,
         )
         veto_prompt = self.prompt_builder.build_judge_veto_prompt(
             game_state=game_manager.game_state,
         )
-        self._turn_history = base_messages + [veto_prompt]
+        self._turn_history = [system_msg, veto_prompt]
 
         logger.debug(
             "Requesting veto decision from model %s",

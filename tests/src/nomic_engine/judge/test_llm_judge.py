@@ -40,11 +40,14 @@ def mock_game_manager():
     return manager
 
 
-def _dummy_messages() -> list[ChatMessage]:
-    return [
-        ChatMessage(role="system", content="sys"),
-        ChatMessage(role="user", content="ctx"),
-    ]
+def _make_prompt_builder_for_veto():
+    """Return a Mock prompt_builder pre-configured for get_veto tests."""
+    pb = Mock()
+    pb.build_judge_context_block.return_value = "turn context"
+    pb.build_judge_veto_prompt.return_value = ChatMessage(
+        role="user", content="veto prompt"
+    )
+    return pb
 
 
 def _make_judge_with_history(prompt_builder=None, api_client=None):
@@ -52,6 +55,8 @@ def _make_judge_with_history(prompt_builder=None, api_client=None):
 
     Simulates the state after get_veto has successfully run, so that
     assess_scores and maintain_state tests can be called in isolation.
+    After the amendment, _turn_history has 3 items:
+    [system_with_context, veto_prompt, veto_response].
     """
     if prompt_builder is None:
         prompt_builder = Mock()
@@ -67,10 +72,14 @@ def _make_judge_with_history(prompt_builder=None, api_client=None):
     judge = LLMJudge(
         Mock(), prompt_builder=prompt_builder, api_client=api_client
     )
-    # Simulate turn_history as initialized by a successful get_veto
+    # Simulate turn_history as initialized by a successful get_veto.
+    # System message now embeds the full turn context; no separate
+    # context user message.
     judge._turn_history = [
-        ChatMessage(role="system", content=llm_prompts.JUDGE_SYSTEM_PROMPT),
-        ChatMessage(role="user", content="turn context"),
+        ChatMessage(
+            role="system",
+            content=llm_prompts.JUDGE_SYSTEM_PROMPT + "\n\nturn context",
+        ),
         ChatMessage(role="user", content="veto prompt"),
         ChatMessage(
             role="assistant",
@@ -83,12 +92,7 @@ def _make_judge_with_history(prompt_builder=None, api_client=None):
 def test_get_veto_returns_bool(mock_game_manager):
     """LLMJudge should parse veto output and return the boolean decision."""
 
-    prompt_builder = Mock()
-    context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
-    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
-        role="user", content="veto"
-    )
+    prompt_builder = _make_prompt_builder_for_veto()
 
     api_client = Mock()
     api_client.get_completion.return_value = CompletionResult(
@@ -104,18 +108,22 @@ def test_get_veto_returns_bool(mock_game_manager):
     decision = judge.get_veto(mock_game_manager, Mock(), [], [])
 
     assert decision["veto"] is True
-    prompt_builder.build_judge_context_message.assert_called_once()
+    prompt_builder.build_judge_context_block.assert_called_once()
     api_client.get_completion.assert_called_once()
 
 
 def test_get_veto_initializes_turn_history(mock_game_manager):
-    """get_veto should initialize _turn_history with system, context, veto
-    prompt, and on success append the assistant response."""
+    """get_veto initialises _turn_history with [system_with_context,
+    veto_prompt] and on success appends the assistant response.
+
+    After the amendment the system message embeds the full turn context,
+    so _turn_history has exactly 3 items on success (no separate context
+    user message).
+    """
 
     prompt_builder = Mock()
-    context_msg = ChatMessage(role="user", content="turn context")
+    prompt_builder.build_judge_context_block.return_value = "turn context"
     veto_prompt_msg = ChatMessage(role="user", content="veto prompt")
-    prompt_builder.build_judge_context_message.return_value = context_msg
     prompt_builder.build_judge_veto_prompt.return_value = veto_prompt_msg
 
     api_client = Mock()
@@ -129,14 +137,14 @@ def test_get_veto_initializes_turn_history(mock_game_manager):
     )
     judge.get_veto(mock_game_manager, Mock(), [], [])
 
-    # [system, context, veto_prompt, veto_response]
-    assert len(judge._turn_history) == 4
+    # [system_with_context, veto_prompt, veto_response] — 3 items
+    assert len(judge._turn_history) == 3
     assert judge._turn_history[0].role == "system"
     assert llm_prompts.JUDGE_SYSTEM_PROMPT in judge._turn_history[0].content
-    assert judge._turn_history[1] is context_msg
-    assert judge._turn_history[2] is veto_prompt_msg
-    assert judge._turn_history[3].role == "assistant"
-    assert judge._turn_history[3].content == veto_text
+    assert "turn context" in judge._turn_history[0].content
+    assert judge._turn_history[1] is veto_prompt_msg
+    assert judge._turn_history[2].role == "assistant"
+    assert judge._turn_history[2].content == veto_text
 
 
 def test_assess_scores_returns_adjustments_without_mutation(
@@ -282,12 +290,7 @@ def test_turn_history_sent_to_api_in_assess_scores(mock_game_manager):
 def test_get_veto_retries_on_malformed_json(mock_game_manager):
     """get_veto should retry when LLM returns malformed JSON."""
 
-    prompt_builder = Mock()
-    context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
-    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
-        role="user", content="veto"
-    )
+    prompt_builder = _make_prompt_builder_for_veto()
 
     api_client = Mock()
     # First call: malformed JSON (extra closing brace)
@@ -321,13 +324,7 @@ def test_get_veto_retries_on_malformed_json(mock_game_manager):
 def test_get_veto_retry_appends_to_turn_history(mock_game_manager):
     """get_veto retry appends bad response + retry prompt to _turn_history."""
 
-    prompt_builder = Mock()
-    prompt_builder.build_judge_context_message.return_value = ChatMessage(
-        role="user", content="ctx"
-    )
-    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
-        role="user", content="veto"
-    )
+    prompt_builder = _make_prompt_builder_for_veto()
 
     bad_text = "not json"
     good_text = '{"private_thoughts":"x","veto":false,"reason":"ok"}'
@@ -346,25 +343,21 @@ def test_get_veto_retry_appends_to_turn_history(mock_game_manager):
     )
     judge.get_veto(mock_game_manager, Mock(), [], [])
 
-    # [system, ctx, veto_prompt, bad_response, retry_prompt, good_response]
-    assert len(judge._turn_history) == 6
-    assert judge._turn_history[3].role == "assistant"
-    assert judge._turn_history[3].content == bad_text
-    assert judge._turn_history[4].role == "user"
-    assert "FINAL attempt" in judge._turn_history[4].content
-    assert judge._turn_history[5].role == "assistant"
-    assert judge._turn_history[5].content == good_text
+    # [system_with_ctx, veto_prompt, bad_response, retry_prompt,
+    #  good_response] — 5 items
+    assert len(judge._turn_history) == 5
+    assert judge._turn_history[2].role == "assistant"
+    assert judge._turn_history[2].content == bad_text
+    assert judge._turn_history[3].role == "user"
+    assert "FINAL attempt" in judge._turn_history[3].content
+    assert judge._turn_history[4].role == "assistant"
+    assert judge._turn_history[4].content == good_text
 
 
 def test_get_veto_raises_after_max_retries(mock_game_manager):
     """get_veto should raise RuntimeError after exhausting retries."""
 
-    prompt_builder = Mock()
-    context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
-    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
-        role="user", content="veto"
-    )
+    prompt_builder = _make_prompt_builder_for_veto()
 
     api_client = Mock()
     # All attempts return malformed JSON
@@ -391,12 +384,7 @@ def test_get_veto_raises_after_max_retries(mock_game_manager):
 def test_get_veto_retries_on_api_error(mock_game_manager):
     """get_veto should retry when API client returns None."""
 
-    prompt_builder = Mock()
-    context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
-    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
-        role="user", content="veto"
-    )
+    prompt_builder = _make_prompt_builder_for_veto()
 
     api_client = Mock()
     # First call: API error (None)
@@ -423,12 +411,7 @@ def test_get_veto_retries_on_api_error(mock_game_manager):
 def test_get_veto_raises_on_missing_required_key(mock_game_manager):
     """get_veto should raise RuntimeError after retries on missing keys."""
 
-    prompt_builder = Mock()
-    context_message = _dummy_messages()[1]
-    prompt_builder.build_judge_context_message.return_value = context_message
-    prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
-        role="user", content="veto"
-    )
+    prompt_builder = _make_prompt_builder_for_veto()
 
     api_client = Mock()
     # Missing "reason" key
@@ -638,35 +621,90 @@ def test_assess_scores_retries_on_invalid_player_name(mock_game_manager):
 
 def test_build_judge_system_message_with_memory_appends_block():
     """_build_judge_system_message with non-empty content appends the
-    MEMORY_INJECTION block after JUDGE_SYSTEM_PROMPT."""
+    MEMORY_INJECTION block after the context, always last."""
     from src.nomic_engine.llm import prompts as llm_prompts
 
-    judge = LLMJudge(Mock(), api_client=Mock())
+    pb = Mock()
+    pb.build_judge_context_block.return_value = "context content"
+    judge = LLMJudge(Mock(), prompt_builder=pb, api_client=Mock())
     memory = "# Judge Memory\n\nSome precedents."
-    msg = judge._build_judge_system_message(memory_content=memory)
+    msg = judge._build_judge_system_message(
+        rules=[],
+        game_state=Mock(),
+        proposal=Mock(),
+        votes=[],
+        discussions=[],
+        memory_content=memory,
+    )
 
     assert msg.role == "system"
     assert llm_prompts.JUDGE_SYSTEM_PROMPT in msg.content
+    assert "context content" in msg.content
     assert "=== YOUR PRIVATE MEMORY ===" in msg.content
     assert "Some precedents." in msg.content
-    # Memory block must come AFTER the base prompt
-    base_pos = msg.content.index(llm_prompts.JUDGE_SYSTEM_PROMPT)
+    # Memory block must come AFTER both the base prompt and context
+    ctx_pos = msg.content.index("context content")
     mem_pos = msg.content.index("=== YOUR PRIVATE MEMORY ===")
-    assert base_pos < mem_pos
+    assert ctx_pos < mem_pos
 
 
-def test_build_judge_system_message_empty_memory_equals_base_prompt():
-    """_build_judge_system_message with empty content returns a message
-    whose content equals JUDGE_SYSTEM_PROMPT exactly."""
+def test_build_judge_system_message_empty_memory_omits_block():
+    """_build_judge_system_message with empty/whitespace memory does not
+    inject the memory block."""
     from src.nomic_engine.llm import prompts as llm_prompts
 
-    judge = LLMJudge(Mock(), api_client=Mock())
+    pb = Mock()
+    pb.build_judge_context_block.return_value = "context content"
+    judge = LLMJudge(Mock(), prompt_builder=pb, api_client=Mock())
 
-    msg_default = judge._build_judge_system_message()
-    msg_empty = judge._build_judge_system_message(memory_content="")
-    msg_whitespace = judge._build_judge_system_message(memory_content="  \n  ")
+    msg_empty = judge._build_judge_system_message(
+        rules=[],
+        game_state=Mock(),
+        proposal=Mock(),
+        votes=[],
+        discussions=[],
+        memory_content="",
+    )
+    msg_whitespace = judge._build_judge_system_message(
+        rules=[],
+        game_state=Mock(),
+        proposal=Mock(),
+        votes=[],
+        discussions=[],
+        memory_content="  \n  ",
+    )
 
-    assert msg_default.content == llm_prompts.JUDGE_SYSTEM_PROMPT
-    assert msg_empty.content == llm_prompts.JUDGE_SYSTEM_PROMPT
-    assert msg_whitespace.content == llm_prompts.JUDGE_SYSTEM_PROMPT
-    assert "=== YOUR PRIVATE MEMORY ===" not in msg_default.content
+    for msg in (msg_empty, msg_whitespace):
+        assert llm_prompts.JUDGE_SYSTEM_PROMPT in msg.content
+        assert "context content" in msg.content
+        assert "=== YOUR PRIVATE MEMORY ===" not in msg.content
+
+
+def test_build_judge_system_message_includes_context_block():
+    """_build_judge_system_message embeds the context block returned by
+    prompt_builder.build_judge_context_block() in the system message."""
+    from src.nomic_engine.llm import prompts as llm_prompts
+
+    pb = Mock()
+    pb.build_judge_context_block.return_value = (
+        "=== ALL CURRENT RULES ===\n101. Rule text.\n\n"
+        "=== VOTES ===\nAlice: YES"
+    )
+    judge = LLMJudge(Mock(), prompt_builder=pb, api_client=Mock())
+
+    msg = judge._build_judge_system_message(
+        rules=[],
+        game_state=Mock(),
+        proposal=Mock(),
+        votes=[],
+        discussions=[],
+    )
+
+    assert msg.role == "system"
+    assert llm_prompts.JUDGE_SYSTEM_PROMPT in msg.content
+    assert "=== ALL CURRENT RULES ===" in msg.content
+    assert "=== VOTES ===" in msg.content
+    # Base prompt must come before context
+    base_pos = msg.content.index(llm_prompts.JUDGE_SYSTEM_PROMPT)
+    rules_pos = msg.content.index("=== ALL CURRENT RULES ===")
+    assert base_pos < rules_pos
