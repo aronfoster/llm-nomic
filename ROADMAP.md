@@ -25,144 +25,10 @@ Our architecture is built on these principles:
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
 - Need to change text on last withdrawal attempt to make it clear that withdrawing is still an option, just skips your turn
 - Remove ephemeral block from `memory_update` for Anthropic clients so we're not paying to write to the cache.
+- On illegal proposal (e.g. AMEND a rule that doesn't exist) game should count as a withdrawal and allow a retry, not crash
 
 
-## Sprint 36: Investigate and Implement Context Caching
-
-### Background
-
-The current codebase makes no explicit use of provider-level prompt caching.
-This means every API call may be re-processing the full input from scratch,
-including the complete ruleset and game state that are re-sent on every turn.
-Caching behaviour varies significantly by provider — some require explicit
-opt-in, some are automatic, and some offer no client-side control at all.
-
-This task covers investigation first, then implementation. Do not implement
-anything until the investigation phase is complete and costs/savings are
-understood per provider.
-
-### ~~Task 1: Investigate~~ ✓ Complete
-~~Record structured token usage data for every API call made during a game into
-a dedicated file.~~ Every API call now appends a `TokenUsageRecord` to
-`games/<game-name>/token_usage.jsonl`. Covers all providers (Anthropic, OpenAI-
-compatible, Google), all call types (`propose`, `discuss`, `revise`, `vote`,
-`judge_veto`, `judge_score`, `judge_maintain_state`, `memory_update`), and
-reports input/output/cache/reasoning tokens, finish reason, and client-side
-latency. This file is the foundation for cost analysis, caching investigation,
-and future rate limiting or budget enforcement work.
-
-**New file**  
-`games/<game-name>/token_usage.jsonl` (JSON Lines, one record per completed API call, created automatically by `create_game.py`)
-
-**Exact record schema** (every field must always be present; use `null` when a value is unavailable):
-
-```json
-{
-  "timestamp": "2026-02-25T14:32:01.123Z",
-  "move_number": 4,
-  "player_name": "Alice",
-  "provider": "anthropic",
-  "model_id": "claude-sonnet-4-5",
-  "call_type": "propose",
-  "input_tokens": 3821,
-  "output_tokens": 214,
-  "cache_creation_tokens": 3600,
-  "cache_read_tokens": 0,
-  "reasoning_tokens": null,
-  "finish_reason": "end_turn",
-  "client_latency_ms": 2341,
-  "server_latency_ms": 1890.4,
-  "ttft_ms": 436.4,
-  "mean_itl_ms": 11.1,
-  "request_id": "00-c6b29b304098785563835c9e39972a9f-a7e2a5a3001eed83-01",
-  "ratelimit_remaining_requests": 607,
-  "ratelimit_remaining_tokens": 4000000
-}
-```
-
-**Field requirements**:
-
-| Field                          | Type          | Source / Notes |
-|--------------------------------|---------------|----------------|
-| `timestamp`                    | ISO 8601      | UTC, ends with Z |
-| `move_number`                  | int           | Current game move |
-| `player_name`                  | string        | Player name or "Judge" |
-| `provider`                     | string        | any option from models.yml |
-| `model_id`                     | string        | Exact api_model_id from models.yml |
-| `call_type`                    | string        | propose / discuss / revise / vote / judge_veto / judge_score / judge_maintain_state / memory_update |
-| `input_tokens`                 | int           | Total billed input tokens |
-| `output_tokens`                | int           | Billed output tokens |
-| `cache_creation_tokens`        | int or null   | Provider-specific |
-| `cache_read_tokens`            | int or null   | Provider-specific |
-| `reasoning_tokens`             | int or null   | OpenAI o-series only |
-| `finish_reason`                | string or null| Raw provider value (end_turn, stop, length, etc.) |
-| `client_latency_ms`            | int           | Client-side wall-clock time |
-| `server_latency_ms`            | float or null | xAI (e2e) or Ollama (eval_duration) |
-| `ttft_ms`                      | float or null | xAI only |
-| `mean_itl_ms`                  | float or null | xAI only |
-| `request_id`                   | string or null| x-request-id header |
-| `ratelimit_remaining_requests` | int or null   | Header value |
-| `ratelimit_remaining_tokens`   | int or null   | Header value |
-
-**Requirements**
-- `TokenUsageLogger` class in `src/nomic_engine/utils/token_usage_logger.py` that never raises (failed writes → WARNING only).
-- All API clients return a `CompletionResult` object instead of bare text.
-- `GameManager` creates and passes the logger to `LLMPlayer` and `LLMJudge`.
-- Every call site logs immediately after receiving the result (even on error).
-- `create_game.py` creates an empty `token_usage.jsonl`.
-- Full test coverage for logging, header extraction, and null handling per provider.
-- `make ci` passes with no behaviour change to gameplay.
-
-**Out of scope**  
-Dollar-cost calculation, rate-limit enforcement, analysis scripts.
-
-### ~~Task 2: Implementation~~ ✓ Complete
-When `AnthropicApiClient.get_completion()` processes a message list that contains a system-role message, it must send the system content to the Anthropic API using the content-block format with `cache_control: {"type": "ephemeral"}` on the final block. This must be applied for every call — not conditionally.
-
-There is currently one system message per turn phase. The Developer chooses the implementation approach (e.g., internal to `AnthropicApiClient`, or via changes to `ChatMessage`), so long as:
-- No other provider's behavior changes.
-- The existing `ChatMessage` contract (used throughout the codebase) remains functional.
-- All five existing call types (`propose`, `discuss`, `revise`, `vote`, `memory_update`) must produce functionally identical outputs. Caching must be transparent to the game engine.
-
-### ~~Task 4: Fix Cache Miss on First→Second Call~~ ✓ Complete
-The monolithic system message design caused Anthropic to demote system-only
-messages to user messages (api_clients.py), producing different wire formats
-on call 1 vs. call 2 and breaking cache prefix matching. The same structural
-mismatch affected xAI's automatic prefix caching.
-
-**Fix:** Split `build_proposer_system_message()` and
-`build_discusser_system_message()` to return `tuple[ChatMessage, ChatMessage]`
-(system + user), and updated `_reset_history()` to initialise `turn_history`
-with `[system, user]`. Every API call — including the very first — now starts
-with an identical system prefix, enabling cache hits from call 2 onward.
-Removed the demotion fallback from `AnthropicApiClient` as it is no longer
-reachable. Expected saving: ~150K tokens per game.
-
-### ~~Task 3: LLMJudge Caching~~ ✓ Complete
-`LLMJudge` now maintains a stateful `_turn_history: list[ChatMessage]` across
-all four per-turn calls. `get_veto` initialises the history with
-`[system_with_context, veto_prompt]` — the system message embeds the full
-turn context (rules, proposal, votes, scores, discussions) so the context is
-part of the cached prefix; `assess_scores` and `maintain_state` each append
-only their specific prompt (no re-send of ruleset/context);
-`update_memory` sends `_turn_history + [memory_prompt]`. The system message
-(judge persona + optional memory injection) is byte-identical on every call,
-enabling Anthropic/xAI cache hits from the second call onward. Since
-`update_memory` reuses the same system prefix cached by `get_veto`, it
-receives a cache read rather than incurring a new cache-write charge (fixing
-the ROADMAP bug). `_judge_turn_responses` continues to be populated for
-`LLMPlayer.update_memory()` calls. Both accumulators are reset by
-`GameLoop._reset_judge_turn_state()` at the start of each turn.
-
-**Design decisions:**
-- The full turn context (rules, proposal, votes, scores) is embedded in the
-  system message (not a separate user message), so every API call starts with
-  a byte-identical cached prefix that includes the context.
-- `build_judge_context_message` is removed from `PromptBuilder`; replaced by
-  `build_judge_context_block` which returns a `str` for embedding in the
-  system message. `build_judge_score_context_message` is also removed.
-- `assess_scores` no longer calls any context-building method — the full
-  context is already in `_turn_history[0]` from `get_veto`.
+## Sprint 37: TBD
 
 
 ## Future Work
@@ -171,21 +37,24 @@ This is the long-term backlog and TODO scratchpad.
 
 ### Engine Features
 
-* **Improve LLM Interactions:**
-  * Implement advanced token-saving strategies, especially investigate best use of context caching
+* **Improve LLM API Efficiency**
+  * Should remove json instruction and have per-provider json flags set for 4 big providers. Fallback to the instruction for Ollama + new providers.
   * Implement async behavior (per model provider?)
+    * Batch processing for 24 hour turn around (game summary?). Unlikely to benefit for the near future.
   * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
-  * We need to get token usage/metadata about the queries Answer: How big do context windows need to be? What's the cost/total token usage?
+    * Apparently you just tell them to put it in `<thinking>` blocks. Anthropic lets you pass a parameter, too. Gemini needs a parameter set. OpenAI doesn't share. Open models usually respect the `<thinking>` prompt.
   * Explore https://openrouter.ai/ support for tokens/models, along with other providers
   * Cache token usage tested on xAI and Anthropic. Need to test behavior with Google, OpenAI, and Ollama.
     * Ollama should correctly log tokens but not use caching
     * Google and OpenAI should log token usage and show significant caching.
+    * Need to add a note somewhere about minimum 16k tokens, recommend 32k tokens as a model context requirement
 
-* **Rate Limiting & Cost Tracking:**
+* **Rate Limiting & Cost Tracking**
   * Add per-turn and per-game token/cost tracking. Print token counts from API responses at the end of the turn.
     * Would need to hard code cost/million tokens. Maybe prompt to update during game creation? Harcode defaults and put optional custom values per game?
+  * Rate limiting an option? Not sure that could work.
   
-* **Game State & Rules:**
+* **Game State & Rules**
   * Enhanced Voting Architecture
       * **Task:** Replace binary vote logic with named "Abstention-Aware" modes.
       * **Data Model:** Expand `VoteMode` enum in `data_models.py` to include `UNANIMOUS_STRICT`, `CONSENSUS`, `MAJORITY_TOTAL`, and `MAJORITY_VOTING`?
@@ -224,4 +93,6 @@ This is the long-term backlog and TODO scratchpad.
 
 * Have a GUI for running the game in Electron (?)
 
+### Development
 
+* Improve code documentation using markdown files for developers (especially Claude Code and Codex) to read
