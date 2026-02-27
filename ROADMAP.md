@@ -19,6 +19,7 @@ Our architecture is built on these principles:
 - Players tend to modify Rule 203 to switch to majority after the first complete circuit (instead of second)
   - Might just turn this into a flag since it's so common.
   - What if we modified the judge memory prompt to tell it to remind itself about future game state changes?
+- Players are not clear on vote result and final score when writing memories. Needs to be explicit.
 
 ### Low Priority
 
@@ -158,6 +159,7 @@ This is the long-term backlog and TODO scratchpad.
       * **LLM Awareness:** Update `PromptBuilder` to dynamically inject a plain-language explanation of the current `vote_mode` into player prompts, ensuring players understand the tactical weight of an "ABSTAIN" vote.
       * Rule 109 adds another dimension to voting: whether transmute should be unanimous
       * Also minimum yes votes as a voting mode
+      * Flag for whether to assess points after a withdrawal
   * Create more personalities: chaos monkey: tries to break the engine
   * Think more about the llm model picker
     * Should we allow custom model config per game (e.g., for new/local models not in `models.yml`)?
