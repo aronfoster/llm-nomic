@@ -1,134 +1,192 @@
-## 🐛 BUG: Prompt Caching Ineffective for Intra-Turn Calls (propose → revise → vote → memory_update)
+# CACHE_BUG: Prompt Caching Misses on First→Second Call Within Player Turns
 
-**Status:** Open  
-**Priority:** Medium (cost/performance, not correctness)  
-**Affected providers:** Anthropic (confirmed), xAI / OpenAI / Google (partial — see notes per provider)
-
----
-
-### Symptom
-
-Within a single player turn, the `propose` call pays full input token cost, and the `revise` call also pays full input token cost despite containing nearly identical context. Cache hits only appear on `vote` and `memory_update` because those calls happen to share the system prompt prefix. The `revise` step, which has the most to gain from caching, gets nothing.
-
-From the logs (Move 10, Claude/Sonnet):
-
-| Call | Cache Write | Cache Read |
-|---|---|---|
-| propose | 5,159 | 0 |
-| revise | 6,361 | 0 ← **should be hitting cache** |
-| vote | 854 | 6,361 ✓ |
-| memory_update | 784 | 7,215 ✓ |
+**Status:** Root-caused, fix designed  
+**Affects:** All providers (Anthropic, xAI), all player turns  
+**Impact:** ~30–40% of cacheable input tokens are re-read at full price every turn
 
 ---
 
-### Root Cause
+## 1. Symptom
 
-Two compounding problems:
+Within a single player turn, the engine makes 4 API calls in sequence: propose → revise → vote → memory_update. Each call reuses the same system message and appends to a growing conversation history.
 
-**1. Incompatible message array structure between calls.**
+Caching works correctly from the **second→third→fourth** calls. But the **first→second** transition always misses cache. This pattern is universal across providers, players, and turns.
 
-`propose` sends a single `user` message containing the full context + proposal prompt. `revise` sends an `assistant` message (the prior proposal response) followed by a new `user` message (discussions + revision prompt). These two arrays share zero common prefix — not even the first token — so cache lookup fails entirely for `revise`.
+### Token log evidence (Move 10, Claude via Anthropic)
 
-**2. `cache_control` is placed at the top-level API payload, not inside a content block.**
+| Phase         | cache_write | cache_read | Expected read |
+|---------------|-------------|------------|---------------|
+| propose       | 5,159       | 0          | — (cold)      |
+| **revise**    | **6,361**   | **0**      | **~5,159**    |
+| vote          | 0           | 6,361      | ✓             |
+| memory_update | 0           | 7,215      | ✓             |
 
-```python
-# WRONG — cache_control at top level has ambiguous/provider-specific behavior
-{
-  "model": "...",
-  "messages": [...],
-  "cache_control": {"type": "ephemeral"}   # ← this is the bug
-}
+### Token log evidence (Move 9, Max via xAI)
 
-# RIGHT — cache_control as a content block property on stable content
-{
-  "model": "...",
-  "system": [
-    {
-      "type": "text",
-      "text": "...stable context: game state, rules, memory...",
-      "cache_control": {"type": "ephemeral"}   # ← pinned to the stable prefix
-    }
-  ],
-  "messages": [...]
-}
+| Phase         | cache_write | cache_read | Expected read |
+|---------------|-------------|------------|---------------|
+| propose       | —           | 159        | — (cold)      |
+| **revise**    | **—**       | **128**    | **~4,154**    |
+| vote          | —           | 5,184      | ✓             |
+| memory_update | —           | 6,016      | ✓             |
+
+The pattern is identical: first→second = cache miss, second→third→fourth = cache hit.
+
+---
+
+## 2. Root Cause
+
+### The monolithic system message
+
+Currently, `PromptBuilder.build_proposer_system_message()` (and `build_discusser_system_message()`) packs **everything** into a single `ChatMessage(role="system")`:
+
+```
+system: [persona + game_state + rules + memory + INSTRUCTION_PROPOSE]
 ```
 
-The incidental cache hits on `vote` and `memory_update` are happening because the SDK happens to apply the marker to the system prompt, which those calls share. `propose` and `revise` have different system prompts (one is bare, one includes the prior response), so the prefix diverges.
-
----
-
-### The Fix
-
-**Architectural principle:** Separate *stable* context (system prompt, game rules, player memory) from *dynamic* context (call-specific instructions, discussion history, prior responses). Cache the stable prefix. Pass dynamic content as the message tail.
-
-#### Anthropic
-
-Move all stable, turn-invariant content into the `system` array as a content block with `cache_control`:
+When `llm_player._reset_history()` is called, `turn_history` starts as:
 
 ```python
-{
-  "system": [
-    {
-      "type": "text",
-      "text": build_stable_context(game_state, rules, memory),
-      "cache_control": {"type": "ephemeral"}
-    }
-  ],
-  "messages": [
-    # propose:
-    {"role": "user", "content": propose_prompt()},
-
-    # revise (extend same array):
-    {"role": "user", "content": propose_prompt()},
-    {"role": "assistant", "content": prior_proposal_json},
-    {"role": "user", "content": discussion_and_revise_prompt()},
-
-    # vote (extend further):
-    # ... etc.
-  ]
-}
+self.turn_history = [system_message]  # single system-role ChatMessage
 ```
 
-All four intra-turn calls now share the same cached system prefix. Write once, read 3x.
+The first API call (`propose`) sends **only** this system message — no user or assistant messages.
 
-#### xAI (Grok)
+### Anthropic: system-to-user demotion
 
-xAI does not charge for cache writes and uses implicit caching (no `cache_control` annotation needed). However, the same message structure problem applies — if the message array prefix diverges between calls, the provider's internal cache cannot reuse the KV state. Apply the same stable-prefix architecture. Verify cache behavior via the `cache_read_tokens` field in responses.
+`AnthropicApiClient.get_completion()` (api_clients.py:217–224) requires at least one user message. When the only message is system-role, it demotes the entire system content to a user message and sets `system_prompt = None`:
 
-#### OpenAI
+```python
+# api_clients.py lines 217-224
+if not anthropic_messages and system_prompt:
+    anthropic_messages = [{"role": "user", "content": system_prompt}]
+    system_prompt = None
+```
 
-OpenAI uses automatic prompt caching (no explicit markers). Caching applies to the **longest common prefix** of the messages array. Same fix applies: keep stable content at the front of the messages array (or in the system message), and append dynamic content at the tail. The system message is always a good anchor.
+This produces two completely different wire formats:
 
-Reference: https://platform.openai.com/docs/guides/prompt-caching
+**propose (1st call):**
+```
+system: null
+messages: [{role: "user", content: EVERYTHING}]
+```
 
-#### Google (Gemini)
+**revise (2nd call):** (now has assistant + user messages from propose round)
+```
+system: EVERYTHING
+messages: [{role: "assistant", ...}, {role: "user", ...}]
+```
 
-Gemini uses explicit **Context Caching** via a separate API call that creates a named cache object, then references it via `cached_content` in subsequent requests. This is more powerful but requires a different integration pattern:
+Zero bytes of shared prefix → complete cache miss.
 
-1. On game start (or when rules/state change significantly), create a cache object via `POST /v1beta/cachedContents` containing the stable context.
-2. Pass the `cached_content` name in each player API call.
-3. Invalidate/recreate the cache when rules change (after a successful proposal).
-4. Note: minimum cacheable size is 32,768 tokens — we need to only use it when we expect the cache to be larger than that
+### xAI: same symptom, same structural cause
 
-Reference: https://ai.google.dev/gemini-api/docs/caching
+The OpenAI-compatible client doesn't do demotion, but xAI's automatic prefix caching shows the same miss pattern. When the first call sends `messages: [{role: "system", ...}]` alone and the second sends `[{role: "system", ...}, {role: "assistant", ...}, {role: "user", ...}]`, the prefix matcher fails to reuse the first call's cache entry.
 
 ---
 
-### Provider Comparison Matrix
+## 3. Proposed Fix: Split System Message into System + User
 
-| Provider | Cache Mechanism | Write Cost | Annotation Required | Min Cache Size | Notes |
-|---|---|---|---|---|---|
-| Anthropic | Explicit `cache_control` blocks | +25% over base | Yes | 1,024 tokens | 5-min TTL default; system prompt is ideal anchor |
-| xAI | Implicit (automatic) | None | No | Unknown | Verify via `cache_read_tokens` in response |
-| OpenAI | Implicit (automatic) | None | No | 1,024 tokens | Longest prefix match; GPT-4o+ only |
-| Google | Explicit Context Cache API | Storage + creation fee | Yes (separate API call) | 32,768 tokens | Most powerful; requires cache lifecycle management |
+### Principle
+
+Every API call — including the very first — must send at least `[system, user]`. This means the content currently packed into one system message needs to be split into:
+
+- **system message** — stable identity and context (cacheable prefix)
+- **user message** — phase-specific instructions (varies per call)
+
+### What goes where
+
+**System message (stable across all phases within a turn):**
+- Persona block (personality text)
+- Game state block
+- Rules block
+- Memory injection
+
+**User message (varies per phase):**
+- `INSTRUCTION_PROPOSE` (with examples, JSON enforcement, validation rules)
+- `INSTRUCTION_DISCUSS` (with proposal block, examples)
+- `INSTRUCTION_REVISE` (with discussions, constraint message, examples)
+- `INSTRUCTION_VOTE` (with proposal block, examples)
+- `MEMORY_UPDATE_PROMPT`
+
+### Changes required
+
+#### A. `prompts.py` — no template changes needed
+
+The existing templates (`INSTRUCTION_PROPOSE`, `INSTRUCTION_REVISE`, etc.) already serve as self-contained instruction blocks. They just need to be routed to a user message instead of appended to the system message.
+
+#### B. `prompt_builder.py` — return (system, user) tuples
+
+Each `build_*_system_message()` method currently returns a single `ChatMessage(role="system")`. Change to return a tuple of two messages:
+
+```python
+def build_proposer_system_message(self, ...) -> tuple[ChatMessage, ChatMessage]:
+    # Stable context → system
+    blocks = [persona_block, game_state_block, rules_block]
+    if memory_content.strip():
+        blocks.append(memory_block)
+    system_content = "\n\n".join(blocks)
+
+    # Phase instruction → user
+    instruction_block = prompts.INSTRUCTION_PROPOSE.format(
+        json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+        personality_examples=self._build_propose_examples(personality),
+    )
+
+    return (
+        ChatMessage(role="system", content=system_content),
+        ChatMessage(role="user", content=instruction_block),
+    )
+```
+
+Same pattern for `build_discusser_system_message()`. The proposal block and discussion block should go in the user message along with the instruction, since they vary by phase.
+
+#### C. `llm_player.py` — initialize history with [system, user]
+
+```python
+def _reset_history(self, system_message: ChatMessage, user_message: ChatMessage) -> None:
+    self.turn_history = [system_message, user_message]
+```
+
+Update `propose()`, `discuss()`, etc. to unpack the tuple from the builder:
+
+```python
+system_msg, user_msg = self.prompt_builder.build_proposer_system_message(...)
+self._reset_history(system_msg, user_msg)
+```
+
+For subsequent phases (revise, vote, memory_update), the phase-specific user message is **appended** to `turn_history` as it already is — the key difference is that `turn_history` started with `[system, user]` instead of `[system]`.
+
+#### D. `api_clients.py` — Anthropic demotion becomes dead code
+
+With every call guaranteed to have at least one user message, the demotion fallback at lines 217–224 never triggers. It can be removed or left as a defensive guard.
+
+### Wire format after fix
+
+**propose (1st call):**
+```
+system: [persona + game_state + rules + memory]
+messages: [{role: "user", content: INSTRUCTION_PROPOSE}]
+```
+
+**revise (2nd call):**
+```
+system: [persona + game_state + rules + memory]    ← identical prefix ✓
+messages: [
+  {role: "user", content: INSTRUCTION_PROPOSE},
+  {role: "assistant", content: <propose response>},
+  {role: "user", content: <discussions + INSTRUCTION_REVISE>}
+]
+```
+
+The system block is byte-identical across all calls. Both Anthropic (explicit caching) and xAI (automatic prefix caching) will match on the shared system prefix starting from the first call.
 
 ---
 
-### Acceptance Criteria
+## 4. Expected Savings
 
-- [ ] `revise` call shows `cache_read_tokens > 0` for Anthropic
-- [ ] Intra-turn cost for Anthropic drops by ~40-50% (write-once, read-3x on stable context)
-- [ ] Provider adapter layer has a `build_system_context()` method that returns stable content separately from dynamic call instructions
-- [ ] Cache creation is idempotent within a turn (no redundant writes)
-- [ ] For Google: cache is invalidated and recreated after any successful proposal (rules changed)
+For a typical proposer turn (~5,000 system tokens):
+- **Before:** propose writes 5K, revise writes 5K again = 10K written, 5K wasted
+- **After:** propose writes 5K, revise reads 5K from cache = 5K written, 0 wasted
+
+At 3 players × ~10 moves, that's ~150K tokens saved per game, plus the cost differential between cache-read and cache-write pricing.

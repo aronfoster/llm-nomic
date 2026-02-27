@@ -25,6 +25,7 @@ Our architecture is built on these principles:
 
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
 - Need to change text on last withdrawal attempt to make it clear that withdrawing is still an option, just skips your turn
+- Remove ephemeral block from `memory_update` for Anthropic clients so we're not paying to write to the cache.
 
 
 ## Sprint 36: Investigate and Implement Context Caching
