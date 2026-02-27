@@ -24,12 +24,18 @@ from ..llm.parsers import (
     parse_judge_veto_response,
 )
 from ..memory.memory_manager import MemoryManager
-from ..utils.rule_filters import filter_scoring_rules
 from .base_judge import BaseJudge
 
 if TYPE_CHECKING:
     from ..core.game_manager import GameManager
-    from ..data_models import CompletionResult, Discussion, Proposal, Vote
+    from ..data_models import (
+        CompletionResult,
+        Discussion,
+        GameState,
+        Proposal,
+        Rule,
+        Vote,
+    )
     from ..players.base_player import BasePlayer
     from ..utils.token_usage_logger import TokenUsageLogger
 
@@ -71,7 +77,16 @@ class LLMJudge(BaseJudge):
         self.token_usage_logger = token_usage_logger
         # Accumulates the judge's assistant-role responses during a turn.
         # Reset each turn by GameLoop._reset_judge_turn_state().
+        # Still used by GameLoop._update_all_memories() to pass judge context
+        # to LLMPlayer.update_memory() calls.
         self._judge_turn_responses: list[ChatMessage] = []
+        # Stateful conversation history shared across all four per-turn calls:
+        # get_veto → assess_scores → maintain_state → update_memory.
+        # Initialized by get_veto; reset each turn by
+        # GameLoop._reset_judge_turn_state(). The stable system message
+        # (JUDGE_SYSTEM_PROMPT + memory injection) is always the first element,
+        # enabling Anthropic/xAI cache hits from the second call onward.
+        self._turn_history: list[ChatMessage] = []
         # Move number updated on each judge action for use in logging
         self._current_move_number: int = 0
         logger.info(
@@ -81,18 +96,45 @@ class LLMJudge(BaseJudge):
         )
 
     def _build_judge_system_message(
-        self, memory_content: str = ""
+        self,
+        rules: list["Rule"],
+        game_state: "GameState",
+        proposal: "Proposal",
+        votes: list["Vote"],
+        discussions: list["Discussion"],
+        memory_content: str = "",
     ) -> ChatMessage:
-        """Build the judge system message, optionally appending memory.
+        """Build the judge system message with embedded turn context.
+
+        Combines JUDGE_SYSTEM_PROMPT, the full turn context (rules,
+        proposal, votes, scores, discussions), and an optional memory
+        block. The memory block is always last so that it is the closest
+        context to the model's next response.
+
+        The returned message is byte-identical on every subsequent call
+        within the same turn, enabling Anthropic/xAI cache hits from the
+        second call onward.
 
         Args:
-            memory_content: Optional memory content to append. Omitted when
-                empty or whitespace.
+            rules: The current list of rules.
+            game_state: The current game state (scores, flags, etc.).
+            proposal: The proposal being evaluated this turn.
+            votes: The votes cast on the proposal.
+            discussions: The discussion contributions for this turn.
+            memory_content: Optional memory content to append. Omitted
+                when empty or whitespace.
 
         Returns:
             A ChatMessage with role="system".
         """
-        content = llm_prompts.JUDGE_SYSTEM_PROMPT
+        context_block = self.prompt_builder.build_judge_context_block(
+            rules=rules,
+            game_state=game_state,
+            proposal=proposal,
+            votes=votes,
+            discussions=discussions,
+        )
+        content = llm_prompts.JUDGE_SYSTEM_PROMPT + "\n\n" + context_block
         if memory_content.strip():
             content = (
                 content
@@ -102,37 +144,6 @@ class LLMJudge(BaseJudge):
                 )
             )
         return ChatMessage(role="system", content=content)
-
-    def _build_messages(
-        self,
-        game_manager: "GameManager",
-        proposal: "Proposal",
-        votes: list["Vote"],
-        discussions: list["Discussion"],
-    ) -> list[ChatMessage]:
-        assert game_manager.rules_manager is not None
-        assert game_manager.game_state is not None
-
-        logger.debug(
-            "Building judge context for proposal %s with %d votes and %d "
-            "discussions",
-            proposal.proposal_id,
-            len(votes),
-            len(discussions),
-        )
-
-        memory_content = (
-            self.memory_manager.read("Judge") if self.memory_manager else ""
-        )
-        system_message = self._build_judge_system_message(memory_content)
-        context_message = self.prompt_builder.build_judge_context_message(
-            rules=game_manager.rules_manager.rules,
-            game_state=game_manager.game_state,
-            proposal=proposal,
-            votes=votes,
-            discussions=discussions,
-        )
-        return [system_message, context_message]
 
     def _log_usage(self, result: CompletionResult, call_type: str) -> None:
         """Extract metadata and log token usage. Never raises.
@@ -166,16 +177,35 @@ class LLMJudge(BaseJudge):
         discussions: list["Discussion"],
     ) -> JudgeVetoResponse:
         assert game_manager.game_state is not None
+        assert game_manager.rules_manager is not None
         self._current_move_number = game_manager.game_state.move_number
 
-        base_messages = self._build_messages(
-            game_manager, proposal, votes, discussions
+        # Initialize turn history for this turn.
+        # The system message (judge persona + full turn context + optional
+        # memory) is byte-identical on every subsequent call within the
+        # turn, enabling Anthropic/xAI cache hits from the second call.
+        memory_content = (
+            self.memory_manager.read("Judge") if self.memory_manager else ""
         )
-        base_messages.append(
-            self.prompt_builder.build_judge_veto_prompt(
-                game_state=game_manager.game_state,
-            )
+        logger.debug(
+            "Building judge system message for proposal %s with %d votes"
+            " and %d discussions",
+            proposal.proposal_id,
+            len(votes),
+            len(discussions),
         )
+        system_msg = self._build_judge_system_message(
+            rules=game_manager.rules_manager.rules,
+            game_state=game_manager.game_state,
+            proposal=proposal,
+            votes=votes,
+            discussions=discussions,
+            memory_content=memory_content,
+        )
+        veto_prompt = self.prompt_builder.build_judge_veto_prompt(
+            game_state=game_manager.game_state,
+        )
+        self._turn_history = [system_msg, veto_prompt]
 
         logger.debug(
             "Requesting veto decision from model %s",
@@ -185,10 +215,7 @@ class LLMJudge(BaseJudge):
         # Retry loop with maximum attempts
         max_veto_retries = self.tuning.max_judge_veto_retries
         for attempt in range(max_veto_retries):
-            # Use base_messages for first attempt, rebuild for retries
-            messages = base_messages.copy()
-
-            result = self.api_client.get_completion(messages)
+            result = self.api_client.get_completion(self._turn_history)
             self._log_usage(result, "judge_veto")
             response_text = result.text
 
@@ -207,14 +234,17 @@ class LLMJudge(BaseJudge):
             try:
                 data = parse_judge_veto_response(response_text)
 
-                # Success!
+                # Success! Append response to turn history and turn responses
+                assistant_msg = ChatMessage(
+                    role="assistant", content=response_text
+                )
+                self._turn_history.append(assistant_msg)
+                self._judge_turn_responses.append(assistant_msg)
+
                 logger.info(
                     "LLM Judge veto decision: %s | Reason: %s",
                     "VETO" if data["veto"] else "ALLOW",
                     data["reason"],
-                )
-                self._judge_turn_responses.append(
-                    ChatMessage(role="assistant", content=response_text)
                 )
                 return {
                     "veto": data["veto"],
@@ -233,18 +263,19 @@ class LLMJudge(BaseJudge):
                 if attempt >= max_veto_retries - 1:
                     break
 
-                # Prepare retry by appending bad response and error message
-                base_messages.append(
+                # Prepare retry: append bad response and error prompt to
+                # turn history so the next attempt sees the full context
+                self._turn_history.append(
                     ChatMessage(role="assistant", content=response_text)
                 )
                 retry_message = llm_prompts.JUDGE_VETO_RETRY_TEMPLATE.format(
                     validation_error=str(e)
                 )
-                base_messages.append(
+                self._turn_history.append(
                     ChatMessage(role="user", content=retry_message)
                 )
 
-                # Loop continues to retry with updated messages
+                # Loop continues to retry with updated turn history
 
         # All retries exhausted - raise RuntimeError
         logger.error(
@@ -265,34 +296,26 @@ class LLMJudge(BaseJudge):
         discussions: list["Discussion"],
         proposal_passed: bool,
     ) -> JudgeScoreResponse:
+        """Assess score adjustments using the accumulated turn history.
+
+        The full turn context (rules, proposal, votes, discussions) is already
+        in _turn_history from get_veto, so only the score prompt is appended.
+        This avoids re-sending the ruleset and enables cache hits from
+        Anthropic/xAI on the system message prefix.
+        """
         assert game_manager.game_state is not None
         assert game_manager.rules_manager is not None
         _ = players
 
         self._current_move_number = game_manager.game_state.move_number
 
-        # Filter rules to only scoring-relevant ones
-        scoring_rules = filter_scoring_rules(game_manager.rules_manager.rules)
-
-        # Build scoring-specific context (not using _build_messages)
-        system_message = ChatMessage(
-            role="system", content=llm_prompts.JUDGE_SYSTEM_PROMPT
-        )
-        context_message = (
-            self.prompt_builder.build_judge_score_context_message(
-                rules=scoring_rules,
-                game_state=game_manager.game_state,
-                proposal=proposal,
-                votes=votes,
-                discussions=discussions,
-                proposal_passed=proposal_passed,
-            )
-        )
+        # Append only the score prompt to the shared turn history.
+        # The full context (rules, proposal, votes, etc.) is already present
+        # from get_veto's initialization.
         score_prompt = self.prompt_builder.build_judge_score_prompt(
             proposal_passed=proposal_passed
         )
-
-        base_messages = [system_message, context_message, score_prompt]
+        self._turn_history.append(score_prompt)
 
         logger.debug(
             "Requesting score assessment from model %s (proposal %s)",
@@ -303,10 +326,7 @@ class LLMJudge(BaseJudge):
         # Retry loop with maximum attempts
         max_score_retries = self.tuning.max_judge_score_retries
         for attempt in range(max_score_retries):
-            # Use base_messages for first attempt, rebuild for retries
-            messages = base_messages.copy()
-
-            result = self.api_client.get_completion(messages)
+            result = self.api_client.get_completion(self._turn_history)
             self._log_usage(result, "judge_score")
             response_text = result.text
 
@@ -328,11 +348,14 @@ class LLMJudge(BaseJudge):
                     valid_players=list(game_manager.game_state.scores.keys()),
                 )
 
-                # Success! Return intended score adjustments (no mutation)
-                adjustments = data["score_adjustments"]
-                self._judge_turn_responses.append(
-                    ChatMessage(role="assistant", content=response_text)
+                # Success! Append response to turn history and turn responses
+                assistant_msg = ChatMessage(
+                    role="assistant", content=response_text
                 )
+                self._turn_history.append(assistant_msg)
+                self._judge_turn_responses.append(assistant_msg)
+
+                adjustments = data["score_adjustments"]
                 if not adjustments:
                     logger.info(
                         "LLM Judge proposed no score changes this turn."
@@ -365,18 +388,19 @@ class LLMJudge(BaseJudge):
                 if attempt >= max_score_retries - 1:
                     break
 
-                # Prepare retry by appending bad response and error message
-                base_messages.append(
+                # Prepare retry: append bad response and error prompt to
+                # turn history
+                self._turn_history.append(
                     ChatMessage(role="assistant", content=response_text)
                 )
                 retry_message = llm_prompts.JUDGE_SCORE_RETRY_TEMPLATE.format(
                     validation_error=str(e)
                 )
-                base_messages.append(
+                self._turn_history.append(
                     ChatMessage(role="user", content=retry_message)
                 )
 
-                # Loop continues to retry with updated messages
+                # Loop continues to retry with updated turn history
 
         # All retries exhausted - raise RuntimeError
         logger.error(
@@ -398,18 +422,18 @@ class LLMJudge(BaseJudge):
         """
         LLM-powered state maintenance that updates GameState when rules change.
 
-        Uses the LLM to determine if the rule change requires updating flags
-        or target_score. Includes retry logic for invalid responses.
+        Uses the accumulated turn history so the LLM reasons with full context
+        of earlier judge decisions (veto, scores). Only the maintain_state
+        prompt is appended — the ruleset and proposal context are already in
+        _turn_history from get_veto. Includes retry logic for invalid
+        responses.
         """
         assert game_manager.game_state is not None
 
         self._current_move_number = game_manager.game_state.move_number
 
-        # Build minimal context: just system message and maintain_state
-        # prompt
-        system_message = ChatMessage(
-            role="system", content=llm_prompts.JUDGE_SYSTEM_PROMPT
-        )
+        # Append only the maintain_state prompt to the shared turn history.
+        # The full context is already present from get_veto's initialization.
         maintain_state_prompt = (
             self.prompt_builder.build_judge_maintain_state_prompt(
                 proposal=proposal,
@@ -418,7 +442,7 @@ class LLMJudge(BaseJudge):
                 game_state=game_manager.game_state,
             )
         )
-        base_messages = [system_message, maintain_state_prompt]
+        self._turn_history.append(maintain_state_prompt)
 
         logger.debug(
             "Requesting state maintenance decision from model %s for "
@@ -432,10 +456,7 @@ class LLMJudge(BaseJudge):
             self.tuning.max_judge_maintain_state_retries
         )
         for attempt in range(max_maintain_state_retries):
-            # Use base_messages for first attempt, rebuild for retries
-            messages = base_messages.copy()
-
-            result = self.api_client.get_completion(messages)
+            result = self.api_client.get_completion(self._turn_history)
             self._log_usage(result, "judge_maintain_state")
             response_text = result.text
 
@@ -456,7 +477,14 @@ class LLMJudge(BaseJudge):
             try:
                 data = parse_judge_maintain_state_response(response_text)
 
-                # Success! Build StateUpdates from parsed data
+                # Success! Append response to turn history and turn responses
+                assistant_msg = ChatMessage(
+                    role="assistant", content=response_text
+                )
+                self._turn_history.append(assistant_msg)
+                self._judge_turn_responses.append(assistant_msg)
+
+                # Build StateUpdates from parsed data
                 state_updates: StateUpdates = {}
                 if data["flags"]:
                     state_updates["flags"] = data["flags"]
@@ -471,9 +499,6 @@ class LLMJudge(BaseJudge):
                 else:
                     logger.info("LLM Judge recommends no state changes.")
 
-                self._judge_turn_responses.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
                 return state_updates
 
             except ValueError as e:
@@ -488,8 +513,9 @@ class LLMJudge(BaseJudge):
                 if attempt >= max_maintain_state_retries - 1:
                     break
 
-                # Prepare retry by appending bad response and error message
-                base_messages.append(
+                # Prepare retry: append bad response and error prompt to
+                # turn history
+                self._turn_history.append(
                     ChatMessage(role="assistant", content=response_text)
                 )
                 retry_message = (
@@ -497,11 +523,11 @@ class LLMJudge(BaseJudge):
                         validation_error=str(e)
                     )
                 )
-                base_messages.append(
+                self._turn_history.append(
                     ChatMessage(role="user", content=retry_message)
                 )
 
-                # Loop continues to retry with updated messages
+                # Loop continues to retry with updated turn history
 
         # All retries exhausted - raise RuntimeError
         logger.error(
@@ -516,9 +542,11 @@ class LLMJudge(BaseJudge):
     def update_memory(self) -> None:
         """Update the judge's persistent memory file after a completed turn.
 
-        Builds a minimal message list from the system prompt, the judge's
-        own responses cached during the turn, and the memory update prompt.
-        Calls the API once (no retry) and conditionally writes the response.
+        Sends _turn_history (which already contains the cached system prefix,
+        full context, and all judge reasoning) plus the memory update prompt.
+        Since the system message in _turn_history is byte-identical to the one
+        used in get_veto, Anthropic returns a cache hit for the system prefix
+        rather than incurring a fresh cache-write charge.
 
         This method is a no-op when ``memory_manager`` is ``None``.
         """
@@ -542,14 +570,14 @@ class LLMJudge(BaseJudge):
             )
         else:
             update_prompt = llm_prompts.MEMORY_UPDATE_PROMPT
-        system_message = ChatMessage(
-            role="system", content=llm_prompts.JUDGE_SYSTEM_PROMPT
-        )
-        messages = (
-            [system_message]
-            + self._judge_turn_responses
-            + [ChatMessage(role="user", content=update_prompt)]
-        )
+
+        # Use accumulated turn history (system + full context + all judge
+        # reasoning) plus the memory update prompt. The system message is
+        # already cached from get_veto, so this call gets a cache hit rather
+        # than paying to write a new ephemeral cache block.
+        messages = self._turn_history + [
+            ChatMessage(role="user", content=update_prompt)
+        ]
 
         result = self.api_client.get_completion(messages)
         self._log_usage(result, "memory_update")

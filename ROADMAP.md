@@ -138,11 +138,31 @@ with an identical system prefix, enabling cache hits from call 2 onward.
 Removed the demotion fallback from `AnthropicApiClient` as it is no longer
 reachable. Expected saving: ~150K tokens per game.
 
-### Task 3: LLMJudge Caching
-`LLMJudge` currently rebuilds its full message list from scratch on each of
-its four per-turn calls (`get_veto`, `assess_scores`, `maintain_state`,
-`update_memory`), re-sending the ruleset many times. Fixing this properly
-requires refactoring `LLMJudge` to maintain stateful per-turn context.
+### ~~Task 3: LLMJudge Caching~~ ✓ Complete
+`LLMJudge` now maintains a stateful `_turn_history: list[ChatMessage]` across
+all four per-turn calls. `get_veto` initialises the history with
+`[system_with_context, veto_prompt]` — the system message embeds the full
+turn context (rules, proposal, votes, scores, discussions) so the context is
+part of the cached prefix; `assess_scores` and `maintain_state` each append
+only their specific prompt (no re-send of ruleset/context);
+`update_memory` sends `_turn_history + [memory_prompt]`. The system message
+(judge persona + optional memory injection) is byte-identical on every call,
+enabling Anthropic/xAI cache hits from the second call onward. Since
+`update_memory` reuses the same system prefix cached by `get_veto`, it
+receives a cache read rather than incurring a new cache-write charge (fixing
+the ROADMAP bug). `_judge_turn_responses` continues to be populated for
+`LLMPlayer.update_memory()` calls. Both accumulators are reset by
+`GameLoop._reset_judge_turn_state()` at the start of each turn.
+
+**Design decisions:**
+- The full turn context (rules, proposal, votes, scores) is embedded in the
+  system message (not a separate user message), so every API call starts with
+  a byte-identical cached prefix that includes the context.
+- `build_judge_context_message` is removed from `PromptBuilder`; replaced by
+  `build_judge_context_block` which returns a `str` for embedding in the
+  system message. `build_judge_score_context_message` is also removed.
+- `assess_scores` no longer calls any context-building method — the full
+  context is already in `_turn_history[0]` from `get_veto`.
 
 
 ## Future Work

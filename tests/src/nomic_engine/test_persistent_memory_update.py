@@ -142,14 +142,9 @@ def _make_llm_player(
 def _make_llm_judge(memory_manager: Mock | None = None) -> LLMJudge:
     """Create an LLMJudge with mocked API client and prompt builder."""
     prompt_builder = Mock()
-    prompt_builder.build_judge_context_message.return_value = ChatMessage(
-        role="user", content="ctx"
-    )
+    prompt_builder.build_judge_context_block.return_value = "ctx"
     prompt_builder.build_judge_veto_prompt.return_value = ChatMessage(
         role="user", content="veto"
-    )
-    prompt_builder.build_judge_score_context_message.return_value = (
-        ChatMessage(role="user", content="score ctx")
     )
     prompt_builder.build_judge_score_prompt.return_value = ChatMessage(
         role="user", content="score"
@@ -485,6 +480,11 @@ class TestLLMJudgeTurnResponses:
         """Appends to _judge_turn_responses after successful assess_scores."""
         score_text = '{"private_thoughts":"ok","score_adjustments":[]}'
         judge = _make_llm_judge()
+        # Simulate state after get_veto ran by initializing _turn_history
+        judge._turn_history = [
+            ChatMessage(role="system", content="sys"),
+            ChatMessage(role="user", content="ctx"),
+        ]
         judge.api_client.get_completion.return_value = CompletionResult(
             text=score_text, raw_response=None, client_latency_ms=0
         )
@@ -501,6 +501,11 @@ class TestLLMJudgeTurnResponses:
             '{"private_thoughts":"none","flags":{},"target_score":null}'
         )
         judge = _make_llm_judge()
+        # Simulate state after get_veto ran by initializing _turn_history
+        judge._turn_history = [
+            ChatMessage(role="system", content="sys"),
+            ChatMessage(role="user", content="ctx"),
+        ]
         judge.api_client.get_completion.return_value = CompletionResult(
             text=state_text, raw_response=None, client_latency_ms=0
         )
@@ -540,6 +545,58 @@ class TestLLMJudgeTurnResponses:
         assert judge._judge_turn_responses[1].content == score_text
         assert judge._judge_turn_responses[2].content == state_text
 
+    def test_turn_history_grows_across_all_three_judge_methods(self):
+        """_turn_history accumulates across get_veto, assess_scores, and
+        maintain_state — each appending its prompt and response.
+
+        After the amendment the system message embeds the full turn
+        context, so get_veto produces [system_with_ctx, veto_prompt,
+        veto_response] = 3 items instead of 4.
+        """
+        veto_text = '{"private_thoughts":"v","veto":false,"reason":"ok"}'
+        score_text = '{"private_thoughts":"s","score_adjustments":[]}'
+        state_text = '{"private_thoughts":"n","flags":{},"target_score":null}'
+
+        judge = _make_llm_judge()
+        judge.api_client.get_completion.side_effect = [
+            CompletionResult(
+                text=veto_text, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=score_text, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=state_text, raw_response=None, client_latency_ms=0
+            ),
+        ]
+        gm = _make_judge_game_manager()
+
+        judge.get_veto(gm, Mock(), [], [])
+        # After get_veto: [system_with_ctx, veto_prompt, veto_response]
+        assert len(judge._turn_history) == 3
+
+        judge.assess_scores(gm, [], Mock(), [], [], proposal_passed=True)
+        # After assess_scores: [..., score_prompt, score_response]
+        assert len(judge._turn_history) == 5
+
+        judge.maintain_state(gm, Mock(), None, None)
+        # After maintain_state: [..., maintain_prompt, maintain_response]
+        assert len(judge._turn_history) == 7
+
+        # Verify roles at known positions
+        assert judge._turn_history[0].role == "system"  # system+context
+        assert judge._turn_history[1].role == "user"  # veto prompt
+        assert judge._turn_history[2].role == "assistant"  # veto response
+        assert judge._turn_history[3].role == "user"  # score prompt
+        assert judge._turn_history[4].role == "assistant"  # score response
+        assert judge._turn_history[5].role == "user"  # maintain prompt
+        assert judge._turn_history[6].role == "assistant"  # maintain response
+
+        # Content is correct
+        assert judge._turn_history[2].content == veto_text
+        assert judge._turn_history[4].content == score_text
+        assert judge._turn_history[6].content == state_text
+
 
 # =====================================================================
 # LLMJudge.update_memory() Tests
@@ -549,12 +606,35 @@ class TestLLMJudgeTurnResponses:
 class TestLLMJudgeUpdateMemory:
     """Tests for LLMJudge.update_memory()."""
 
+    def _make_judge_with_turn_history(
+        self,
+        memory_manager: Mock | None = None,
+    ) -> tuple["LLMJudge", list[ChatMessage]]:
+        """Create an LLMJudge whose _turn_history simulates a completed
+        get_veto sequence.
+
+        After the amendment the system message embeds the full turn
+        context, so history is [system_with_ctx, veto_prompt, veto_resp]
+        — 3 items instead of 4.
+
+        Returns the judge and the list of history messages so tests can
+        assert on their positions in the sent message list.
+        """
+        judge = _make_llm_judge(memory_manager=memory_manager)
+        sys_msg = ChatMessage(
+            role="system",
+            content=prompts.JUDGE_SYSTEM_PROMPT + "\n\nturn context",
+        )
+        veto_prompt = ChatMessage(role="user", content="veto prompt")
+        veto_resp = ChatMessage(role="assistant", content="veto response")
+        history = [sys_msg, veto_prompt, veto_resp]
+        judge._turn_history = history
+        judge._judge_turn_responses = [veto_resp]
+        return judge, history
+
     def test_no_op_when_memory_manager_is_none(self):
         """update_memory() is a no-op when memory_manager is None."""
-        judge = _make_llm_judge(memory_manager=None)
-        judge._judge_turn_responses = [
-            ChatMessage(role="assistant", content="Some reasoning.")
-        ]
+        judge, _ = self._make_judge_with_turn_history(memory_manager=None)
 
         judge.update_memory()
 
@@ -568,6 +648,9 @@ class TestLLMJudgeUpdateMemory:
         mm.max_characters = 5000
         judge = _make_llm_judge(memory_manager=mm)
         judge._judge_turn_responses = []
+        judge._turn_history = [
+            ChatMessage(role="system", content="sys"),
+        ]
 
         with caplog.at_level(logging.WARNING):
             judge.update_memory()
@@ -580,10 +663,7 @@ class TestLLMJudgeUpdateMemory:
         """update_memory() persists memory using the key 'Judge'."""
         mm = Mock()
         mm.max_characters = 5000
-        judge = _make_llm_judge(memory_manager=mm)
-        judge._judge_turn_responses = [
-            ChatMessage(role="assistant", content="Turn reasoning here.")
-        ]
+        judge, _ = self._make_judge_with_turn_history(memory_manager=mm)
         long_response = "G" * 100
         judge.api_client.get_completion.return_value = CompletionResult(
             text=long_response, raw_response=None, client_latency_ms=0
@@ -597,10 +677,7 @@ class TestLLMJudgeUpdateMemory:
         """update_memory() does not write when the API returns None."""
         mm = Mock()
         mm.max_characters = 5000
-        judge = _make_llm_judge(memory_manager=mm)
-        judge._judge_turn_responses = [
-            ChatMessage(role="assistant", content="Some reasoning.")
-        ]
+        judge, _ = self._make_judge_with_turn_history(memory_manager=mm)
         judge.api_client.get_completion.return_value = CompletionResult(
             text=None, raw_response=None, client_latency_ms=0
         )
@@ -615,10 +692,7 @@ class TestLLMJudgeUpdateMemory:
         """update_memory() logs a WARNING when the API returns None."""
         mm = Mock()
         mm.max_characters = 5000
-        judge = _make_llm_judge(memory_manager=mm)
-        judge._judge_turn_responses = [
-            ChatMessage(role="assistant", content="Some reasoning.")
-        ]
+        judge, _ = self._make_judge_with_turn_history(memory_manager=mm)
         judge.api_client.get_completion.return_value = CompletionResult(
             text=None, raw_response=None, client_latency_ms=0
         )
@@ -632,10 +706,7 @@ class TestLLMJudgeUpdateMemory:
         """update_memory() does not write when response < 50 chars."""
         mm = Mock()
         mm.max_characters = 5000
-        judge = _make_llm_judge(memory_manager=mm)
-        judge._judge_turn_responses = [
-            ChatMessage(role="assistant", content="Some reasoning.")
-        ]
+        judge, _ = self._make_judge_with_turn_history(memory_manager=mm)
         judge.api_client.get_completion.return_value = CompletionResult(
             text="Too short", raw_response=None, client_latency_ms=0
         )
@@ -650,10 +721,7 @@ class TestLLMJudgeUpdateMemory:
         """update_memory() logs a WARNING when response < 50 chars."""
         mm = Mock()
         mm.max_characters = 5000
-        judge = _make_llm_judge(memory_manager=mm)
-        judge._judge_turn_responses = [
-            ChatMessage(role="assistant", content="Reasoning.")
-        ]
+        judge, _ = self._make_judge_with_turn_history(memory_manager=mm)
         judge.api_client.get_completion.return_value = CompletionResult(
             text="Hi", raw_response=None, client_latency_ms=0
         )
@@ -663,16 +731,18 @@ class TestLLMJudgeUpdateMemory:
 
         assert "too short" in caplog.text.lower()
 
-    def test_builds_messages_from_system_turn_responses_and_prompt(self):
-        """Sends [system, cached_responses…, update_prompt] — no game ctx."""
+    def test_builds_messages_from_turn_history_and_prompt(self):
+        """Sends _turn_history + [update_prompt] to the API.
+
+        The new architecture reuses _turn_history (which already has the
+        stable system prefix and all accumulated judge reasoning) plus the
+        memory update prompt, rather than building a fresh [system, responses,
+        prompt] list. This ensures the Anthropic system-message cache is a hit
+        rather than incurring a fresh cache-write charge.
+        """
         mm = Mock()
         mm.max_characters = 5000
-        judge = _make_llm_judge(memory_manager=mm)
-
-        cached = ChatMessage(
-            role="assistant", content="My veto and score reasoning."
-        )
-        judge._judge_turn_responses = [cached]
+        judge, history = self._make_judge_with_turn_history(memory_manager=mm)
         judge.api_client.get_completion.return_value = CompletionResult(
             text="H" * 100, raw_response=None, client_latency_ms=0
         )
@@ -684,24 +754,47 @@ class TestLLMJudgeUpdateMemory:
             judge.api_client.get_completion.call_args[0][0]
         )
 
-        # [system, cached, update_prompt] — exactly 3 messages
-        assert len(messages) == 3
-        assert messages[0].role == "system"
-        assert prompts.JUDGE_SYSTEM_PROMPT in messages[0].content
-        assert messages[1] == cached
-        assert messages[2].role == "user"
-        assert "update your private memory" in messages[2].content.lower()
+        # _turn_history (3 msgs) + update_prompt = 4 messages
+        assert len(messages) == len(history) + 1
+        for i, hist_msg in enumerate(history):
+            assert messages[i] is hist_msg
+        assert messages[-1].role == "user"
+        assert "update your private memory" in messages[-1].content.lower()
 
-    def test_builds_messages_with_multiple_turn_responses(self):
-        """Includes all accumulated responses in the correct order."""
+    def test_builds_messages_with_full_judge_reasoning(self):
+        """update_memory includes all accumulated judge reasoning.
+
+        After the amendment the turn context is embedded in the system
+        message, so there is no separate context user message. History
+        has 7 items (was 8) and the total sent is 8 (was 9).
+        """
         mm = Mock()
         mm.max_characters = 5000
         judge = _make_llm_judge(memory_manager=mm)
 
-        r1 = ChatMessage(role="assistant", content="Veto reasoning")
-        r2 = ChatMessage(role="assistant", content="Score reasoning")
-        r3 = ChatMessage(role="assistant", content="State reasoning")
-        judge._judge_turn_responses = [r1, r2, r3]
+        # Set up turn history that includes all three judge interactions.
+        # System message now embeds the full turn context.
+        sys_msg = ChatMessage(
+            role="system",
+            content=prompts.JUDGE_SYSTEM_PROMPT + "\n\ncontext",
+        )
+        veto_p = ChatMessage(role="user", content="veto prompt")
+        veto_r = ChatMessage(role="assistant", content="Veto reasoning")
+        score_p = ChatMessage(role="user", content="score prompt")
+        score_r = ChatMessage(role="assistant", content="Score reasoning")
+        state_p = ChatMessage(role="user", content="maintain prompt")
+        state_r = ChatMessage(role="assistant", content="State reasoning")
+        history = [
+            sys_msg,
+            veto_p,
+            veto_r,
+            score_p,
+            score_r,
+            state_p,
+            state_r,
+        ]
+        judge._turn_history = history
+        judge._judge_turn_responses = [veto_r, score_r, state_r]
         judge.api_client.get_completion.return_value = CompletionResult(
             text="I" * 100, raw_response=None, client_latency_ms=0
         )
@@ -711,22 +804,20 @@ class TestLLMJudgeUpdateMemory:
         messages: list[ChatMessage] = (
             judge.api_client.get_completion.call_args[0][0]
         )
-        # system + 3 responses + update prompt = 5
-        assert len(messages) == 5
+        # 7 history messages + update_prompt = 8
+        assert len(messages) == 8
+        assert messages[0] is sys_msg
         assert messages[0].role == "system"
-        assert messages[1] is r1
-        assert messages[2] is r2
-        assert messages[3] is r3
-        assert messages[4].role == "user"
+        assert messages[2] is veto_r
+        assert messages[4] is score_r
+        assert messages[6] is state_r
+        assert messages[7].role == "user"
 
     def test_update_prompt_omits_limit_when_no_max_characters(self):
         """Without a character limit, prompt has no truncation clause."""
         mm = Mock()
         mm.max_characters = 0
-        judge = _make_llm_judge(memory_manager=mm)
-        judge._judge_turn_responses = [
-            ChatMessage(role="assistant", content="Turn reasoning.")
-        ]
+        judge, _ = self._make_judge_with_turn_history(memory_manager=mm)
         judge.api_client.get_completion.return_value = CompletionResult(
             text="J" * 100, raw_response=None, client_latency_ms=0
         )
@@ -764,6 +855,42 @@ class TestGameLoopResetJudgeTurnState:
         game_loop._reset_judge_turn_state()
 
         assert judge._judge_turn_responses == []
+
+    def test_clears_turn_history_on_llm_judge(self, mock_game_manager: Mock):
+        """Empties _turn_history on an LLMJudge at turn reset."""
+        judge = LLMJudge(Mock(), api_client=Mock())
+        judge._turn_history = [
+            ChatMessage(role="system", content="Old system"),
+            ChatMessage(role="user", content="Old context"),
+            ChatMessage(role="assistant", content="Old veto response"),
+        ]
+
+        game_loop = GameLoop(
+            game_manager=mock_game_manager, players=[], judge=judge
+        )
+        game_loop._reset_judge_turn_state()
+
+        assert judge._turn_history == []
+
+    def test_clears_both_accumulators_together(self, mock_game_manager: Mock):
+        """_reset_judge_turn_state clears both _judge_turn_responses and
+        _turn_history in a single call."""
+        judge = LLMJudge(Mock(), api_client=Mock())
+        judge._judge_turn_responses = [
+            ChatMessage(role="assistant", content="Response")
+        ]
+        judge._turn_history = [
+            ChatMessage(role="system", content="System"),
+            ChatMessage(role="user", content="Context"),
+        ]
+
+        game_loop = GameLoop(
+            game_manager=mock_game_manager, players=[], judge=judge
+        )
+        game_loop._reset_judge_turn_state()
+
+        assert judge._judge_turn_responses == []
+        assert judge._turn_history == []
 
     def test_no_op_on_human_judge(self, mock_game_manager: Mock):
         """Does not raise and is a no-op for a HumanJudge."""

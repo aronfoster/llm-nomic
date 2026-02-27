@@ -179,10 +179,11 @@ class TestPromptBuilder(unittest.TestCase):
     # Judge prompt helpers
     # =========================================================================
 
-    def test_build_judge_context_message_includes_sections(self):
-        """Judge context message should include rules, votes, and scores."""
+    def test_build_judge_context_block_includes_sections(self):
+        """build_judge_context_block returns a string with all context
+        sections: rules, discussions, votes, and scores."""
 
-        message = self.builder.build_judge_context_message(
+        content = self.builder.build_judge_context_block(
             rules=self.rules,
             game_state=self.game_state,
             proposal=self.proposal,
@@ -190,13 +191,13 @@ class TestPromptBuilder(unittest.TestCase):
             discussions=self.discussions,
         )
 
-        self.assertEqual(message.role, "user")
-        self.assertIn("=== ALL CURRENT RULES ===", message.content)
-        self.assertIn("=== DISCUSSIONS ===", message.content)
-        self.assertIn("=== VOTES ===", message.content)
-        self.assertIn("=== SCORES ===", message.content)
-        self.assertIn("Alice: YES", message.content)
-        self.assertIn("Charlie: NO", message.content)
+        self.assertIsInstance(content, str)
+        self.assertIn("=== ALL CURRENT RULES ===", content)
+        self.assertIn("=== DISCUSSIONS ===", content)
+        self.assertIn("=== VOTES ===", content)
+        self.assertIn("=== SCORES ===", content)
+        self.assertIn("Alice: YES", content)
+        self.assertIn("Charlie: NO", content)
 
     def test_build_judge_veto_prompt_enforces_json(self):
         """Veto prompt should include format enforcement instructions."""

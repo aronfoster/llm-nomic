@@ -812,7 +812,7 @@ class TestCallTypesViaLLMJudge:
         mgr = self._make_game_manager()
 
         prompt_builder = MagicMock()
-        prompt_builder.build_judge_context_message.return_value = MagicMock()
+        prompt_builder.build_judge_context_block.return_value = ""
         prompt_builder.build_judge_veto_prompt.return_value = MagicMock()
         judge.prompt_builder = prompt_builder  # type: ignore[union-attr]
 
@@ -831,9 +831,6 @@ class TestCallTypesViaLLMJudge:
         mgr = self._make_game_manager()
 
         prompt_builder = MagicMock()
-        prompt_builder.build_judge_score_context_message.return_value = (
-            MagicMock()
-        )
         prompt_builder.build_judge_score_prompt.return_value = MagicMock()
         judge.prompt_builder = prompt_builder  # type: ignore[union-attr]
 
