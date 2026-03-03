@@ -30,7 +30,75 @@ Our architecture is built on these principles:
 
 ## Sprint 37: Additional Flags
 
-* Task 1: Create a flag for the number of full game loops to switch from unanimous to majority. Include a null or N/A value. Add description of the flag for the judge. Wire the game enging to: when (turns / players > flag value) && vote mode is unanimous, change vote mode to majority and set flag to null or N/A.
+* Task 1: `majority_after_loops` Flag — Auto-Transition from Unanimous to Majority Voting
+
+  **Overview:** Add a configurable engine flag that replaces the hardcoded Rule 203 circuit-counting logic in `_check_rule_203_transition()`. The flag specifies how many complete game loops must pass before `vote_mode` automatically switches from `unanimous` to `majority`. A "complete loop" = all players have each taken exactly one turn.
+
+  **1. New flag in `config/flag_schema.json`:**
+  ```json
+  "majority_after_loops": {
+    "type": "integer",
+    "nullable": true,
+    "min_value": 1,
+    "valid_values": null,
+    "default": 2,
+    "description": "Number of complete game loops (each player takes one turn) after which vote_mode automatically switches from 'unanimous' to 'majority'. Once triggered, this flag resets to null. Set to null to disable automatic switching."
+  }
+  ```
+  - Type: positive integer (≥ 1) or `null`
+  - Default: `2` (preserves current Rule 203 behavior)
+  - `null` disables the automatic transition
+
+  Note: `load_flag_schema()` currently requires `valid_values` as a field; keep it with a JSON `null` value. Two new optional schema fields are introduced: `nullable` (bool) and `min_value` (int).
+
+  **2. Flag schema validation updates (`src/nomic_engine/utils/flag_schema.py`):**
+  - `validate_flag_value()`: if flag definition has `"nullable": true`, allow `None` as a valid value (skip type/min_value checks when value is None). Otherwise, if `"min_value"` is set, raise `ValueError` if the integer value is less than `min_value`.
+  - `validate_flags()` and `validate_state_updates()`: no changes needed; they call `validate_flag_value()`.
+  - `format_current_flags()`: when a flag value is `None`, render it as `null` (not `"None"`). Example: `- majority_after_loops: null`
+  - `format_supported_flags()`: for flags with `"nullable": true`, append `"or null"` to the type label. If `min_value` is set, include it in the display. Example: `- majority_after_loops (integer or null, min 1): Number of complete game loops...`
+  - `get_flag_defaults()`: current behavior (skip flags with `null` defaults) is correct — the default here is `2`, so it will be included.
+
+  **3. Engine logic (`src/nomic_engine/core/game_loop.py`):**
+  - **Remove** `_check_rule_203_transition()` entirely.
+  - **Replace** the call in `_check_automatic_transitions()` with a call to a new `_check_majority_after_loops()` method:
+    ```python
+    def _check_majority_after_loops(self) -> None:
+        flags = self.game_manager.game_state.flags
+        loops_flag = flags.get("majority_after_loops")
+        if loops_flag is None:
+            return
+        if flags.get("vote_mode", "unanimous") != "unanimous":
+            return
+        move_number = self.game_manager.game_state.move_number
+        num_players = len(self.game_manager.game_state.turn_order)
+        if move_number / num_players > loops_flag:
+            flags["vote_mode"] = "majority"
+            flags["majority_after_loops"] = None
+            # log the transition and add a transcript entry
+    ```
+  - This check runs inside `_advance_turn_state()` (after `move_number` is incremented) via `_check_automatic_transitions()`, matching the existing call site.
+  - Condition uses float division: `move_number / num_players > loops_flag`. With 3 players and flag=2, this fires at move_number=7 (start of the 3rd loop), identical to the existing Rule 203 logic.
+  - The new method does NOT check whether Rule 203 exists — the flag is the sole trigger, independent of any rule.
+  - After transition: log with `logger.info` and add a `[ENGINE]` transcript entry (follow the pattern from `_check_rule_203_transition()`).
+
+  **4. Judge prompt:** No prompt builder changes needed. The flag description in `flag_schema.json` is injected into judge prompts automatically by the existing `format_supported_flags()` and `format_current_flags()` calls in `PromptBuilder`.
+
+  **5. Files to modify:**
+  | File | Change |
+  |------|--------|
+  | `config/flag_schema.json` | Add `majority_after_loops` entry |
+  | `src/nomic_engine/utils/flag_schema.py` | Support `nullable` and `min_value` schema fields in validation and formatting |
+  | `src/nomic_engine/core/game_loop.py` | Remove `_check_rule_203_transition()`, add `_check_majority_after_loops()`, update `_check_automatic_transitions()` |
+
+  **6. Tests (`tests/`):**
+  - Update any tests for `_check_rule_203_transition()` to target the new `_check_majority_after_loops()` method.
+  - `majority_after_loops = null`: no automatic transition fires at any move_number.
+  - `majority_after_loops = 1` with 3 players: fires at move_number=4 (`4/3=1.33 > 1`), not at move_number=3 (`3/3=1.0`, not `> 1`).
+  - `majority_after_loops = 2` (default) with 3 players: fires at move_number=7 (`7/3=2.33 > 2`), not at move_number=6 (`6/3=2.0`, not `> 2`). Matches previous Rule 203 behavior.
+  - After the transition fires: `vote_mode` is `"majority"` and `majority_after_loops` is `None`.
+  - No transition when `vote_mode` is already `"majority"`.
+  - Judge can set `majority_after_loops` to a valid integer or `null` via `StateUpdates`; validation accepts both.
+  - Validation rejects `0`, negative integers, floats, strings; accepts positive integers and `null`.
 
 * Task 2: Create a flag to allow absention voting. When the flag is FALSE then voting options are only YES and NO. When the flag is TRUE then voting options are YES, NO, and ABSTAIN. Prompts will be updated to reflect both states depending on the flag value. For this task, unanimous requires all YES or ABSTAIN votes and majority requires over half the non-abstaining players to vote YES. Ensure prompts explain this behavior.
 
