@@ -257,6 +257,7 @@ class TestGameStateDefaults:
         assert state.flags == {
             "vote_mode": "unanimous",
             "majority_after_loops": 2,
+            "allow_abstention": False,
         }
 
     def test_custom_flags_override_defaults(self) -> None:
@@ -345,6 +346,7 @@ class TestGetFlagDefaults:
         assert defaults == {
             "vote_mode": "unanimous",
             "majority_after_loops": 2,
+            "allow_abstention": False,
         }
 
     def test_excludes_null_defaults(

@@ -452,6 +452,7 @@ class LLMPlayer(BasePlayer):
             rules=rules,
             player_name=self.player_name,
             personality=self.personality,
+            game_state=game_state,
         )
         self.turn_history.append(vote_instruction)
 

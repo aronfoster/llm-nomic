@@ -187,6 +187,8 @@ def format_current_flags(flags: dict[str, Any]) -> str:
     for name, value in sorted(flags.items()):
         if value is None:
             lines.append(f"- {name}: null")
+        elif isinstance(value, bool):
+            lines.append(f"- {name}: {'true' if value else 'false'}")
         else:
             lines.append(f'- {name}: "{value}"')
     return "\n".join(lines)

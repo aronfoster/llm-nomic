@@ -111,10 +111,14 @@ def test_tally_vote_results_unanimous_one_no_fails(
     assert result.passed is False
 
 
-def test_tally_vote_results_unanimous_one_abstain_fails(
+def test_tally_vote_results_unanimous_abstain_with_no_no_votes_passes(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
-    """Test unanimous mode: any ABSTAIN vote should fail."""
+    """Test unanimous mode: ABSTAIN votes with no NO votes should pass.
+
+    Under the new formula (no_count == 0), ABSTAIN is neutral and a proposal
+    passes as long as nobody voted NO.
+    """
     mock_game_state.flags = {"vote_mode": "unanimous"}
 
     votes = [
@@ -124,7 +128,7 @@ def test_tally_vote_results_unanimous_one_abstain_fails(
     ]
 
     result = game_loop._tally_vote_results(votes)
-    assert result.passed is False
+    assert result.passed is True
 
 
 def test_tally_vote_results_unanimous_all_no_fails(
@@ -215,10 +219,14 @@ def test_tally_vote_results_majority_all_yes_passes(
     assert result.passed is True
 
 
-def test_tally_vote_results_majority_abstentions_count_in_total(
+def test_tally_vote_results_majority_abstentions_excluded_from_denominator(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
-    """Test majority mode: abstentions count in total vote count."""
+    """Test majority mode: abstentions are excluded from the denominator.
+
+    Under the new formula (yes_count > (yes_count + no_count) / 2), with
+    2 YES and 2 ABSTAIN and 0 NO: non-abstaining = 2, 2 > 2/2=1 → passes.
+    """
     mock_game_state.flags = {"vote_mode": "majority"}
 
     votes = [
@@ -228,9 +236,9 @@ def test_tally_vote_results_majority_abstentions_count_in_total(
         Vote(player_name="Dave", vote="ABSTAIN"),
     ]
 
-    # 2 YES out of 4 total = 50% (not > 50%)
+    # 2 YES, 0 NO, 2 ABSTAIN → non-abstaining = 2, 2 > 2/2=1 → passes
     result = game_loop._tally_vote_results(votes)
-    assert result.passed is False
+    assert result.passed is True
 
 
 def test_tally_vote_results_majority_abstentions_still_allows_pass(
@@ -309,10 +317,10 @@ def test_tally_vote_results_non_string_vote_mode_defaults_to_unanimous(
 # --- Tests for Zero Voters Edge Case ---
 
 
-def test_tally_vote_results_zero_voters_passes(
+def test_tally_vote_results_zero_voters_unanimous_passes(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
-    """Test zero voters (empty votes list) automatically passes."""
+    """Test zero voters in unanimous mode passes (no_count == 0 → True)."""
     mock_game_state.flags = {"vote_mode": "unanimous"}
 
     votes: list[Vote] = []
@@ -321,16 +329,20 @@ def test_tally_vote_results_zero_voters_passes(
     assert result.passed is True
 
 
-def test_tally_vote_results_zero_voters_passes_in_majority_mode(
+def test_tally_vote_results_zero_voters_majority_fails(
     game_loop: GameLoop, mock_game_state: GameState
 ) -> None:
-    """Test zero voters passes in majority mode too."""
+    """Test zero voters in majority mode fails (0 > 0 → False).
+
+    The old auto-pass guard has been removed. Under the new formula
+    (yes_count > (yes_count + no_count) / 2): 0 > 0 → False.
+    """
     mock_game_state.flags = {"vote_mode": "majority"}
 
     votes: list[Vote] = []
 
     result = game_loop._tally_vote_results(votes)
-    assert result.passed is True
+    assert result.passed is False
 
 
 # --- Tests for _detect_victory ---

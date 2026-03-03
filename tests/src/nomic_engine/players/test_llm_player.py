@@ -450,6 +450,7 @@ class TestLLMPlayerVote:
             rules=rules,
             player_name="TestPlayer",
             personality="friendly",
+            game_state=game_state,
         )
 
 

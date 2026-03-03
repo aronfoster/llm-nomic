@@ -488,15 +488,21 @@ class PromptBuilder:
         ]
         return "\n\n".join(examples)
 
-    def _build_vote_examples(self, personality: str) -> str:
+    def _build_vote_examples(
+        self, personality: str, allow_abstention: bool = False
+    ) -> str:
         """
         Assemble personality-specific JSON examples for the vote phase.
 
         Loads the YES and NO example sections, extracts prose values, and
-        assembles one JSON object per vote outcome.
+        assembles one JSON object per vote outcome. When allow_abstention is
+        True and the personality defines a VOTE_ABSTAIN_EXAMPLE section, an
+        ABSTAIN example is included as well.
 
         Args:
             personality: Lowercase personality name (e.g. "machiavellian").
+            allow_abstention: When True, include an ABSTAIN example if
+                the personality defines one.
 
         Returns:
             Multi-line string of JSON objects separated by blank lines.
@@ -522,6 +528,20 @@ class PromptBuilder:
                 indent=2,
             ),
         ]
+        if allow_abstention and "VOTE_ABSTAIN_EXAMPLE" in sections:
+            abstain_f = parse_section_fields(sections["VOTE_ABSTAIN_EXAMPLE"])
+            examples.append(
+                json.dumps(
+                    {
+                        "private_thoughts": abstain_f.get(
+                            "private_thoughts", ""
+                        ),
+                        "public_reason": abstain_f.get("public_reason", ""),
+                        "vote": "ABSTAIN",
+                    },
+                    indent=2,
+                )
+            )
         return "\n\n".join(examples)
 
     def build_proposer_system_message(
@@ -713,6 +733,7 @@ class PromptBuilder:
         rules: list[Rule],
         player_name: str,
         personality: str = "friendly",
+        game_state: GameState | None = None,
     ) -> ChatMessage:
         """
         Build the user message presenting the final proposal for voting.
@@ -720,7 +741,8 @@ class PromptBuilder:
         Presents the final option to all players and asks for a vote by:
         - PROPOSAL_BLOCK (formatted with the revised proposal details)
         - DISCUSSION_BLOCK (formatted with the discussions)
-        - INSTRUCTION_VOTE
+        - INSTRUCTION_VOTE or INSTRUCTION_VOTE_WITH_ABSTAIN depending on
+          the allow_abstention flag
 
         Args:
             proposal: The (potentially revised) proposal being voted on
@@ -729,10 +751,18 @@ class PromptBuilder:
             player_name: The name of the player who is voting
             personality: Lowercase personality name used to inject
                 phase-specific vote examples.
+            game_state: Optional current game state used to read the
+                allow_abstention flag. When None, defaults to False.
 
         Returns:
             A single ChatMessage with role="user"
         """
+        allow_abstention: bool = False
+        if game_state is not None:
+            allow_abstention = bool(
+                game_state.flags.get("allow_abstention", False)
+            )
+
         # Format proposal block (with potentially revised proposal)
         proposal_block = self._format_proposal(proposal, rules, player_name)
 
@@ -742,10 +772,19 @@ class PromptBuilder:
             discussions_text=discussions_text
         )
 
+        # Select the appropriate vote instruction template
+        vote_template = (
+            prompts.INSTRUCTION_VOTE_WITH_ABSTAIN
+            if allow_abstention
+            else prompts.INSTRUCTION_VOTE
+        )
+
         # Format instruction block with personality-specific examples
-        instruction_block = prompts.INSTRUCTION_VOTE.format(
+        instruction_block = vote_template.format(
             json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
-            personality_examples=self._build_vote_examples(personality),
+            personality_examples=self._build_vote_examples(
+                personality, allow_abstention=allow_abstention
+            ),
         )
 
         # Assemble the full user message
