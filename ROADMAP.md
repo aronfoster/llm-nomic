@@ -123,15 +123,20 @@ Our architecture is built on these principles:
 
   **3. Vote tally logic (`src/nomic_engine/core/game_loop.py` — `_tally_vote_results()`):**
 
-  Two changes, independent of each other:
+  Three changes:
 
-  **Change A — Majority denominator (always applies, regardless of flag):**
+  **Change A — Remove the zero-voter auto-pass special case (behavior change):**
+  The existing `if total_voters == 0: passed = True` guard must be removed. It is no longer needed and is inconsistent with the new formula:
+  - Unanimous with zero voters: `yes_count(0) == total_voters(0)` → True; or `no_count(0) == 0` → True. Both formula variants pass naturally without the guard.
+  - Majority with zero voters: **the old guard forced a pass; new behavior is a fail** (`0 > 0` is False). A vote with no participants should not pass under majority.
+
+  **Change B — Majority denominator (always applies, regardless of flag):**
   - OLD: `passed = yes_count > (total_voters / 2)` — abstentions counted in denominator
   - NEW: `passed = yes_count > ((yes_count + no_count) / 2)` — only non-abstaining voters count
-  - Zero non-abstaining voters (all ABSTAIN): `yes_count > 0 / 2 = 0` evaluates to `False` → fails.
-  - Zero total voters (empty list): auto-pass logic is unchanged.
+  - All ABSTAIN: non-abstaining denominator is 0; `0 > 0` → fails.
+  - Zero voters (empty list): covered by Change A above — fails under majority.
 
-  **Change B — Unanimous semantics (depends on flag):**
+  **Change C — Unanimous semantics (depends on flag):**
   - When `allow_abstention` is `false` (default): `passed = yes_count == total_voters` — ABSTAIN fails unanimous. (Unchanged from current behavior.)
   - When `allow_abstention` is `true`: `passed = no_count == 0` — any mix of YES and ABSTAIN passes; a single NO fails.
 
@@ -165,7 +170,12 @@ Our architecture is built on these principles:
   | `src/nomic_engine/llm/prompt_builder.py` | Pass flag value into `build_vote_instruction()`; update `_build_vote_examples()` for optional ABSTAIN example |
 
   **7. Tests (`tests/`):**
-  - Update `test_tally_vote_results_majority_abstentions_count_in_total` (or equivalent) to reflect the new denominator: abstentions are now excluded from the majority denominator.
+  - Update `test_tally_vote_results_zero_voters_passes` to reflect the removed auto-pass: zero voters under majority must now **fail**.
+  - Update `test_tally_vote_results_majority_abstentions_count_in_total` (or equivalent) to reflect the new denominator: abstentions are excluded from the majority denominator.
+  - **Zero voters — behavior change:**
+    - Zero voters, majority: fails (behavior change from current auto-pass).
+    - Zero voters, unanimous (flag=false): passes naturally (`0 == 0`).
+    - Zero voters, unanimous (flag=true): passes naturally (`no_count == 0`).
   - **Majority — denominator change (flag=false, default behavior):**
     - 3 players: 2 YES, 1 ABSTAIN → non-abstaining = 2, `2 > 2/2=1` → passes.
     - 4 players: 1 YES, 1 NO, 2 ABSTAIN → non-abstaining = 2, `1 > 2/2=1` → fails (not strictly greater).
@@ -173,12 +183,12 @@ Our architecture is built on these principles:
   - **Majority — denominator change (flag=true):** Same denominator formula; verify it also applies when abstention is enabled.
   - **Unanimous — flag=false (default):**
     - All YES → passes (unchanged).
-    - One ABSTAIN → fails (ABSTAIN is not allowed, treated as non-YES, `yes_count != total_voters`).
+    - One ABSTAIN → fails (`yes_count != total_voters`).
   - **Unanimous — flag=true:**
     - All YES → passes.
     - Mix of YES and ABSTAIN, zero NO → passes.
     - One NO (rest YES/ABSTAIN) → fails.
-    - All ABSTAIN → passes (no_count == 0).
+    - All ABSTAIN → passes (`no_count == 0`).
   - **Flag validation:**
     - `allow_abstention: true` and `allow_abstention: false` are accepted by `validate_flag_value()`.
     - Non-boolean values (e.g. `"true"`, `1`, `null`) are rejected.
