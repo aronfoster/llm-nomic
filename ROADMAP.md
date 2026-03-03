@@ -136,11 +136,19 @@ Our architecture is built on these principles:
   - All ABSTAIN: non-abstaining denominator is 0; `0 > 0` → fails.
   - Zero voters (empty list): covered by Change A above — fails under majority.
 
-  **Change C — Unanimous semantics (depends on flag):**
-  - When `allow_abstention` is `false` (default): `passed = yes_count == total_voters` — ABSTAIN fails unanimous. (Unchanged from current behavior.)
-  - When `allow_abstention` is `true`: `passed = no_count == 0` — any mix of YES and ABSTAIN passes; a single NO fails.
+  **Change C — Unanimous formula (unconditional):**
+  - NEW: `passed = no_count == 0` — a proposal passes unanimous if nobody voted NO. This applies regardless of the `allow_abstention` flag.
+  - The flag does not change the tally formula; it controls whether ABSTAIN votes are accepted in the first place (see Change D below).
+  - OLD (`yes_count == total_voters`) is removed entirely.
 
-  **4. Vote instruction prompt (`src/nomic_engine/llm/prompts.py` and `src/nomic_engine/llm/prompt_builder.py`):**
+  **4. Vote validation (`_collect_votes()` in `src/nomic_engine/core/game_loop.py`):**
+
+  **Change D — Reject ABSTAIN when flag is false:**
+  - When `allow_abstention` is `false` (default), any player that returns an ABSTAIN vote must be rejected. The system should raise a `ValueError` (or equivalent) rather than silently counting the vote.
+  - When `allow_abstention` is `true`, ABSTAIN is a valid response and passes through to the tally.
+  - This means `_collect_votes()` must read the `allow_abstention` flag from `GameState` and enforce it per-vote.
+
+  **5. Vote instruction prompt (`src/nomic_engine/llm/prompts.py` and `src/nomic_engine/llm/prompt_builder.py`):**
 
   `build_vote_instruction()` must receive the current `allow_abstention` flag value (Developer decides the cleanest way to pass it — e.g., add a `flags` or `game_state` argument). The rendered vote instruction must differ based on the flag:
 
@@ -155,40 +163,38 @@ Our architecture is built on these principles:
       - *"If the current vote mode is majority, abstaining players are excluded from the count — YES votes must exceed half of non-abstaining (YES + NO) voters."*
     - The explanation should appear regardless of the current `vote_mode` value, so players understand both scenarios.
 
-  The "Invalid JSON = automatic ABSTAIN" fallback line in the current prompt should remain as-is.
+  The "Invalid JSON = automatic ABSTAIN" fallback line in the current prompt should remain as-is. Note: if `allow_abstention` is `false`, an LLM that falls back to ABSTAIN will be rejected by `_collect_votes()` — this is intentional and acceptable.
 
-  **5. Personality vote examples (`src/nomic_engine/llm/prompt_builder.py` — `_build_vote_examples()`):**
+  **6. Personality vote examples (`src/nomic_engine/llm/prompt_builder.py` — `_build_vote_examples()`):**
   - When `allow_abstention` is `true`, include an ABSTAIN example in addition to the YES and NO examples (if personality data supports it). If no ABSTAIN example is defined for a personality, omit it gracefully — do not error.
 
-  **6. Files to modify:**
+  **7. Files to modify:**
   | File | Change |
   |------|--------|
   | `config/flag_schema.json` | Add `allow_abstention` entry |
   | `src/nomic_engine/utils/flag_schema.py` | Render booleans without quotes in `format_current_flags()` |
-  | `src/nomic_engine/core/game_loop.py` | Update `_tally_vote_results()`: new majority denominator (always), new unanimous logic (flag-conditional) |
+  | `src/nomic_engine/core/game_loop.py` | `_collect_votes()`: reject ABSTAIN when flag is false; `_tally_vote_results()`: new majority denominator, remove zero-voter guard, unanimous becomes `no_count == 0` unconditionally |
   | `src/nomic_engine/llm/prompts.py` | Update or split `INSTRUCTION_VOTE` to support both flag states |
   | `src/nomic_engine/llm/prompt_builder.py` | Pass flag value into `build_vote_instruction()`; update `_build_vote_examples()` for optional ABSTAIN example |
 
-  **7. Tests (`tests/`):**
+  **8. Tests (`tests/`):**
   - Update `test_tally_vote_results_zero_voters_passes` to reflect the removed auto-pass: zero voters under majority must now **fail**.
   - Update `test_tally_vote_results_majority_abstentions_count_in_total` (or equivalent) to reflect the new denominator: abstentions are excluded from the majority denominator.
   - **Zero voters — behavior change:**
     - Zero voters, majority: fails (behavior change from current auto-pass).
-    - Zero voters, unanimous (flag=false): passes naturally (`0 == 0`).
-    - Zero voters, unanimous (flag=true): passes naturally (`no_count == 0`).
+    - Zero voters, unanimous: passes naturally (`no_count(0) == 0`).
   - **Majority — denominator change (flag=false, default behavior):**
     - 3 players: 2 YES, 1 ABSTAIN → non-abstaining = 2, `2 > 2/2=1` → passes.
     - 4 players: 1 YES, 1 NO, 2 ABSTAIN → non-abstaining = 2, `1 > 2/2=1` → fails (not strictly greater).
     - All ABSTAIN: non-abstaining = 0, `0 > 0` → fails.
   - **Majority — denominator change (flag=true):** Same denominator formula; verify it also applies when abstention is enabled.
-  - **Unanimous — flag=false (default):**
-    - All YES → passes (unchanged).
-    - One ABSTAIN → fails (`yes_count != total_voters`).
-  - **Unanimous — flag=true:**
-    - All YES → passes.
+  - **Unanimous — tally (flag is irrelevant at tally layer):**
+    - All YES, zero NO → passes (`no_count == 0`).
+    - Any NO present → fails.
     - Mix of YES and ABSTAIN, zero NO → passes.
-    - One NO (rest YES/ABSTAIN) → fails.
-    - All ABSTAIN → passes (`no_count == 0`).
+    - All ABSTAIN, zero NO → passes.
+  - **Vote validation — ABSTAIN rejection (flag=false):**
+    - Player returns ABSTAIN when flag is false → `_collect_votes()` raises `ValueError` (test at the `_collect_votes()` level, not tally).
   - **Flag validation:**
     - `allow_abstention: true` and `allow_abstention: false` are accepted by `validate_flag_value()`.
     - Non-boolean values (e.g. `"true"`, `1`, `null`) are rejected.
