@@ -100,7 +100,7 @@ Our architecture is built on these principles:
   - Judge can set `majority_after_loops` to a valid integer or `null` via `StateUpdates`; validation accepts both.
   - Validation rejects `0`, negative integers, floats, strings; accepts positive integers and `null`.
 
-* Task 2: `allow_abstention` Flag — Configurable Abstention Voting
+* Task 2: `allow_abstention` Flag — Configurable Abstention Voting ✓ DONE
 
   **Overview:** Add a boolean flag `allow_abstention` that controls whether players may cast an ABSTAIN vote. When `false`, only YES and NO are valid vote options. When `true`, YES, NO, and ABSTAIN are all valid, and the unanimous and majority tally semantics change to treat abstentions as neutral. Additionally, the majority tally denominator changes to non-abstaining voters in all cases (flag true or false).
 

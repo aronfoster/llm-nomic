@@ -1,4 +1,11 @@
 {
+  "allow_abstention": {
+    "type": "boolean",
+    "nullable": false,
+    "valid_values": null,
+    "default": false,
+    "description": "When true, players may vote ABSTAIN in addition to YES and NO. Unanimous voting passes when no player votes NO (ABSTAIN is neutral). Majority voting counts only non-abstaining players in the denominator. When false, only YES and NO are valid options and unanimous requires all YES votes."
+  },
   "majority_after_loops": {
     "type": "integer",
     "nullable": true,

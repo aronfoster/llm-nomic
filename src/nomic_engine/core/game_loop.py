@@ -630,12 +630,23 @@ class GameLoop:
 
         votes: list[Vote] = []
 
+        allow_abstention = self.game_manager.game_state.flags.get(
+            "allow_abstention", False
+        )
+
         for player in players:
             vote = player.vote(
                 proposal=proposal,
                 game_state=self.game_manager.game_state,
                 rules=self.game_manager.rules_manager.rules,
             )
+
+            if not allow_abstention and vote.vote == "ABSTAIN":
+                raise ValueError(
+                    f"Player '{player.player_name}' cast an ABSTAIN vote, "
+                    "but allow_abstention flag is false. "
+                    "Only YES and NO votes are permitted."
+                )
 
             votes.append(vote)
             logger.debug(f"{player.player_name} voted: {vote.vote}")
@@ -686,29 +697,24 @@ class GameLoop:
             )
             vote_mode = "unanimous"
 
-        # Special case: If there are zero voters, proposal automatically passes
-        if total_voters == 0:
-            passed = True
-            logger.debug(
-                "Vote tally: Zero voters, proposal automatically passes"
-            )
-        elif vote_mode == "majority":
-            # Majority mode: YES votes must be > 50% of total votes
-            passed = yes_count > (total_voters / 2)
+        if vote_mode == "majority":
+            # Majority mode: YES votes must be > 50% of non-abstaining voters
+            # Abstentions are excluded from the denominator
+            passed = yes_count > ((yes_count + no_count) / 2)
             logger.debug(
                 f"Vote tally (majority mode): YES={yes_count}, "
                 f"NO={no_count}, ABSTAIN={abstain_count}, "
-                f"Total={total_voters}, Passed={passed}"
+                f"Non-abstaining={yes_count + no_count}, Passed={passed}"
             )
         else:
-            # Unanimous mode (default): All votes must be YES
+            # Unanimous mode (default): Proposal passes if nobody voted NO
             if vote_mode != "unanimous":
                 logger.warning(
                     f"Unknown vote_mode '{vote_mode}' in flags. "
                     "Defaulting to 'unanimous'"
                 )
                 vote_mode = "unanimous"
-            passed = yes_count == total_voters
+            passed = no_count == 0
             logger.debug(
                 f"Vote tally (unanimous mode): YES={yes_count}, "
                 f"NO={no_count}, ABSTAIN={abstain_count}, "

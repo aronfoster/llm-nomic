@@ -439,7 +439,35 @@ You must output EXACTLY one JSON object with these keys IN THIS ORDER:
    is private)
 2. "public_reason": Your explanation to other players (1-3 sentences,
    be political)
+3. "vote": Exactly one of: "YES" or "NO" (uppercase)
+
+The order matters. Think BEFORE you decide.
+
+{json_format_enforcement}
+
+{personality_examples}
+
+Remember: Invalid JSON = automatic ABSTAIN. Output only JSON."""
+
+INSTRUCTION_VOTE_WITH_ABSTAIN = """=== YOUR VOTE ===
+
+Cast your vote on this proposal. Consider how it affects your position,
+the game balance, and your relationships with other players.
+
+You must output EXACTLY one JSON object with these keys IN THIS ORDER:
+1. "private_thoughts": Your honest strategic analysis. How does this
+   affect your path to victory? What are others really trying to do? (This
+   is private)
+2. "public_reason": Your explanation to other players (1-3 sentences,
+   be political)
 3. "vote": Exactly one of: "YES", "NO", or "ABSTAIN" (uppercase)
+
+Abstention semantics:
+- If the current vote mode is unanimous, a proposal passes only if no one
+  votes NO — ABSTAIN is treated as neutral.
+- If the current vote mode is majority, abstaining players are excluded
+  from the count — YES votes must exceed half of non-abstaining (YES + NO)
+  voters.
 
 The order matters. Think BEFORE you decide.
 
