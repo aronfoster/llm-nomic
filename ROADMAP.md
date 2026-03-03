@@ -19,6 +19,7 @@ Our architecture is built on these principles:
   - Might just turn this into a flag since it's so common.
   - What if we modified the judge memory prompt to tell it to remind itself about future game state changes?
 - Players are not clear on vote result and final score when writing memories. Needs to be explicit.
+- Need to have all LLM input failures (e.g. bad rule number, ABSTAIN vote when not allowed, etc.) go through retry logic with basic (sanitized) error descriptions so the LLM can fix it.
 
 ### Low Priority
 
