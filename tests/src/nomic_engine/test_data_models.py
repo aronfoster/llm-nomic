@@ -307,6 +307,7 @@ def test_game_state_default_flags():
         "vote_mode": "unanimous",
         "majority_after_loops": 2,
         "allow_abstention": False,
+        "transmute_immutable_vote_mode": "unanimous",
     }
 
 
