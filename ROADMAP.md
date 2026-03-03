@@ -30,7 +30,7 @@ Our architecture is built on these principles:
 
 ## Sprint 37: Additional Flags
 
-* Task 1: `majority_after_loops` Flag — Auto-Transition from Unanimous to Majority Voting
+* Task 1: `majority_after_loops` Flag — Auto-Transition from Unanimous to Majority Voting ✓ DONE
 
   **Overview:** Add a configurable engine flag that replaces the hardcoded Rule 203 circuit-counting logic in `_check_rule_203_transition()`. The flag specifies how many complete game loops must pass before `vote_mode` automatically switches from `unanimous` to `majority`. A "complete loop" = all players have each taken exactly one turn.
 
