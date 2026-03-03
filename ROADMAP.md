@@ -203,7 +203,55 @@ Our architecture is built on these principles:
     - `allow_abstention: false` renders as `- allow_abstention: false` (no quotes).
     - `allow_abstention: true` renders as `- allow_abstention: true` (no quotes).
 
-* Task 3: Create a flag for what type of voting is required for TRANSMUTE. Defaults to unanimous. Relates to rule 109. Uses the same voting mode class as is used for other proposals. Engine should use this flag to determine whether TRANSMUTE proposals pass or fail.
+* Task 3: `transmute_immutable_vote_mode` Flag — Configurable Voting for IMMUTABLE→MUTABLE Transmutations
+
+  **Overview:** Add a configurable flag `transmute_immutable_vote_mode` that controls the voting threshold applied when a TRANSMUTE proposal would flip an **IMMUTABLE** rule to **MUTABLE** (the case described by Rule 109). When set, this flag overrides `vote_mode` for that specific vote. When `null`, the regular `vote_mode` applies. TRANSMUTE proposals that flip a **MUTABLE** rule to **IMMUTABLE** are unaffected — they always use `vote_mode`.
+
+  **1. New flag in `config/flag_schema.json`:**
+  ```json
+  "transmute_immutable_vote_mode": {
+    "type": "string",
+    "nullable": true,
+    "valid_values": ["unanimous", "majority"],
+    "default": "unanimous",
+    "description": "Voting mode applied when a TRANSMUTE proposal would flip an IMMUTABLE rule to MUTABLE (per Rule 109). When null, the regular vote_mode is used. Has no effect on TRANSMUTE proposals that flip MUTABLE rules to IMMUTABLE."
+  }
+  ```
+  - Type: `"unanimous"` | `"majority"` or `null`
+  - Default: `"unanimous"` (consistent with Rule 109)
+  - `null` disables the override; `vote_mode` governs all TRANSMUTE proposals
+
+  **2. Flag schema validation (`src/nomic_engine/utils/flag_schema.py`):**
+  - The `nullable` support introduced in Task 1 must also skip `valid_values` enforcement when the value is `null`. Confirm this is already the case; fix it if not.
+  - No other changes are expected.
+
+  **3. Vote tally logic (`src/nomic_engine/core/game_loop.py`):**
+  - When tallying votes for a TRANSMUTE proposal, look up the target rule's current status.
+    - If the target rule is **IMMUTABLE** (i.e. the proposal would flip it to MUTABLE):
+      - Read `transmute_immutable_vote_mode` from flags.
+      - If non-null, use it as the effective vote mode for this tally instead of `vote_mode`.
+      - If null, fall back to `vote_mode`.
+    - If the target rule is **MUTABLE** (i.e. the proposal would flip it to IMMUTABLE), use `vote_mode` as normal — the flag is ignored.
+  - Developer decides the cleanest way to resolve and pass the effective vote mode into `_tally_vote_results()` (e.g. resolve it at the call site and pass it as a parameter).
+  - `VoteResult.vote_mode` must reflect the effective mode actually used, which may differ from `flags["vote_mode"]` when the override is active.
+
+  **4. Judge prompt:** No changes needed. The new flag's description is injected automatically via `format_supported_flags()` and `format_current_flags()`.
+
+  **5. Files to modify:**
+  | File | Change |
+  |------|--------|
+  | `config/flag_schema.json` | Add `transmute_immutable_vote_mode` entry |
+  | `src/nomic_engine/utils/flag_schema.py` | Confirm/fix: nullable must skip `valid_values` check |
+  | `src/nomic_engine/core/game_loop.py` | Resolve and apply override vote mode for IMMUTABLE→MUTABLE TRANSMUTE tally |
+
+  **6. Tests (`tests/`):**
+  - **IMMUTABLE→MUTABLE TRANSMUTE, flag = `"majority"`:** Tally uses `"majority"` even when `vote_mode` is `"unanimous"`. `VoteResult.vote_mode` is `"majority"`.
+  - **IMMUTABLE→MUTABLE TRANSMUTE, flag = `null`:** Tally falls back to `vote_mode`. `VoteResult.vote_mode` reflects `vote_mode`.
+  - **IMMUTABLE→MUTABLE TRANSMUTE, flag = `"unanimous"` (default):** Tally uses `"unanimous"`. Passes when no NO votes, fails when any NO vote is cast.
+  - **MUTABLE→IMMUTABLE TRANSMUTE, flag = `"majority"`:** Flag is ignored; tally uses `vote_mode`.
+  - **Non-TRANSMUTE proposals (ADD, AMEND, REPEAL):** Unaffected; always use `vote_mode`.
+  - **`VoteResult.vote_mode`:** Contains the mode actually used (override value when active, not necessarily `flags["vote_mode"]`).
+  - **Flag validation:** `"unanimous"` and `"majority"` accepted; `null` accepted; other strings rejected; `null` skips `valid_values` enforcement.
 
 * Task 4: Add 2 voting modes: "minimum yes votes" and "unanimous strict". Minimum yes votes comes with an integer (any value less than player count) that is checked against the count of YES votes. "Unanimous strict" only is available after ABSTAIN flag is TRUE, and requires all YES votes and zero ANSTAIN votes. If voting mode is unanimous strict and ABSTAIN flag is set to FALSE, it behaves like unanimous.
 
