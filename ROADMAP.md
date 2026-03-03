@@ -203,7 +203,7 @@ Our architecture is built on these principles:
     - `allow_abstention: false` renders as `- allow_abstention: false` (no quotes).
     - `allow_abstention: true` renders as `- allow_abstention: true` (no quotes).
 
-* Task 3: `transmute_immutable_vote_mode` Flag — Configurable Voting for IMMUTABLE→MUTABLE Transmutations
+* Task 3: `transmute_immutable_vote_mode` Flag — Configurable Voting for IMMUTABLE→MUTABLE Transmutations ✓ DONE
 
   **Overview:** Add a configurable flag `transmute_immutable_vote_mode` that controls the voting threshold applied when a TRANSMUTE proposal would flip an **IMMUTABLE** rule to **MUTABLE** (the case described by Rule 109). When set, this flag overrides `vote_mode` for that specific vote. When `null`, the regular `vote_mode` applies. TRANSMUTE proposals that flip a **MUTABLE** rule to **IMMUTABLE** are unaffected — they always use `vote_mode`.
 

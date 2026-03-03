@@ -13,6 +13,7 @@ from ..data_models import (
     Proposal,
     ProposalType,
     Rule,
+    RuleStatus,
     Vote,
     VoteResult,
     WithdrawalPolicy,
@@ -654,7 +655,49 @@ class GameLoop:
         logger.info(f"Collected {len(votes)} votes")
         return votes
 
-    def _tally_vote_results(self, votes: list[Vote]) -> VoteResult:
+    def _resolve_effective_vote_mode(self, proposal: Proposal) -> str | None:
+        """
+        Resolve the effective vote mode override for the given proposal.
+
+        For a TRANSMUTE proposal whose target rule is currently IMMUTABLE
+        (i.e. the proposal would flip it to MUTABLE), this method returns the
+        value of the transmute_immutable_vote_mode flag when it is non-null.
+        In all other cases it returns None, meaning the standard vote_mode
+        flag governs the tally.
+
+        Args:
+            proposal: The proposal being voted on.
+
+        Returns:
+            The override vote mode string to use, or None when no override
+            applies (use the standard vote_mode flag instead).
+        """
+        assert self.game_manager.game_state is not None
+        assert self.game_manager.rules_manager is not None
+
+        if proposal.type != ProposalType.TRANSMUTE:
+            return None
+
+        if not proposal.target_rule_id:
+            return None
+
+        target_rule = self.game_manager.rules_manager._find_rule_by_id(
+            proposal.target_rule_id
+        )
+        if target_rule is None or target_rule.status != RuleStatus.IMMUTABLE:
+            return None
+
+        # Target rule is IMMUTABLE (proposal would make it MUTABLE).
+        # Return the override flag value (may be None if the flag is null).
+        return self.game_manager.game_state.flags.get(
+            "transmute_immutable_vote_mode"
+        )
+
+    def _tally_vote_results(
+        self,
+        votes: list[Vote],
+        vote_mode_override: str | None = None,
+    ) -> VoteResult:
         """
         Calculate the outcome of the vote (side-effect-free).
 
@@ -670,6 +713,10 @@ class GameLoop:
 
         Args:
             votes: List of Vote objects from all players
+            vote_mode_override: When provided, use this vote mode instead of
+                the vote_mode flag. Used by the transmute_immutable_vote_mode
+                flag to override the tally for IMMUTABLE→MUTABLE TRANSMUTE
+                proposals.
 
         Returns:
             VoteResult: Structured data containing vote counts and
@@ -685,9 +732,12 @@ class GameLoop:
         abstain_count = sum(1 for v in votes if v.vote == "ABSTAIN")
         total_voters = len(votes)
 
-        # Get vote_mode from flags with type safety
+        # Get vote_mode: use override when provided, otherwise read from flags
         flags = self.game_manager.game_state.flags
-        vote_mode = flags.get("vote_mode", "unanimous")
+        if vote_mode_override is not None:
+            vote_mode = vote_mode_override
+        else:
+            vote_mode = flags.get("vote_mode", "unanimous")
 
         # Validate vote_mode is a string
         if not isinstance(vote_mode, str):
@@ -1384,7 +1434,8 @@ class GameLoop:
 
         # Phase 1: Tally votes (side-effect-free)
         logger.info("Phase 1: Tallying votes")
-        vote_result = self._tally_vote_results(votes)
+        vote_mode_override = self._resolve_effective_vote_mode(proposal)
+        vote_result = self._tally_vote_results(votes, vote_mode_override)
 
         # Print proposal and voting results to console
         self._print_proposal_summary(proposal, vote_result)

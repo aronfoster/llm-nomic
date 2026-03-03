@@ -258,6 +258,7 @@ class TestGameStateDefaults:
             "vote_mode": "unanimous",
             "majority_after_loops": 2,
             "allow_abstention": False,
+            "transmute_immutable_vote_mode": "unanimous",
         }
 
     def test_custom_flags_override_defaults(self) -> None:
@@ -347,6 +348,7 @@ class TestGetFlagDefaults:
             "vote_mode": "unanimous",
             "majority_after_loops": 2,
             "allow_abstention": False,
+            "transmute_immutable_vote_mode": "unanimous",
         }
 
     def test_excludes_null_defaults(

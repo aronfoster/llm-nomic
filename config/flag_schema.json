@@ -14,6 +14,13 @@
     "default": 2,
     "description": "Number of complete game loops (each player takes one turn) after which vote_mode automatically switches from 'unanimous' to 'majority'. Once triggered, this flag resets to null. Set to null to disable automatic switching."
   },
+  "transmute_immutable_vote_mode": {
+    "type": "string",
+    "nullable": true,
+    "valid_values": ["unanimous", "majority"],
+    "default": "unanimous",
+    "description": "Voting mode applied when a TRANSMUTE proposal would flip an IMMUTABLE rule to MUTABLE (per Rule 109). When null, the regular vote_mode is used. Has no effect on TRANSMUTE proposals that flip MUTABLE rules to IMMUTABLE."
+  },
   "vote_mode": {
     "type": "string",
     "valid_values": ["unanimous", "majority"],
