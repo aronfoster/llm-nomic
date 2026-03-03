@@ -100,7 +100,91 @@ Our architecture is built on these principles:
   - Judge can set `majority_after_loops` to a valid integer or `null` via `StateUpdates`; validation accepts both.
   - Validation rejects `0`, negative integers, floats, strings; accepts positive integers and `null`.
 
-* Task 2: Create a flag to allow absention voting. When the flag is FALSE then voting options are only YES and NO. When the flag is TRUE then voting options are YES, NO, and ABSTAIN. Prompts will be updated to reflect both states depending on the flag value. For this task, unanimous requires all YES or ABSTAIN votes and majority requires over half the non-abstaining players to vote YES. Ensure prompts explain this behavior.
+* Task 2: `allow_abstention` Flag — Configurable Abstention Voting
+
+  **Overview:** Add a boolean flag `allow_abstention` that controls whether players may cast an ABSTAIN vote. When `false`, only YES and NO are valid vote options. When `true`, YES, NO, and ABSTAIN are all valid, and the unanimous and majority tally semantics change to treat abstentions as neutral. Additionally, the majority tally denominator changes to non-abstaining voters in all cases (flag true or false).
+
+  **1. New flag in `config/flag_schema.json`:**
+  ```json
+  "allow_abstention": {
+    "type": "boolean",
+    "nullable": false,
+    "valid_values": null,
+    "default": false,
+    "description": "When true, players may vote ABSTAIN in addition to YES and NO. Unanimous voting passes when no player votes NO (ABSTAIN is neutral). Majority voting counts only non-abstaining players in the denominator. When false, only YES and NO are valid options and unanimous requires all YES votes."
+  }
+  ```
+  - Type: `boolean`; default: `false`; not nullable
+
+  **2. Flag schema changes (`src/nomic_engine/utils/flag_schema.py`):**
+  - `validate_flag_value()`: Already supports `"boolean"` type — no change needed.
+  - `format_current_flags()`: Boolean values must render without quotes as `true` or `false` (not as `"True"` or `"False"`). Example: `- allow_abstention: false`
+  - `format_supported_flags()`: No change needed; `"boolean"` already renders correctly as a type label.
+
+  **3. Vote tally logic (`src/nomic_engine/core/game_loop.py` — `_tally_vote_results()`):**
+
+  Two changes, independent of each other:
+
+  **Change A — Majority denominator (always applies, regardless of flag):**
+  - OLD: `passed = yes_count > (total_voters / 2)` — abstentions counted in denominator
+  - NEW: `passed = yes_count > ((yes_count + no_count) / 2)` — only non-abstaining voters count
+  - Zero non-abstaining voters (all ABSTAIN): `yes_count > 0 / 2 = 0` evaluates to `False` → fails.
+  - Zero total voters (empty list): auto-pass logic is unchanged.
+
+  **Change B — Unanimous semantics (depends on flag):**
+  - When `allow_abstention` is `false` (default): `passed = yes_count == total_voters` — ABSTAIN fails unanimous. (Unchanged from current behavior.)
+  - When `allow_abstention` is `true`: `passed = no_count == 0` — any mix of YES and ABSTAIN passes; a single NO fails.
+
+  **4. Vote instruction prompt (`src/nomic_engine/llm/prompts.py` and `src/nomic_engine/llm/prompt_builder.py`):**
+
+  `build_vote_instruction()` must receive the current `allow_abstention` flag value (Developer decides the cleanest way to pass it — e.g., add a `flags` or `game_state` argument). The rendered vote instruction must differ based on the flag:
+
+  - **When `allow_abstention` is `false`:**
+    - List only `"YES"` and `"NO"` as valid vote values.
+    - No mention of ABSTAIN.
+
+  - **When `allow_abstention` is `true`:**
+    - List `"YES"`, `"NO"`, and `"ABSTAIN"` as valid vote values.
+    - Include a plain-language explanation of abstention semantics for each vote mode. Example wording (Developer may refine):
+      - *"If the current vote mode is unanimous, a proposal passes only if no one votes NO — ABSTAIN is treated as neutral."*
+      - *"If the current vote mode is majority, abstaining players are excluded from the count — YES votes must exceed half of non-abstaining (YES + NO) voters."*
+    - The explanation should appear regardless of the current `vote_mode` value, so players understand both scenarios.
+
+  The "Invalid JSON = automatic ABSTAIN" fallback line in the current prompt should remain as-is.
+
+  **5. Personality vote examples (`src/nomic_engine/llm/prompt_builder.py` — `_build_vote_examples()`):**
+  - When `allow_abstention` is `true`, include an ABSTAIN example in addition to the YES and NO examples (if personality data supports it). If no ABSTAIN example is defined for a personality, omit it gracefully — do not error.
+
+  **6. Files to modify:**
+  | File | Change |
+  |------|--------|
+  | `config/flag_schema.json` | Add `allow_abstention` entry |
+  | `src/nomic_engine/utils/flag_schema.py` | Render booleans without quotes in `format_current_flags()` |
+  | `src/nomic_engine/core/game_loop.py` | Update `_tally_vote_results()`: new majority denominator (always), new unanimous logic (flag-conditional) |
+  | `src/nomic_engine/llm/prompts.py` | Update or split `INSTRUCTION_VOTE` to support both flag states |
+  | `src/nomic_engine/llm/prompt_builder.py` | Pass flag value into `build_vote_instruction()`; update `_build_vote_examples()` for optional ABSTAIN example |
+
+  **7. Tests (`tests/`):**
+  - Update `test_tally_vote_results_majority_abstentions_count_in_total` (or equivalent) to reflect the new denominator: abstentions are now excluded from the majority denominator.
+  - **Majority — denominator change (flag=false, default behavior):**
+    - 3 players: 2 YES, 1 ABSTAIN → non-abstaining = 2, `2 > 2/2=1` → passes.
+    - 4 players: 1 YES, 1 NO, 2 ABSTAIN → non-abstaining = 2, `1 > 2/2=1` → fails (not strictly greater).
+    - All ABSTAIN: non-abstaining = 0, `0 > 0` → fails.
+  - **Majority — denominator change (flag=true):** Same denominator formula; verify it also applies when abstention is enabled.
+  - **Unanimous — flag=false (default):**
+    - All YES → passes (unchanged).
+    - One ABSTAIN → fails (ABSTAIN is not allowed, treated as non-YES, `yes_count != total_voters`).
+  - **Unanimous — flag=true:**
+    - All YES → passes.
+    - Mix of YES and ABSTAIN, zero NO → passes.
+    - One NO (rest YES/ABSTAIN) → fails.
+    - All ABSTAIN → passes (no_count == 0).
+  - **Flag validation:**
+    - `allow_abstention: true` and `allow_abstention: false` are accepted by `validate_flag_value()`.
+    - Non-boolean values (e.g. `"true"`, `1`, `null`) are rejected.
+  - **`format_current_flags()` with boolean:**
+    - `allow_abstention: false` renders as `- allow_abstention: false` (no quotes).
+    - `allow_abstention: true` renders as `- allow_abstention: true` (no quotes).
 
 * Task 3: Create a flag for what type of voting is required for TRANSMUTE. Defaults to unanimous. Relates to rule 109. Uses the same voting mode class as is used for other proposals. Engine should use this flag to determine whether TRANSMUTE proposals pass or fail.
 
