@@ -119,6 +119,14 @@ def validate_flag_value(flag_name: str, value: Any) -> None:
     definition = schema[flag_name]
     expected_type = definition["type"]
     valid_values = definition["valid_values"]
+    nullable = definition.get("nullable", False)
+    min_value = definition.get("min_value", None)
+
+    # Allow None if the flag is nullable
+    if value is None:
+        if nullable:
+            return
+        raise ValueError(f"Flag '{flag_name}' does not allow null values")
 
     # Type checking
     type_map: dict[str, type] = {
@@ -131,6 +139,13 @@ def validate_flag_value(flag_name: str, value: Any) -> None:
         raise ValueError(
             f"Flag '{flag_name}' expects type '{expected_type}', "
             f"got {type(value).__name__}"
+        )
+
+    # min_value checking (for integer flags)
+    if min_value is not None and isinstance(value, int) and value < min_value:
+        raise ValueError(
+            f"Flag '{flag_name}' value {value} is below minimum allowed "
+            f"value of {min_value}"
         )
 
     # Valid values checking (for enum-style flags)
@@ -170,7 +185,10 @@ def format_current_flags(flags: dict[str, Any]) -> str:
         return "No flags currently set."
     lines = []
     for name, value in sorted(flags.items()):
-        lines.append(f'- {name}: "{value}"')
+        if value is None:
+            lines.append(f"- {name}: null")
+        else:
+            lines.append(f'- {name}: "{value}"')
     return "\n".join(lines)
 
 
@@ -190,7 +208,12 @@ def format_supported_flags() -> str:
     for name, definition in sorted(schema.items()):
         desc = definition["description"]
         flag_type = definition["type"]
-        parts = [f"- {name} ({flag_type}): {desc}"]
+        nullable = definition.get("nullable", False)
+        min_value = definition.get("min_value", None)
+        type_label = f"{flag_type} or null" if nullable else flag_type
+        if min_value is not None:
+            type_label = f"{type_label}, min {min_value}"
+        parts = [f"- {name} ({type_label}): {desc}"]
         if definition["valid_values"] is not None:
             vals = ", ".join(str(v) for v in definition["valid_values"])
             parts.append(f" Valid values: {vals}")

@@ -303,7 +303,10 @@ def test_game_state_default_flags():
         turn_order=["Alice", "Bob"],
         next_proposal_id=301,
     )
-    assert state.flags == {"vote_mode": "unanimous"}
+    assert state.flags == {
+        "vote_mode": "unanimous",
+        "majority_after_loops": 2,
+    }
 
 
 def test_game_state_custom_flags():

@@ -254,7 +254,10 @@ class TestGameStateDefaults:
             turn_order=["Alice"],
             next_proposal_id=301,
         )
-        assert state.flags == {"vote_mode": "unanimous"}
+        assert state.flags == {
+            "vote_mode": "unanimous",
+            "majority_after_loops": 2,
+        }
 
     def test_custom_flags_override_defaults(self) -> None:
         """Explicit flags override schema defaults."""
@@ -339,7 +342,10 @@ class TestGetFlagDefaults:
     def test_returns_defaults_from_schema(self) -> None:
         """Returns the default values from the schema."""
         defaults = get_flag_defaults()
-        assert defaults == {"vote_mode": "unanimous"}
+        assert defaults == {
+            "vote_mode": "unanimous",
+            "majority_after_loops": 2,
+        }
 
     def test_excludes_null_defaults(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -560,3 +566,92 @@ class TestStateUpdatesValidation:
         """Non-int target_score raises ValueError."""
         with pytest.raises(ValueError, match="target_score.*must be int"):
             validate_state_updates({"target_score": "100"})  # type: ignore[arg-type]
+
+
+# =========================================================================
+# 9. majority_after_loops flag (nullable + min_value)
+# =========================================================================
+
+
+class TestMajorityAfterLoopsFlag:
+    """Tests for the majority_after_loops flag schema validation."""
+
+    def test_valid_positive_integer(self) -> None:
+        """Positive integers are valid for majority_after_loops."""
+        validate_flag_value("majority_after_loops", 1)
+        validate_flag_value("majority_after_loops", 2)
+        validate_flag_value("majority_after_loops", 10)
+
+    def test_valid_null_value(self) -> None:
+        """None is a valid value (nullable=true)."""
+        validate_flag_value("majority_after_loops", None)
+
+    def test_rejects_zero(self) -> None:
+        """0 is below min_value=1 and must be rejected."""
+        with pytest.raises(ValueError, match="below minimum"):
+            validate_flag_value("majority_after_loops", 0)
+
+    def test_rejects_negative_integer(self) -> None:
+        """Negative integers are below min_value=1 and must be rejected."""
+        with pytest.raises(ValueError, match="below minimum"):
+            validate_flag_value("majority_after_loops", -5)
+
+    def test_rejects_float(self) -> None:
+        """Floats are rejected (type mismatch)."""
+        with pytest.raises(ValueError, match="expects type"):
+            validate_flag_value("majority_after_loops", 1.5)
+
+    def test_rejects_string(self) -> None:
+        """Strings are rejected (type mismatch)."""
+        with pytest.raises(ValueError, match="expects type"):
+            validate_flag_value("majority_after_loops", "2")
+
+    def test_state_updates_accepts_null(self) -> None:
+        """StateUpdates with majority_after_loops=null is valid."""
+        validate_state_updates({"flags": {"majority_after_loops": None}})
+
+    def test_state_updates_accepts_positive_integer(self) -> None:
+        """StateUpdates with majority_after_loops=3 is valid."""
+        validate_state_updates({"flags": {"majority_after_loops": 3}})
+
+    def test_state_updates_rejects_zero(self) -> None:
+        """StateUpdates with majority_after_loops=0 raises ValueError."""
+        with pytest.raises(ValueError, match="below minimum"):
+            validate_state_updates({"flags": {"majority_after_loops": 0}})
+
+    def test_schema_contains_majority_after_loops(self) -> None:
+        """Schema contains the majority_after_loops flag."""
+        schema = load_flag_schema()
+        assert "majority_after_loops" in schema
+        defn = schema["majority_after_loops"]
+        assert defn["type"] == "integer"
+        assert defn["nullable"] is True
+        assert defn["min_value"] == 1
+        assert defn["default"] == 2
+
+    def test_format_current_flags_renders_null(self) -> None:
+        """format_current_flags renders None as null (not 'None')."""
+        result = format_current_flags({"majority_after_loops": None})
+        assert "- majority_after_loops: null" in result
+        assert "None" not in result
+
+    def test_format_current_flags_renders_integer(self) -> None:
+        """format_current_flags renders integer values correctly."""
+        result = format_current_flags({"majority_after_loops": 2})
+        assert '- majority_after_loops: "2"' in result
+
+    def test_format_supported_flags_shows_nullable_type(self) -> None:
+        """format_supported_flags shows 'integer or null' for nullable flag."""
+        result = format_supported_flags()
+        assert "majority_after_loops (integer or null" in result
+
+    def test_format_supported_flags_shows_min_value(self) -> None:
+        """format_supported_flags includes min value constraint."""
+        result = format_supported_flags()
+        assert "min 1" in result
+
+    def test_get_flag_defaults_includes_majority_after_loops(self) -> None:
+        """get_flag_defaults includes majority_after_loops with default=2."""
+        defaults = get_flag_defaults()
+        assert "majority_after_loops" in defaults
+        assert defaults["majority_after_loops"] == 2

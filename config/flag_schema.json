@@ -1,4 +1,12 @@
 {
+  "majority_after_loops": {
+    "type": "integer",
+    "nullable": true,
+    "min_value": 1,
+    "valid_values": null,
+    "default": 2,
+    "description": "Number of complete game loops (each player takes one turn) after which vote_mode automatically switches from 'unanimous' to 'majority'. Once triggered, this flag resets to null. Set to null to disable automatic switching."
+  },
   "vote_mode": {
     "type": "string",
     "valid_values": ["unanimous", "majority"],
