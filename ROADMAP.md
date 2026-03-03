@@ -28,7 +28,15 @@ Our architecture is built on these principles:
 - On illegal proposal (e.g. AMEND a rule that doesn't exist) game should count as a withdrawal and allow a retry, not crash
 
 
-## Sprint 37: TBD
+## Sprint 37: Additional Flags
+
+* Task 1: Create a flag for the number of full game loops to switch from unanimous to majority. Include a null or N/A value. Add description of the flag for the judge. Wire the game enging to: when (turns / players > flag value) && vote mode is unanimous, change vote mode to majority and set flag to null or N/A.
+
+* Task 2: Create a flag to allow absention voting. When the flag is FALSE then voting options are only YES and NO. When the flag is TRUE then voting options are YES, NO, and ABSTAIN. Prompts will be updated to reflect both states depending on the flag value. For this task, unanimous requires all YES or ABSTAIN votes and majority requires over half the non-abstaining players to vote YES. Ensure prompts explain this behavior.
+
+* Task 3: Create a flag for what type of voting is required for TRANSMUTE. Defaults to unanimous. Relates to rule 109. Uses the same voting mode class as is used for other proposals. Engine should use this flag to determine whether TRANSMUTE proposals pass or fail.
+
+* Task 4: Add 2 voting modes: "minimum yes votes" and "unanimous strict". Minimum yes votes comes with an integer (any value less than player count) that is checked against the count of YES votes. "Unanimous strict" only is available after ABSTAIN flag is TRUE, and requires all YES votes and zero ANSTAIN votes. If voting mode is unanimous strict and ABSTAIN flag is set to FALSE, it behaves like unanimous.
 
 
 ## Future Work
@@ -70,6 +78,7 @@ This is the long-term backlog and TODO scratchpad.
   * Add the ability of the scoring judge to use random numbers, which would allow Suber's original rule 202 that used a D6 for scoring
     * Would be ideal to allow arbitary random ranges and math to enable creative scoring rules (e.g. 6 points plus a random 1-6 points)
   * Rule 113 asserts that players can quit. Right now we assume all players play forever. Should we remove this rule or add a way to quit the game? Need to track turns differently. Could be part of a more dynamic turn handling system.
+  * Rule snapshots, memory snapshots, score snapshots for replays
 
 * **Dynamic Game Structure**
   * Create "turn structure" game file that defines each step, and can be changed by the judge (maybe players, too, by consensus?). This allows extra steps to be created, or order of steps to be changed.
