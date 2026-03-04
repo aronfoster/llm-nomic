@@ -54,7 +54,10 @@ it in Future Work or flag it to the customer representative as a candidate for a
 
 ---
 
-## ROADMAP.md Awareness
+## Sprint and Roadmap Awareness
 
-The ROADMAP.md is the authoritative source for sprint tasks, bug lists,
-and future work.
+**SPRINT.md** is the authoritative source for the active sprint: goals,
+tasks, acceptance criteria, and per-task context for the Developer.
+
+**ROADMAP.md** tracks the long-term backlog, bug lists, and future work
+that has not yet been scheduled into a sprint.

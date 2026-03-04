@@ -1,5 +1,8 @@
 # **Project Plan: Nomic LLM Engine**
 
+> **Active sprint tasks are tracked in [SPRINT.md](./SPRINT.md).**
+> This file tracks the long-term backlog, bug lists, and future work.
+
 This document tracks the high-level plan for the `llm-nomic` project.
 
 ## Core Principles

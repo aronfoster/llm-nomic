@@ -8,8 +8,10 @@ This project runs full games of Nomic with any mix of human and LLM players. The
 
 ### Key Project Documents
 
-- **[ROADMAP.md](ROADMAP.md)** — High-level plan, current sprint, bug list, refactoring notes, and long-term backlog.  
-  **Developers and Contributors: this is the single file you should read first.**
+- **[SPRINT.md](SPRINT.md)** — Active sprint: goals and tasks with acceptance criteria.
+  **Developers: start here for your current work.**
+
+- **[ROADMAP.md](ROADMAP.md)** — Long-term backlog, bug lists, and future work not yet scheduled into a sprint.
 
 - **[RULESET_DESIGN.md](docs/RULESET_DESIGN.md)** — Why and how the ruleset differs from Suber’s original (plus a side-by-side table of changes). Essential context for anyone playing or extending the game.
 
@@ -201,5 +203,7 @@ llm-nomic/
 ├── create_game.py              # Interactive game creation script
 ├── requirements.txt            # Python dependencies
 ├── Makefile                    # Development commands
+├── SPRINT.md                   # Active sprint goals and tasks (PM-maintained)
+├── ROADMAP.md                  # Long-term backlog and future work
 └── .env                        # API keys (not in git)
 ```
