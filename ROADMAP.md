@@ -255,7 +255,7 @@ Our architecture is built on these principles:
 
 * Task 4: Add 2 voting modes: `min_yes_votes` and `unanimous_strict`
 
-  **Overview:** Extend the `vote_mode` flag with two new values. `min_yes_votes` passes a proposal when YES votes reach a configurable integer threshold. `unanimous_strict` requires every voter to vote YES (no abstentions), falling back to regular `unanimous` behaviour when `allow_abstention` is false. Both new modes are valid for `vote_mode` and `transmute_immutable_vote_mode`.
+  **Overview:** Extend the `vote_mode` flag with two new values. `min_yes_votes` passes a proposal when YES votes reach a configurable integer threshold. `unanimous_strict` requires every voter to vote YES (zero NO and zero ABSTAIN). Both new modes are valid for `vote_mode` and `transmute_immutable_vote_mode`.
 
   **1. Changes to `config/flag_schema.json`:**
 
@@ -264,13 +264,12 @@ Our architecture is built on these principles:
   "min_yes_votes": {
     "type": "integer",
     "nullable": true,
-    "min_value": 1,
     "valid_values": null,
     "default": null,
-    "description": "Required number of YES votes for a proposal to pass when vote_mode is 'min_yes_votes'. Must be at least 1 and less than the number of players. Ignored when vote_mode is not 'min_yes_votes'."
+    "description": "Required number of YES votes for a proposal to pass when vote_mode is 'min_yes_votes'. Ignored when vote_mode is not 'min_yes_votes'."
   }
   ```
-  - Type: positive integer (≥ 1) or `null`
+  - Type: integer or `null`
   - Default: `null` (excluded from defaults since `get_flag_defaults()` skips null defaults — no change needed there)
   - `null` means unset; the engine fails the vote with a warning if `vote_mode` is `"min_yes_votes"` while this flag is `null` (see §3 below)
 
@@ -280,7 +279,7 @@ Our architecture is built on these principles:
     "type": "string",
     "valid_values": ["unanimous", "majority", "min_yes_votes", "unanimous_strict"],
     "default": "unanimous",
-    "description": "Determines voting threshold. 'unanimous': passes if no player votes NO. 'majority': passes if YES > 50% of non-abstaining voters. 'min_yes_votes': passes if YES votes reach the min_yes_votes flag value. 'unanimous_strict': passes only if every voter votes YES (zero NO and zero ABSTAIN); when allow_abstention is false, behaves identically to 'unanimous'."
+    "description": "Determines voting threshold. 'unanimous': passes if no player votes NO. 'majority': passes if YES > 50% of non-abstaining voters. 'min_yes_votes': passes if YES votes >= min_yes_votes flag value. 'unanimous_strict': passes only if every voter votes YES (zero NO and zero ABSTAIN)."
   }
   ```
 
@@ -299,7 +298,7 @@ Our architecture is built on these principles:
 
   - `format_current_flags()`: Integer flag values must render without quotes (e.g. `- min_yes_votes: 3`, not `- min_yes_votes: "3"`). Add an `isinstance(value, int)` branch (placed before the `else` catch-all) that renders without quotes. Note: the `isinstance(value, bool)` branch must remain above this new branch, since `bool` is a subclass of `int` in Python.
 
-  No other changes are needed in this file; `nullable` and `min_value` support was already added in Task 1 and covers `min_yes_votes`.
+  No other changes are needed in this file; `nullable` support was already added in Task 1 and covers `min_yes_votes`.
 
   **3. Vote tally logic (`src/nomic_engine/core/game_loop.py` — `_tally_vote_results()`):**
 
@@ -312,45 +311,37 @@ Our architecture is built on these principles:
   - Log the tally result at `logger.debug` following the pattern of existing modes.
 
   **`unanimous_strict` mode:**
-  - Read `allow_abstention` from flags (default `False`).
-  - If `allow_abstention` is `True`: `passed = yes_count == total_voters` (every vote must be YES; any NO or ABSTAIN fails).
-  - If `allow_abstention` is `False`: `passed = no_count == 0` (identical to `unanimous`).
-  - Do **not** log a warning or change the `vote_mode` flag when falling back; leave the flag untouched.
+  - `passed = yes_count == total_voters` (every voter must vote YES; any NO or ABSTAIN fails).
   - Log the tally result at `logger.debug`.
 
   `VoteResult.vote_mode` must be set to the configured mode string (`"min_yes_votes"` or `"unanimous_strict"`) in both cases, exactly as it is for existing modes. Update the `vote_mode` field description in `VoteResult` to mention all four valid modes.
 
   The existing fallback/warning path for unknown modes (currently `else: logger.warning ... vote_mode = "unanimous"`) remains in place and covers any future unrecognised strings.
 
-  **4. `min_yes_votes` upper-bound validation:**
-
-  When a judge sets `min_yes_votes`, the engine must reject any value ≥ the current number of players (i.e. `min_yes_votes >= len(game_state.turn_order)`). The schema-level `min_value: 1` covers the lower bound; the upper bound requires access to game state. The Developer chooses the cleanest location (e.g. inside `_apply_state_updates()` or immediately after `validate_state_updates()` is called) and raises `ValueError` with a descriptive message if the value is out of range.
-
-  **5. Vote instruction prompt (`src/nomic_engine/llm/prompts.py` and `src/nomic_engine/llm/prompt_builder.py`):**
+  **4. Vote instruction prompt (`src/nomic_engine/llm/prompts.py` and `src/nomic_engine/llm/prompt_builder.py`):**
 
   `build_vote_instruction()` must read both `vote_mode` and `min_yes_votes` from `game_state.flags` (in addition to the existing `allow_abstention` read). The rendered instruction must reflect the active vote mode so players understand the pass condition.
 
   Required prompt changes by mode/combination:
 
-  | `vote_mode` | `allow_abstention` | Change to prompt |
-  |---|---|---|
-  | `min_yes_votes` | either | Replace/augment the tally explanation: state that the proposal passes if at least N YES votes are cast, where N is the current `min_yes_votes` value. This replaces the majority/unanimous description for this mode. |
-  | `unanimous_strict` | `true` | In the abstention-semantics section, add: all votes must be YES — ABSTAIN is not sufficient to pass the proposal. |
-  | `unanimous_strict` | `false` | No change to the rendered text vs standard `INSTRUCTION_VOTE`; the mode behaves identically to `unanimous` in this state. |
+  | `vote_mode` | Change to prompt |
+  |---|---|
+  | `min_yes_votes` | Replace/augment the tally explanation: state that the proposal passes if at least N YES votes are cast, where N is the current `min_yes_votes` value. This replaces the majority/unanimous description for this mode. |
+  | `unanimous_strict` | State that every voter must vote YES — NO and ABSTAIN both cause failure. |
 
   The Developer decides whether to add new template constants, parameterise existing ones, or build the explanation dynamically in `build_vote_instruction()`.
 
-  **6. Files to modify:**
+  **5. Files to modify:**
   | File | Change |
   |------|--------|
   | `config/flag_schema.json` | Add `min_yes_votes` entry; extend `valid_values` for `vote_mode` and `transmute_immutable_vote_mode` |
   | `src/nomic_engine/utils/flag_schema.py` | Render integer flag values without quotes in `format_current_flags()` |
-  | `src/nomic_engine/core/game_loop.py` | `_tally_vote_results()`: add `min_yes_votes` and `unanimous_strict` tally branches; add upper-bound validation for `min_yes_votes` when applying state updates |
+  | `src/nomic_engine/core/game_loop.py` | `_tally_vote_results()`: add `min_yes_votes` and `unanimous_strict` tally branches |
   | `src/nomic_engine/data_models.py` | Update `VoteResult.vote_mode` field description |
   | `src/nomic_engine/llm/prompts.py` | Update vote instruction template(s) for new modes |
   | `src/nomic_engine/llm/prompt_builder.py` | Pass `vote_mode` and `min_yes_votes` into vote instruction builder |
 
-  **7. Tests (`tests/`):**
+  **6. Tests (`tests/`):**
 
   **`min_yes_votes` tally:**
   - Threshold = 2: 2 YES passes; 1 YES fails; 3 YES passes.
@@ -359,19 +350,10 @@ Our architecture is built on these principles:
   - `VoteResult.vote_mode` is `"min_yes_votes"` in all cases.
 
   **`unanimous_strict` tally:**
-  - `allow_abstention=True`, 3 YES: passes (`yes_count == total_voters`).
-  - `allow_abstention=True`, 2 YES + 1 NO: fails.
-  - `allow_abstention=True`, 2 YES + 1 ABSTAIN: fails (`yes_count(2) != total_voters(3)`).
-  - `allow_abstention=False`, 3 YES + 0 NO: passes (`no_count == 0`).
-  - `allow_abstention=False`, 2 YES + 1 NO: fails.
-  - `VoteResult.vote_mode` is `"unanimous_strict"` in all cases (even when falling back).
-
-  **`min_yes_votes` upper-bound validation:**
-  - `min_yes_votes = 3` with 4 players: accepted.
-  - `min_yes_votes = 4` with 4 players: raises `ValueError`.
-  - `min_yes_votes = 5` with 4 players: raises `ValueError`.
-  - `min_yes_votes = 0`: raises `ValueError` (schema `min_value: 1`).
-  - `min_yes_votes = null`: accepted by schema (nullable).
+  - 3 YES: passes (`yes_count(3) == total_voters(3)`).
+  - 2 YES + 1 NO: fails (`yes_count(2) != total_voters(3)`).
+  - 2 YES + 1 ABSTAIN: fails (`yes_count(2) != total_voters(3)`).
+  - `VoteResult.vote_mode` is `"unanimous_strict"` in all cases.
 
   **Flag schema validation:**
   - `vote_mode: "min_yes_votes"` and `vote_mode: "unanimous_strict"` accepted.
