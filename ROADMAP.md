@@ -19,7 +19,6 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-- Players are not clear on vote result and final score when writing memories. Needs to be explicit.
 - Need to have all LLM input failures (e.g. bad rule number, ABSTAIN vote when not allowed, etc.) go through retry logic with basic (sanitized) error descriptions so the LLM can fix it.
 
 ### Low Priority
