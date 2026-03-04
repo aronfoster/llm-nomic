@@ -3,6 +3,9 @@
 **Goal(s):**
 - Need to have all LLM input failures (e.g. bad rule number, ABSTAIN vote when not allowed, etc.) go through retry logic with basic (sanitized) error descriptions so the LLM can fix it.
 - This should be a smart refactor that creates reusable components appropriately, and leaves the codebase easier to understand
+- Secondary Goals - if sprint has room, fix bugs:
+  - Need to change text on last withdrawal attempt to make it clear that withdrawing is still an option, just skips your turn
+  - Remove ephemeral block from memory_update for Anthropic clients so we're not paying to write to the cache.
 
 ---
 
