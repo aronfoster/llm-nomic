@@ -253,7 +253,7 @@ Our architecture is built on these principles:
   - **`VoteResult.vote_mode`:** Contains the mode actually used (override value when active, not necessarily `flags["vote_mode"]`).
   - **Flag validation:** `"unanimous"` and `"majority"` accepted; `null` accepted; other strings rejected; `null` skips `valid_values` enforcement.
 
-* Task 4: Add 2 voting modes: `min_yes_votes` and `unanimous_strict`
+* Task 4: Add 2 voting modes: `min_yes_votes` and `unanimous_strict` ✓ DONE
 
   **Overview:** Extend the `vote_mode` flag with two new values. `min_yes_votes` passes a proposal when YES votes reach a configurable integer threshold. `unanimous_strict` requires every voter to vote YES (zero NO and zero ABSTAIN). Both new modes are valid for `vote_mode` and `transmute_immutable_vote_mode`.
 

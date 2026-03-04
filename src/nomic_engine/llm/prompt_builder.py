@@ -758,10 +758,34 @@ class PromptBuilder:
             A single ChatMessage with role="user"
         """
         allow_abstention: bool = False
+        vote_mode: str = "unanimous"
+        min_yes_votes: int | None = None
         if game_state is not None:
             allow_abstention = bool(
                 game_state.flags.get("allow_abstention", False)
             )
+            vote_mode = str(game_state.flags.get("vote_mode", "unanimous"))
+            min_yes_votes = game_state.flags.get("min_yes_votes")
+
+        # Build vote mode explanation
+        if vote_mode == "majority":
+            vote_mode_explanation = prompts.VOTE_MODE_EXPLANATION_MAJORITY
+        elif vote_mode == "unanimous_strict":
+            vote_mode_explanation = (
+                prompts.VOTE_MODE_EXPLANATION_UNANIMOUS_STRICT
+            )
+        elif vote_mode == "min_yes_votes":
+            if min_yes_votes is None:
+                vote_mode_explanation = (
+                    prompts.VOTE_MODE_EXPLANATION_MIN_YES_VOTES_UNSET
+                )
+            else:
+                tmpl = prompts.VOTE_MODE_EXPLANATION_MIN_YES_VOTES_TEMPLATE
+                vote_mode_explanation = tmpl.format(
+                    min_yes_votes=min_yes_votes
+                )
+        else:
+            vote_mode_explanation = prompts.VOTE_MODE_EXPLANATION_UNANIMOUS
 
         # Format proposal block (with potentially revised proposal)
         proposal_block = self._format_proposal(proposal, rules, player_name)
@@ -782,6 +806,7 @@ class PromptBuilder:
         # Format instruction block with personality-specific examples
         instruction_block = vote_template.format(
             json_format_enforcement=prompts.JSON_FORMAT_ENFORCEMENT,
+            vote_mode_explanation=vote_mode_explanation,
             personality_examples=self._build_vote_examples(
                 personality, allow_abstention=allow_abstention
             ),
