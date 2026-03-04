@@ -756,6 +756,30 @@ class GameLoop:
                 f"NO={no_count}, ABSTAIN={abstain_count}, "
                 f"Non-abstaining={yes_count + no_count}, Passed={passed}"
             )
+        elif vote_mode == "min_yes_votes":
+            # min_yes_votes mode: YES votes must reach the threshold
+            min_yes_votes_threshold = flags.get("min_yes_votes")
+            if min_yes_votes_threshold is None:
+                logger.warning(
+                    "vote_mode is 'min_yes_votes' but min_yes_votes flag "
+                    "is null. Vote fails."
+                )
+                passed = False
+            else:
+                passed = yes_count >= min_yes_votes_threshold
+            logger.debug(
+                f"Vote tally (min_yes_votes mode): YES={yes_count}, "
+                f"NO={no_count}, ABSTAIN={abstain_count}, "
+                f"Threshold={min_yes_votes_threshold}, Passed={passed}"
+            )
+        elif vote_mode == "unanimous_strict":
+            # Unanimous strict mode: every voter must vote YES
+            passed = yes_count == total_voters
+            logger.debug(
+                f"Vote tally (unanimous_strict mode): YES={yes_count}, "
+                f"NO={no_count}, ABSTAIN={abstain_count}, "
+                f"Total={total_voters}, Passed={passed}"
+            )
         else:
             # Unanimous mode (default): Proposal passes if nobody voted NO
             if vote_mode != "unanimous":

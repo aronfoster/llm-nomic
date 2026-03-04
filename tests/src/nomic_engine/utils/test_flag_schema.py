@@ -60,7 +60,10 @@ class TestSchemaLoading:
         schema = load_flag_schema()
         definition = schema["vote_mode"]
         assert definition["type"] == "string"
-        assert definition["valid_values"] == ["unanimous", "majority"]
+        assert "unanimous" in definition["valid_values"]
+        assert "majority" in definition["valid_values"]
+        assert "min_yes_votes" in definition["valid_values"]
+        assert "unanimous_strict" in definition["valid_values"]
         assert definition["default"] == "unanimous"
         assert isinstance(definition["description"], str)
         assert len(definition["description"]) > 0
@@ -466,7 +469,9 @@ class TestJudgeVetoPromptIntegration:
         msg = builder.build_judge_veto_prompt(game_state=game_state)
         assert "Supported Engine Capabilities" in msg.content
         assert "vote_mode (string)" in msg.content
-        assert "Valid values: unanimous, majority" in msg.content
+        assert "Valid values:" in msg.content
+        assert "unanimous" in msg.content
+        assert "majority" in msg.content
 
     def test_veto_prompt_includes_veto_criteria(self) -> None:
         """Judge veto prompt includes veto criteria."""
@@ -640,9 +645,10 @@ class TestMajorityAfterLoopsFlag:
         assert "None" not in result
 
     def test_format_current_flags_renders_integer(self) -> None:
-        """format_current_flags renders integer values correctly."""
+        """format_current_flags renders integer values without quotes."""
         result = format_current_flags({"majority_after_loops": 2})
-        assert '- majority_after_loops: "2"' in result
+        assert "- majority_after_loops: 2" in result
+        assert '"2"' not in result
 
     def test_format_supported_flags_shows_nullable_type(self) -> None:
         """format_supported_flags shows 'integer or null' for nullable flag."""

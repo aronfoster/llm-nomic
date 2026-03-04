@@ -14,17 +14,24 @@
     "default": 2,
     "description": "Number of complete game loops (each player takes one turn) after which vote_mode automatically switches from 'unanimous' to 'majority'. Once triggered, this flag resets to null. Set to null to disable automatic switching."
   },
+  "min_yes_votes": {
+    "type": "integer",
+    "nullable": true,
+    "valid_values": null,
+    "default": null,
+    "description": "Required number of YES votes for a proposal to pass when vote_mode is 'min_yes_votes'. Ignored when vote_mode is not 'min_yes_votes'."
+  },
   "transmute_immutable_vote_mode": {
     "type": "string",
     "nullable": true,
-    "valid_values": ["unanimous", "majority"],
+    "valid_values": ["unanimous", "majority", "min_yes_votes", "unanimous_strict"],
     "default": "unanimous",
-    "description": "Voting mode applied when a TRANSMUTE proposal would flip an IMMUTABLE rule to MUTABLE (per Rule 109). When null, the regular vote_mode is used. Has no effect on TRANSMUTE proposals that flip MUTABLE rules to IMMUTABLE."
+    "description": "Voting mode applied when a TRANSMUTE proposal would flip an IMMUTABLE rule to MUTABLE (per Rule 109). When null, the regular vote_mode is used. Has no effect on TRANSMUTE proposals that flip MUTABLE rules to IMMUTABLE. When set to 'min_yes_votes', the min_yes_votes flag provides the threshold."
   },
   "vote_mode": {
     "type": "string",
-    "valid_values": ["unanimous", "majority"],
+    "valid_values": ["unanimous", "majority", "min_yes_votes", "unanimous_strict"],
     "default": "unanimous",
-    "description": "Determines voting threshold. 'unanimous' requires all YES votes. 'majority' requires >50% YES votes."
+    "description": "Determines voting threshold. 'unanimous': passes if no player votes NO. 'majority': passes if YES > 50% of non-abstaining voters. 'min_yes_votes': passes if YES votes >= min_yes_votes flag value. 'unanimous_strict': passes only if every voter votes YES (zero NO and zero ABSTAIN)."
   }
 }

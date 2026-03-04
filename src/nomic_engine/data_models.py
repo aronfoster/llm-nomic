@@ -52,6 +52,8 @@ class VoteMode(str, Enum):
 
     UNANIMOUS = "unanimous"
     MAJORITY = "majority"
+    MIN_YES_VOTES = "min_yes_votes"
+    UNANIMOUS_STRICT = "unanimous_strict"
 
 
 class WithdrawalPolicy(str, Enum):
@@ -410,7 +412,11 @@ class VoteResult(BaseModel):
         ..., description="Whether the proposal passed the vote"
     )
     vote_mode: str = Field(
-        ..., description="The voting mode used (unanimous or majority)"
+        ...,
+        description=(
+            "The voting mode used: 'unanimous', 'majority', "
+            "'min_yes_votes', or 'unanimous_strict'"
+        ),
     )
 
 

@@ -441,6 +441,8 @@ You must output EXACTLY one JSON object with these keys IN THIS ORDER:
    be political)
 3. "vote": Exactly one of: "YES" or "NO" (uppercase)
 
+{vote_mode_explanation}
+
 The order matters. Think BEFORE you decide.
 
 {json_format_enforcement}
@@ -469,6 +471,8 @@ Abstention semantics:
   from the count — YES votes must exceed half of non-abstaining (YES + NO)
   voters.
 
+{vote_mode_explanation}
+
 The order matters. Think BEFORE you decide.
 
 {json_format_enforcement}
@@ -476,3 +480,28 @@ The order matters. Think BEFORE you decide.
 {personality_examples}
 
 Remember: Invalid JSON = automatic ABSTAIN. Output only JSON."""
+
+VOTE_MODE_EXPLANATION_MAJORITY = (
+    "Voting threshold: majority. The proposal passes if YES votes exceed "
+    "half of non-abstaining (YES + NO) voters."
+)
+
+VOTE_MODE_EXPLANATION_UNANIMOUS = (
+    "Voting threshold: unanimous. The proposal passes only if no player "
+    "votes NO."
+)
+
+VOTE_MODE_EXPLANATION_UNANIMOUS_STRICT = (
+    "Voting threshold: unanimous_strict. Every voter must vote YES — "
+    "any NO or ABSTAIN vote causes the proposal to fail."
+)
+
+VOTE_MODE_EXPLANATION_MIN_YES_VOTES_TEMPLATE = (
+    "Voting threshold: min_yes_votes. The proposal passes if at least "
+    "{min_yes_votes} YES vote(s) are cast."
+)
+
+VOTE_MODE_EXPLANATION_MIN_YES_VOTES_UNSET = (
+    "Voting threshold: min_yes_votes. The required YES vote threshold "
+    "has not been set — the proposal will fail regardless of votes."
+)
