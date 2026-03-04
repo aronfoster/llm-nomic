@@ -1,10 +1,8 @@
-# Sprint N — <Sprint Name>
-
-**Dates:** YYYY-MM-DD → YYYY-MM-DD
+# Sprint 38 — Better Loops
 
 **Goal(s):**
-- <Primary sprint goal — one sentence describing the desired outcome>
-- <Secondary sprint goal (optional)>
+- Need to have all LLM input failures (e.g. bad rule number, ABSTAIN vote when not allowed, etc.) go through retry logic with basic (sanitized) error descriptions so the LLM can fix it.
+- This should be a smart refactor that creates reusable components appropriately, and leaves the codebase easier to understand
 
 ---
 
