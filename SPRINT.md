@@ -43,19 +43,129 @@ parse, on `ValueError` append the bad response + error message to conversation h
 continue, on success return the result, on exhaustion fall back or raise.
 
 Extract this pattern into a single shared helper so the duplication is gone and future
-changes to retry behavior only need to happen in one place. The external behavior of all
-seven actions must remain identical after the refactor.
+changes to retry behavior only need to happen in one place. This task also makes three
+small, targeted behavior improvements while touching these call sites (see Intentional
+Behavior Changes below).
+
+#### The Seven Locations
+
+| Action | File | Approx. Lines | Max-retries config key | Fallback on exhaustion |
+|--------|------|---------------|------------------------|------------------------|
+| `propose` | `players/llm_player.py` | 150–281 | `tuning.max_propose_retries` | raise `RuntimeError` |
+| `discuss` | `players/llm_player.py` | 316–416 | `tuning.max_discuss_retries` | return empty `Discussion` (abstain) |
+| `vote` | `players/llm_player.py` | 418–535 | `tuning.max_vote_retries` | return `Vote(vote="ABSTAIN")` |
+| `revise` | `players/llm_player.py` | 585–709 | `tuning.max_revise_retries` | return original proposal (KEEP) |
+| `get_veto` | `judge/llm_judge.py` | 172–288 | `tuning.max_judge_veto_retries` | raise `RuntimeError` |
+| `assess_scores` | `judge/llm_judge.py` | 290–413 | `tuning.max_judge_score_retries` | raise `RuntimeError` |
+| `maintain_state` | `judge/llm_judge.py` | 415–540 | `tuning.max_judge_maintain_state_retries` | raise `RuntimeError` |
+
+#### Common Loop Shape (All 7 Copies)
+
+Every loop:
+
+1. Iterates `for attempt in range(max_retries)`
+2. Calls `self.api_client.get_completion(history)` and extracts `result.text`
+3. On `response_text is None` (API error): logs and `continue`s to next attempt
+4. Calls the action-specific parse function inside a `try` block
+5. On parse success: appends the response as an `assistant` `ChatMessage` to the
+   conversation history, then returns the result
+6. On `ValueError`: logs the error; if this was the last attempt, `break`s; otherwise
+   appends the bad response as `assistant` + a retry `user` message, then continues
+7. After the loop: executes the action-specific fallback (return or raise)
+
+#### Per-Action Differences the Helper Must Preserve
+
+**Retry message templates** (all defined in `llm/prompts.py`):
+
+| Action | Template constant |
+|--------|------------------|
+| `propose` | `PROPOSE_RETRY_TEMPLATE` |
+| `discuss` | `DISCUSS_RETRY_TEMPLATE` |
+| `vote` | `VOTE_RETRY_TEMPLATE` |
+| `revise` | `REVISE_RETRY_TEMPLATE` |
+| `get_veto` | `JUDGE_VETO_RETRY_TEMPLATE` |
+| `assess_scores` | `JUDGE_SCORE_RETRY_TEMPLATE` |
+| `maintain_state` | `JUDGE_MAINTAIN_STATE_RETRY_TEMPLATE` |
+
+All seven templates must include a `{validation_error}` placeholder. Currently
+`DISCUSS_RETRY_TEMPLATE` and `VOTE_RETRY_TEMPLATE` do not — update them to match the
+others. The helper always formats the template with `str(e)` from the caught `ValueError`.
+
+**LLMJudge-specific: secondary response tracking.**
+On a successful parse, the three `LLMJudge` actions also append the assistant message to
+`self._judge_turn_responses` (a separate list used later by `update_memory()`). Only the
+final response for each action (veto, score, maintain_state; successful or unsuccessful) should appear in
+this list — retried or rejected responses must never be added to it. The helper
+must support an optional secondary-append parameter for this; the `LLMPlayer` actions do
+not use it.
+
+**UX print statement (standardized for all actions).**
+Every LLM call — player and judge alike — must print a status message before the API call
+is made. Currently only `LLMPlayer` actions do this. The helper should accept a short
+action description string (e.g., `"thinking about a proposal"`, `"deciding on a veto"`)
+and print a consistent message using it. Exact wording is left to the Developer, but the
+format should be uniform and work for both player and judge contexts.
+
+**Conversation history variable name (standardize in this task).**
+`LLMPlayer` stores its history in `self.turn_history`; `LLMJudge` stores it in
+`self._turn_history`. Standardize both to `turn_history`. The rename is small and natural
+here because the helper already abstracts away the variable name (history is passed as a
+parameter). The helper itself does not care about the name — this is purely cleanup at the
+class level.
+
+**`_log_usage` call.**
+Each loop calls `self._log_usage(result, "<action_name>")` immediately after getting the
+completion. This is a one-liner per call site and is fine to keep at each call site rather
+than inside the helper, as the action label differs each time.
+
+#### Intentional Behavior Changes
+
+These three behaviors change deliberately as part of this task:
+
+1. **Retry error context for `discuss` and `vote`**: After this task, retry prompts for
+   `discuss` and `vote` will include the specific validation error (matching all other
+   actions). Previously they sent a generic message with no error detail.
+
+2. **Judge UX print statements**: `LLMJudge` actions will now print a status message
+   before each LLM call, the same as `LLMPlayer` actions. Previously judge calls were
+   silent.
+
+3. **History variable name**: `LLMJudge._turn_history` will be renamed to
+   `LLMJudge.turn_history`, matching `LLMPlayer`. No runtime behavior change.
+
+#### What Must Not Change
+
+Everything else must behave identically:
+
+- The number of LLM calls made for any sequence of parse outcomes
+- The exact sequence of `ChatMessage` objects appended to conversation history on both
+  success and failure paths (aside from the retry-message content change for `discuss`/`vote`)
+- The exact object returned (or exception raised) on success, on each specific exhaustion
+  fallback, and on repeated API-error (`None`) responses
+- Log output at `warning` and `error` levels (level and approximate message content)
+- `_judge_turn_responses` contains only the single successful assistant message per action,
+  never retried responses
+
+#### Testing
+
+- Add direct unit tests for the helper that exercise: (a) success on first attempt,
+  (b) failure then success (retry path), (c) exhaustion with raise, (d) exhaustion with
+  graceful fallback return, (e) `None` API response handling (skip and continue)
+- Update or fix any existing tests that break due to the refactor
+- Remove tests that no longer reflect current structure
 
 **Acceptance Criteria:**
 - [ ] The retry loop is no longer duplicated across `LLMPlayer` and `LLMJudge`
-- [ ] All seven actions (propose, discuss, revise, vote, judge veto, judge score, judge
-  maintain_state) behave identically to before the refactor
+- [ ] All seven retry templates include `{validation_error}` and the helper always formats with it
+- [ ] A status print message is emitted before every LLM call (player and judge)
+- [ ] `LLMJudge._turn_history` renamed to `LLMJudge.turn_history`
+- [ ] `_judge_turn_responses` never contains retried/rejected responses
 - [ ] Tests added or updated to cover the retry helper directly
 - [ ] `make ci` passes
 
 **Notes:**
-This is a pure refactor — no behavior change. It is the natural foundation for Tasks 2 and
-3, but those tasks may proceed before or after this one at the Developer's discretion.
+This is the natural foundation for Tasks 2 and 3, but those tasks may proceed before or
+after this one at the Developer's discretion.
 
 ---
 
