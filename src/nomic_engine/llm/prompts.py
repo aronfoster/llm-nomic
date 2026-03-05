@@ -158,6 +158,8 @@ unchanged.
 
 VOTE_RETRY_TEMPLATE = """Your previous response was not valid JSON.
 
+Error: {validation_error}
+
 This is your FINAL attempt. Output ONLY a valid JSON object with these
 exact keys in order:
 1. "private_thoughts"
@@ -167,6 +169,8 @@ exact keys in order:
 No other text. Just the JSON object:"""
 
 DISCUSS_RETRY_TEMPLATE = """Your previous response was not valid JSON.
+
+Error: {validation_error}
 
 This is your FINAL attempt. Output ONLY a valid JSON object with these
 exact keys in order:

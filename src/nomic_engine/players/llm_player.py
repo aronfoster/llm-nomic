@@ -31,6 +31,7 @@ from ..llm import (
     parse_vote_response,
     prompts,
 )
+from ..llm.retry_helper import llm_retry_loop
 from ..memory.memory_manager import MemoryManager
 from ..utils.player_label import assemble_player_label
 from .base_player import BasePlayer
@@ -197,87 +198,40 @@ class LLMPlayer(BasePlayer):
 
         # Retry loop with maximum attempts
         max_proposal_retries = self.tuning.max_propose_retries
-        for attempt in range(max_proposal_retries):
-            # Status indicator for UX
-            print(f"\n🤖 {self.player_label} is thinking about a proposal...")
-
-            # Get completion from the LLM using turn history
-            result = self.api_client.get_completion(self.turn_history)
-            self._log_usage(result, "propose")
-            response_text = result.text
-
-            # Log raw response for debugging
-            logger.info(
-                f"Raw LLM Response from {self.player_name}:\n{response_text}"
+        try:
+            data = llm_retry_loop(
+                history=self.turn_history,
+                api_client=self.api_client,
+                parse_fn=parse_proposal_response,
+                max_retries=max_proposal_retries,
+                retry_template=prompts.PROPOSE_RETRY_TEMPLATE,
+                actor_label=self.player_label,
+                action_description="thinking about a proposal",
+                log_usage=lambda result: self._log_usage(result, "propose"),
+            )
+        except RuntimeError:
+            # All retries exhausted - raise RuntimeError (better to crash than
+            # to generate a "pass" turn for a proposal phase)
+            logger.error(
+                f"{self.player_name}: Failed to generate valid proposal after "
+                f"{max_proposal_retries} attempts."
+            )
+            raise RuntimeError(
+                f"LLM failed to generate a valid proposal after "
+                f"{max_proposal_retries} attempts."
             )
 
-            # Handle API errors (None response)
-            if response_text is None:
-                logger.error(
-                    f"{self.player_name}: API error on attempt {attempt + 1}/"
-                    f"{max_proposal_retries}"
-                )
-                # Continue to retry if attempts remain
-                continue
-
-            # Try to parse the response
-            try:
-                data = parse_proposal_response(response_text)
-
-                # Success! Append valid response to history
-                self.turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
-
-                # Construct and return the Proposal object
-                # Note: proposal_id is left as None; GameLoop assigns it
-                return Proposal(
-                    proposer_name=self.player_name,
-                    move_number=game_state.move_number,
-                    type=ProposalType(data["type"]),  # Convert str to enum
-                    proposal_id=None,
-                    target_rule_id=data["target_rule_id"],
-                    new_text=data["new_text"],
-                    rationale=data["rationale"],
-                    private_thoughts=data["private_thoughts"],
-                )
-
-            except ValueError as e:
-                # Parsing failed - log the error
-                logger.warning(
-                    f"{self.player_name}: Invalid response on attempt "
-                    f"{attempt + 1}/{max_proposal_retries}. Error: {e}"
-                )
-
-                # If this was the last attempt, break out
-                if attempt >= max_proposal_retries - 1:
-                    break
-
-                # Construct retry by appending bad response and error message
-                # Append the LLM's bad response as an assistant message
-                self.turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
-
-                # Append the retry prompt with the specific error as a user msg
-                retry_message = prompts.PROPOSE_RETRY_TEMPLATE.format(
-                    validation_error=str(e)
-                )
-                self.turn_history.append(
-                    ChatMessage(role="user", content=retry_message)
-                )
-
-                # Loop continues to retry with updated conversation history
-
-        # All retries exhausted - raise RuntimeError (better to crash than
-        # to generate a "pass" turn for a proposal phase)
-        logger.error(
-            f"{self.player_name}: Failed to generate valid proposal after "
-            f"{max_proposal_retries} attempts."
-        )
-        raise RuntimeError(
-            f"LLM failed to generate a valid proposal after "
-            f"{max_proposal_retries} attempts."
+        # Construct and return the Proposal object
+        # Note: proposal_id is left as None; GameLoop assigns it
+        return Proposal(
+            proposer_name=self.player_name,
+            move_number=game_state.move_number,
+            type=ProposalType(data["type"]),  # Convert str to enum
+            proposal_id=None,
+            target_rule_id=data["target_rule_id"],
+            new_text=data["new_text"],
+            rationale=data["rationale"],
+            private_thoughts=data["private_thoughts"],
         )
 
     def begin_discussion_turn(
@@ -339,80 +293,35 @@ class LLMPlayer(BasePlayer):
 
         # Retry loop with maximum attempts
         max_discussion_retries = self.tuning.max_discuss_retries
-        for attempt in range(max_discussion_retries):
-            # Status indicator for UX
-            print(f"\n🤖 {self.player_label} is thinking...")
-
-            # Get completion from the LLM using turn history
-            result = self.api_client.get_completion(self.turn_history)
-            self._log_usage(result, "discuss")
-            response_text = result.text
-
-            # Log raw response for debugging
-            logger.info(
-                f"Raw LLM Response from {self.player_name}:\n{response_text}"
+        try:
+            data = llm_retry_loop(
+                history=self.turn_history,
+                api_client=self.api_client,
+                parse_fn=parse_discussion_response,
+                max_retries=max_discussion_retries,
+                retry_template=prompts.DISCUSS_RETRY_TEMPLATE,
+                actor_label=self.player_label,
+                action_description="thinking...",
+                log_usage=lambda result: self._log_usage(result, "discuss"),
+            )
+        except RuntimeError:
+            # All retries exhausted - return empty Discussion (abstain)
+            logger.error(
+                f"{self.player_name}: Failed to generate valid discussion "
+                f"after {max_discussion_retries} attempts. "
+                "Defaulting to abstain."
+            )
+            return Discussion(
+                player_name=self.player_name,
+                text="",
+                private_thoughts=None,
             )
 
-            # Handle API errors (None response)
-            if response_text is None:
-                logger.error(
-                    f"{self.player_name}: API error on attempt {attempt + 1}/"
-                    f"{max_discussion_retries}"
-                )
-                # Continue to retry if attempts remain
-                continue
-
-            # Try to parse the response
-            try:
-                data = parse_discussion_response(response_text)
-
-                # Success! Append valid response to history
-                self.turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
-
-                # Return Discussion object (empty text means abstention)
-                return Discussion(
-                    player_name=self.player_name,
-                    text=data["discussion_text"],
-                    private_thoughts=data["private_thoughts"],
-                )
-
-            except ValueError as e:
-                # Parsing failed - log the error
-                logger.warning(
-                    f"{self.player_name}: Invalid response on attempt "
-                    f"{attempt + 1}/{max_discussion_retries}. Error: {e}"
-                )
-
-                # If this was the last attempt, break out
-                if attempt >= max_discussion_retries - 1:
-                    break
-
-                # Construct retry by appending bad response and error message
-                # Append the LLM's bad response as an assistant message
-                self.turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
-
-                # Append the retry prompt as a user message
-                self.turn_history.append(
-                    ChatMessage(
-                        role="user", content=prompts.DISCUSS_RETRY_TEMPLATE
-                    )
-                )
-
-                # Loop continues to retry with updated conversation history
-
-        # All retries exhausted - return empty Discussion (abstain)
-        logger.error(
-            f"{self.player_name}: Failed to generate valid discussion after "
-            f"{max_discussion_retries} attempts. Defaulting to abstain."
-        )
+        # Return Discussion object (empty text means abstention)
         return Discussion(
             player_name=self.player_name,
-            text="",
-            private_thoughts=None,
+            text=data["discussion_text"],
+            private_thoughts=data["private_thoughts"],
         )
 
     def vote(
@@ -458,80 +367,34 @@ class LLMPlayer(BasePlayer):
 
         # Retry loop with maximum attempts
         max_vote_retries = self.tuning.max_vote_retries
-        for attempt in range(max_vote_retries):
-            # Status indicator for UX
-            print(f"\n🤖 {self.player_label} is thinking...")
-
-            # Get completion from the LLM using turn history
-            result = self.api_client.get_completion(self.turn_history)
-            self._log_usage(result, "vote")
-            response_text = result.text
-
-            # Log raw response for debugging
-            logger.info(
-                f"Raw LLM Response from {self.player_name}:\n{response_text}"
+        try:
+            data = llm_retry_loop(
+                history=self.turn_history,
+                api_client=self.api_client,
+                parse_fn=parse_vote_response,
+                max_retries=max_vote_retries,
+                retry_template=prompts.VOTE_RETRY_TEMPLATE,
+                actor_label=self.player_label,
+                action_description="thinking...",
+                log_usage=lambda result: self._log_usage(result, "vote"),
+            )
+        except RuntimeError:
+            # All retries exhausted - return ABSTAIN as fallback
+            logger.error(
+                f"{self.player_name}: Failed to generate valid vote after "
+                f"{max_vote_retries} attempts. Defaulting to ABSTAIN."
+            )
+            return Vote(
+                player_name=self.player_name,
+                vote="ABSTAIN",
+                reason="LLM Error: Failed to generate valid vote.",
             )
 
-            # Handle API errors (None response)
-            if response_text is None:
-                logger.error(
-                    f"{self.player_name}: API error on attempt {attempt + 1}/"
-                    f"{max_vote_retries}"
-                )
-                # Continue to retry if attempts remain
-                continue
-
-            # Try to parse the response
-            try:
-                data = parse_vote_response(response_text)
-
-                # Success! Append valid response to history
-                self.turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
-
-                return Vote(
-                    player_name=self.player_name,
-                    vote=data["vote"],
-                    reason=data["public_reason"],
-                    private_thoughts=data["private_thoughts"],
-                )
-
-            except ValueError as e:
-                # Parsing failed - log the error
-                logger.warning(
-                    f"{self.player_name}: Invalid response on attempt "
-                    f"{attempt + 1}/{max_vote_retries}. Error: {e}"
-                )
-
-                # If this was the last attempt, break out
-                if attempt >= max_vote_retries - 1:
-                    break
-
-                # Construct retry by appending bad response and error message
-                # Append the LLM's bad response as an assistant message
-                self.turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
-
-                # Append the retry prompt as a user message
-                self.turn_history.append(
-                    ChatMessage(
-                        role="user", content=prompts.VOTE_RETRY_TEMPLATE
-                    )
-                )
-
-                # Loop continues to retry with updated conversation history
-
-        # All retries exhausted - return ABSTAIN as fallback
-        logger.error(
-            f"{self.player_name}: Failed to generate valid vote after "
-            f"{max_vote_retries} attempts. Defaulting to ABSTAIN."
-        )
         return Vote(
             player_name=self.player_name,
-            vote="ABSTAIN",
-            reason="LLM Error: Failed to generate valid vote.",
+            vote=data["vote"],
+            reason=data["public_reason"],
+            private_thoughts=data["private_thoughts"],
         )
 
     def note_withdrawal_for_retry(
@@ -617,96 +480,49 @@ class LLMPlayer(BasePlayer):
 
         # Retry loop with maximum attempts
         max_revision_retries = self.tuning.max_revise_retries
-        for attempt in range(max_revision_retries):
-            # Status indicator for UX
-            print(f"\n🤖 {self.player_label} is reviewing feedback...")
-
-            # Get completion from the LLM using turn history
-            result = self.api_client.get_completion(self.turn_history)
-            self._log_usage(result, "revise")
-            response_text = result.text
-
-            # Log raw response for debugging
-            logger.info(
-                f"Raw LLM Response from {self.player_name}:\n{response_text}"
+        try:
+            data = llm_retry_loop(
+                history=self.turn_history,
+                api_client=self.api_client,
+                parse_fn=parse_revision_response,
+                max_retries=max_revision_retries,
+                retry_template=prompts.REVISE_RETRY_TEMPLATE,
+                actor_label=self.player_label,
+                action_description="reviewing feedback...",
+                log_usage=lambda result: self._log_usage(result, "revise"),
             )
+        except RuntimeError:
+            # All retries exhausted - return original proposal (KEEP) as
+            # fallback to avoid stalling the game
+            logger.error(
+                f"{self.player_name}: Failed to generate valid revision after "
+                f"{max_revision_retries} attempts. Defaulting to KEEP."
+            )
+            return proposal
 
-            # Handle API errors (None response)
-            if response_text is None:
-                logger.error(
-                    f"{self.player_name}: API error on attempt {attempt + 1}/"
-                    f"{max_revision_retries}"
-                )
-                # Continue to retry if attempts remain
-                continue
+        # Handle based on action
+        action = data["action"]
 
-            # Try to parse the response
-            try:
-                data = parse_revision_response(response_text)
+        if action == "WITHDRAW":
+            return None
 
-                # Success! Append valid response to history
-                self.turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
+        if action == "KEEP":
+            # Create a copy to update private_thoughts
+            kept_proposal = proposal.model_copy()
+            kept_proposal.private_thoughts = data["private_thoughts"]
+            return kept_proposal
 
-                # Handle based on action
-                action = data["action"]
-
-                if action == "WITHDRAW":
-                    return None
-
-                if action == "KEEP":
-                    # Create a copy to update private_thoughts
-                    kept_proposal = proposal.model_copy()
-                    kept_proposal.private_thoughts = data["private_thoughts"]
-                    return kept_proposal
-
-                # action == "MODIFY"
-                # Create a copy and update with new values if provided
-                new_proposal = proposal.model_copy()
-                new_text = data["new_text"]
-                if new_text:
-                    new_proposal.new_text = new_text
-                rationale = data["rationale"]
-                if rationale:
-                    new_proposal.rationale = rationale
-                new_proposal.private_thoughts = data["private_thoughts"]
-                return new_proposal
-
-            except ValueError as e:
-                # Parsing failed - log the error
-                logger.warning(
-                    f"{self.player_name}: Invalid response on attempt "
-                    f"{attempt + 1}/{max_revision_retries}. Error: {e}"
-                )
-
-                # If this was the last attempt, break out
-                if attempt >= max_revision_retries - 1:
-                    break
-
-                # Construct retry by appending bad response and error message
-                # Append the LLM's bad response as an assistant message
-                self.turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
-
-                # Append the retry prompt with the specific error as a user msg
-                retry_message = prompts.REVISE_RETRY_TEMPLATE.format(
-                    validation_error=str(e)
-                )
-                self.turn_history.append(
-                    ChatMessage(role="user", content=retry_message)
-                )
-
-                # Loop continues to retry with updated conversation history
-
-        # All retries exhausted - return original proposal (KEEP) as fallback
-        # to avoid stalling the game
-        logger.error(
-            f"{self.player_name}: Failed to generate valid revision after "
-            f"{max_revision_retries} attempts. Defaulting to KEEP."
-        )
-        return proposal
+        # action == "MODIFY"
+        # Create a copy and update with new values if provided
+        new_proposal = proposal.model_copy()
+        new_text = data["new_text"]
+        if new_text:
+            new_proposal.new_text = new_text
+        rationale = data["rationale"]
+        if rationale:
+            new_proposal.rationale = rationale
+        new_proposal.private_thoughts = data["private_thoughts"]
+        return new_proposal
 
     def update_memory(
         self,

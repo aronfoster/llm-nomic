@@ -23,6 +23,7 @@ from ..llm.parsers import (
     parse_judge_score_response,
     parse_judge_veto_response,
 )
+from ..llm.retry_helper import llm_retry_loop
 from ..memory.memory_manager import MemoryManager
 from .base_judge import BaseJudge
 
@@ -86,7 +87,7 @@ class LLMJudge(BaseJudge):
         # GameLoop._reset_judge_turn_state(). The stable system message
         # (JUDGE_SYSTEM_PROMPT + memory injection) is always the first element,
         # enabling Anthropic/xAI cache hits from the second call onward.
-        self._turn_history: list[ChatMessage] = []
+        self.turn_history: list[ChatMessage] = []
         # Move number updated on each judge action for use in logging
         self._current_move_number: int = 0
         logger.info(
@@ -94,6 +95,11 @@ class LLMJudge(BaseJudge):
             model_config.api_model_id,
             model_config.provider,
         )
+
+    @property
+    def _judge_label(self) -> str:
+        """Return a display label for the judge (used in status messages)."""
+        return f"⚖️ Judge [{self.model_config.api_model_id}]"
 
     def _build_judge_system_message(
         self,
@@ -205,87 +211,46 @@ class LLMJudge(BaseJudge):
         veto_prompt = self.prompt_builder.build_judge_veto_prompt(
             game_state=game_manager.game_state,
         )
-        self._turn_history = [system_msg, veto_prompt]
+        self.turn_history = [system_msg, veto_prompt]
 
         logger.debug(
             "Requesting veto decision from model %s",
             self.model_config.api_model_id,
         )
 
-        # Retry loop with maximum attempts
         max_veto_retries = self.tuning.max_judge_veto_retries
-        for attempt in range(max_veto_retries):
-            result = self.api_client.get_completion(self._turn_history)
-            self._log_usage(result, "judge_veto")
-            response_text = result.text
+        try:
+            data = llm_retry_loop(
+                history=self.turn_history,
+                api_client=self.api_client,
+                parse_fn=parse_judge_veto_response,
+                max_retries=max_veto_retries,
+                retry_template=llm_prompts.JUDGE_VETO_RETRY_TEMPLATE,
+                actor_label=self._judge_label,
+                action_description="deciding on a veto",
+                log_usage=lambda result: self._log_usage(result, "judge_veto"),
+                secondary_append=self._judge_turn_responses,
+            )
+        except RuntimeError:
+            logger.error(
+                f"LLM Judge: Failed to generate valid veto decision after "
+                f"{max_veto_retries} attempts."
+            )
+            raise RuntimeError(
+                f"LLM Judge failed to generate a valid veto decision after "
+                f"{max_veto_retries} attempts."
+            )
 
-            # Handle API errors (None response)
-            if response_text is None:
-                logger.error(
-                    f"LLM Judge: API error on veto attempt {attempt + 1}/"
-                    f"{max_veto_retries}"
-                )
-                # Continue to retry if attempts remain
-                continue
-
-            logger.info("Raw LLM judge veto response:\n%s", response_text)
-
-            # Try to parse the response
-            try:
-                data = parse_judge_veto_response(response_text)
-
-                # Success! Append response to turn history and turn responses
-                assistant_msg = ChatMessage(
-                    role="assistant", content=response_text
-                )
-                self._turn_history.append(assistant_msg)
-                self._judge_turn_responses.append(assistant_msg)
-
-                logger.info(
-                    "LLM Judge veto decision: %s | Reason: %s",
-                    "VETO" if data["veto"] else "ALLOW",
-                    data["reason"],
-                )
-                return {
-                    "veto": data["veto"],
-                    "reason": data["reason"],
-                    "private_thoughts": data["private_thoughts"],
-                }
-
-            except ValueError as e:
-                # Parsing failed - log the error
-                logger.warning(
-                    f"LLM Judge: Invalid veto response on attempt "
-                    f"{attempt + 1}/{max_veto_retries}. Error: {e}"
-                )
-
-                # If this was the last attempt, break out
-                if attempt >= max_veto_retries - 1:
-                    break
-
-                # Prepare retry: append bad response and error prompt to
-                # turn history so the next attempt sees the full context
-                self._turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
-                retry_message = llm_prompts.JUDGE_VETO_RETRY_TEMPLATE.format(
-                    validation_error=str(e)
-                )
-                self._turn_history.append(
-                    ChatMessage(role="user", content=retry_message)
-                )
-
-                # Loop continues to retry with updated turn history
-
-        # All retries exhausted - raise RuntimeError
-        logger.error(
-            f"LLM Judge: Failed to generate valid veto decision after "
-            f"{max_veto_retries} attempts."
+        logger.info(
+            "LLM Judge veto decision: %s | Reason: %s",
+            "VETO" if data["veto"] else "ALLOW",
+            data["reason"],
         )
-        raise RuntimeError(
-            f"LLM Judge failed to generate a valid veto decision after "
-            f"{max_veto_retries} attempts."
-        )
+        return {
+            "veto": data["veto"],
+            "reason": data["reason"],
+            "private_thoughts": data["private_thoughts"],
+        }
 
     def assess_scores(
         self,
@@ -299,7 +264,7 @@ class LLMJudge(BaseJudge):
         """Assess score adjustments using the accumulated turn history.
 
         The full turn context (rules, proposal, votes, discussions) is already
-        in _turn_history from get_veto, so only the score prompt is appended.
+        in turn_history from get_veto, so only the score prompt is appended.
         This avoids re-sending the ruleset and enables cache hits from
         Anthropic/xAI on the system message prefix.
         """
@@ -315,7 +280,7 @@ class LLMJudge(BaseJudge):
         score_prompt = self.prompt_builder.build_judge_score_prompt(
             proposal_passed=proposal_passed
         )
-        self._turn_history.append(score_prompt)
+        self.turn_history.append(score_prompt)
 
         logger.debug(
             "Requesting score assessment from model %s (proposal %s)",
@@ -323,94 +288,53 @@ class LLMJudge(BaseJudge):
             "PASSED" if proposal_passed else "FAILED",
         )
 
-        # Retry loop with maximum attempts
         max_score_retries = self.tuning.max_judge_score_retries
-        for attempt in range(max_score_retries):
-            result = self.api_client.get_completion(self._turn_history)
-            self._log_usage(result, "judge_score")
-            response_text = result.text
+        valid_players = list(game_manager.game_state.scores.keys())
+        try:
+            data = llm_retry_loop(
+                history=self.turn_history,
+                api_client=self.api_client,
+                parse_fn=lambda text: parse_judge_score_response(
+                    text, valid_players=valid_players
+                ),
+                max_retries=max_score_retries,
+                retry_template=llm_prompts.JUDGE_SCORE_RETRY_TEMPLATE,
+                actor_label=self._judge_label,
+                action_description="assessing scores",
+                log_usage=lambda result: self._log_usage(
+                    result, "judge_score"
+                ),
+                secondary_append=self._judge_turn_responses,
+            )
+        except RuntimeError:
+            logger.error(
+                f"LLM Judge: Failed to generate valid score assessment after "
+                f"{max_score_retries} attempts."
+            )
+            raise RuntimeError(
+                f"LLM Judge failed to generate a valid score assessment after "
+                f"{max_score_retries} attempts."
+            )
 
-            # Handle API errors (None response)
-            if response_text is None:
-                logger.error(
-                    f"LLM Judge: API error on score assessment attempt "
-                    f"{attempt + 1}/{max_score_retries}"
-                )
-                # Continue to retry if attempts remain
-                continue
+        adjustments = data["score_adjustments"]
+        if not adjustments:
+            logger.info("LLM Judge proposed no score changes this turn.")
+            return {
+                "private_thoughts": data["private_thoughts"],
+                "score_adjustments": [],
+            }
 
-            logger.info("Raw LLM judge score response:\n%s", response_text)
-
-            # Try to parse the response
-            try:
-                data = parse_judge_score_response(
-                    response_text,
-                    valid_players=list(game_manager.game_state.scores.keys()),
-                )
-
-                # Success! Append response to turn history and turn responses
-                assistant_msg = ChatMessage(
-                    role="assistant", content=response_text
-                )
-                self._turn_history.append(assistant_msg)
-                self._judge_turn_responses.append(assistant_msg)
-
-                adjustments = data["score_adjustments"]
-                if not adjustments:
-                    logger.info(
-                        "LLM Judge proposed no score changes this turn."
-                    )
-                    return {
-                        "private_thoughts": data["private_thoughts"],
-                        "score_adjustments": [],
-                    }
-
-                for adj in adjustments:
-                    logger.info(
-                        "LLM Judge proposed %s %+d points (%s)",
-                        adj["player"],
-                        adj["delta"],
-                        adj["reason"],
-                    )
-                return {
-                    "private_thoughts": data["private_thoughts"],
-                    "score_adjustments": adjustments,
-                }
-
-            except ValueError as e:
-                # Parsing failed - log the error
-                logger.warning(
-                    f"LLM Judge: Invalid score response on attempt "
-                    f"{attempt + 1}/{max_score_retries}. Error: {e}"
-                )
-
-                # If this was the last attempt, break out
-                if attempt >= max_score_retries - 1:
-                    break
-
-                # Prepare retry: append bad response and error prompt to
-                # turn history
-                self._turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
-                retry_message = llm_prompts.JUDGE_SCORE_RETRY_TEMPLATE.format(
-                    validation_error=str(e)
-                )
-                self._turn_history.append(
-                    ChatMessage(role="user", content=retry_message)
-                )
-
-                # Loop continues to retry with updated turn history
-
-        # All retries exhausted - raise RuntimeError
-        logger.error(
-            f"LLM Judge: Failed to generate valid score assessment after "
-            f"{max_score_retries} attempts."
-        )
-        raise RuntimeError(
-            f"LLM Judge failed to generate a valid score assessment after "
-            f"{max_score_retries} attempts."
-        )
+        for adj in adjustments:
+            logger.info(
+                "LLM Judge proposed %s %+d points (%s)",
+                adj["player"],
+                adj["delta"],
+                adj["reason"],
+            )
+        return {
+            "private_thoughts": data["private_thoughts"],
+            "score_adjustments": adjustments,
+        }
 
     def maintain_state(
         self,
@@ -425,7 +349,7 @@ class LLMJudge(BaseJudge):
         Uses the accumulated turn history so the LLM reasons with full context
         of earlier judge decisions (veto, scores). Only the maintain_state
         prompt is appended — the ruleset and proposal context are already in
-        _turn_history from get_veto. Includes retry logic for invalid
+        turn_history from get_veto. Includes retry logic for invalid
         responses.
         """
         assert game_manager.game_state is not None
@@ -442,7 +366,7 @@ class LLMJudge(BaseJudge):
                 game_state=game_manager.game_state,
             )
         )
-        self._turn_history.append(maintain_state_prompt)
+        self.turn_history.append(maintain_state_prompt)
 
         logger.debug(
             "Requesting state maintenance decision from model %s for "
@@ -451,100 +375,56 @@ class LLMJudge(BaseJudge):
             proposal.proposal_id,
         )
 
-        # Retry loop with maximum attempts
         max_maintain_state_retries = (
             self.tuning.max_judge_maintain_state_retries
         )
-        for attempt in range(max_maintain_state_retries):
-            result = self.api_client.get_completion(self._turn_history)
-            self._log_usage(result, "judge_maintain_state")
-            response_text = result.text
-
-            # Handle API errors (None response)
-            if response_text is None:
-                logger.error(
-                    f"LLM Judge: API error on maintain_state attempt "
-                    f"{attempt + 1}/{max_maintain_state_retries}"
-                )
-                # Continue to retry if attempts remain
-                continue
-
-            logger.info(
-                "Raw LLM judge maintain_state response:\n%s", response_text
+        try:
+            data = llm_retry_loop(
+                history=self.turn_history,
+                api_client=self.api_client,
+                parse_fn=parse_judge_maintain_state_response,
+                max_retries=max_maintain_state_retries,
+                retry_template=llm_prompts.JUDGE_MAINTAIN_STATE_RETRY_TEMPLATE,
+                actor_label=self._judge_label,
+                action_description="maintaining game state",
+                log_usage=lambda result: self._log_usage(
+                    result, "judge_maintain_state"
+                ),
+                secondary_append=self._judge_turn_responses,
+            )
+        except RuntimeError:
+            logger.error(
+                f"LLM Judge: Failed to generate valid maintain_state decision "
+                f"after {max_maintain_state_retries} attempts."
+            )
+            raise RuntimeError(
+                "LLM Judge failed to generate a valid maintain_state "
+                f"decision after {max_maintain_state_retries} attempts."
             )
 
-            # Try to parse the response
-            try:
-                data = parse_judge_maintain_state_response(response_text)
+        # Build StateUpdates from parsed data
+        state_updates: StateUpdates = {}
+        if data["flags"]:
+            state_updates["flags"] = data["flags"]
+        target_score_val = data["target_score"]
+        if target_score_val is not None:
+            state_updates["target_score"] = target_score_val
 
-                # Success! Append response to turn history and turn responses
-                assistant_msg = ChatMessage(
-                    role="assistant", content=response_text
-                )
-                self._turn_history.append(assistant_msg)
-                self._judge_turn_responses.append(assistant_msg)
+        if state_updates:
+            logger.info(
+                "LLM Judge recommends state updates: %s", state_updates
+            )
+        else:
+            logger.info("LLM Judge recommends no state changes.")
 
-                # Build StateUpdates from parsed data
-                state_updates: StateUpdates = {}
-                if data["flags"]:
-                    state_updates["flags"] = data["flags"]
-                target_score_val = data["target_score"]
-                if target_score_val is not None:
-                    state_updates["target_score"] = target_score_val
-
-                if state_updates:
-                    logger.info(
-                        "LLM Judge recommends state updates: %s", state_updates
-                    )
-                else:
-                    logger.info("LLM Judge recommends no state changes.")
-
-                return state_updates
-
-            except ValueError as e:
-                # Parsing failed - log the error
-                logger.warning(
-                    f"LLM Judge: Invalid maintain_state response on attempt "
-                    f"{attempt + 1}/{max_maintain_state_retries}. "
-                    f"Error: {e}"
-                )
-
-                # If this was the last attempt, break out
-                if attempt >= max_maintain_state_retries - 1:
-                    break
-
-                # Prepare retry: append bad response and error prompt to
-                # turn history
-                self._turn_history.append(
-                    ChatMessage(role="assistant", content=response_text)
-                )
-                retry_message = (
-                    llm_prompts.JUDGE_MAINTAIN_STATE_RETRY_TEMPLATE.format(
-                        validation_error=str(e)
-                    )
-                )
-                self._turn_history.append(
-                    ChatMessage(role="user", content=retry_message)
-                )
-
-                # Loop continues to retry with updated turn history
-
-        # All retries exhausted - raise RuntimeError
-        logger.error(
-            f"LLM Judge: Failed to generate valid maintain_state decision "
-            f"after {max_maintain_state_retries} attempts."
-        )
-        raise RuntimeError(
-            f"LLM Judge failed to generate a valid maintain_state decision "
-            f"after {max_maintain_state_retries} attempts."
-        )
+        return state_updates
 
     def update_memory(self) -> None:
         """Update the judge's persistent memory file after a completed turn.
 
-        Sends _turn_history (which already contains the cached system prefix,
+        Sends turn_history (which already contains the cached system prefix,
         full context, and all judge reasoning) plus the memory update prompt.
-        Since the system message in _turn_history is byte-identical to the one
+        Since the system message in turn_history is byte-identical to the one
         used in get_veto, Anthropic returns a cache hit for the system prefix
         rather than incurring a fresh cache-write charge.
 
@@ -575,7 +455,7 @@ class LLMJudge(BaseJudge):
         # reasoning) plus the memory update prompt. The system message is
         # already cached from get_veto, so this call gets a cache hit rather
         # than paying to write a new ephemeral cache block.
-        messages = self._turn_history + [
+        messages = self.turn_history + [
             ChatMessage(role="user", content=update_prompt)
         ]
 

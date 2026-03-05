@@ -20,6 +20,8 @@ Our architecture is built on these principles:
 ### HIGH PRIORITY
 
 - Need to have all LLM input failures (e.g. bad rule number, ABSTAIN vote when not allowed, etc.) go through retry logic with basic (sanitized) error descriptions so the LLM can fix it.
+  - Sprint 38 Task 1 complete: shared `llm_retry_loop` helper extracted; JSON-parse retries unified across all 7 actions; `DISCUSS_RETRY_TEMPLATE` and `VOTE_RETRY_TEMPLATE` now include validation error context.
+  - Remaining: illegal-proposal retry (Task 2) and ABSTAIN-when-forbidden retry (Task 3).
 
 ### Low Priority
 
