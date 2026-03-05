@@ -26,6 +26,8 @@ def llm_retry_loop(
     action_description: str,
     log_usage: Callable[[CompletionResult], None] | None = None,
     secondary_append: list[ChatMessage] | None = None,
+    post_parse_validator: Callable[[T], None] | None = None,
+    legality_retry_template: str | None = None,
 ) -> T:
     """Run a retry loop for an LLM action.
 
@@ -42,9 +44,9 @@ def llm_retry_loop(
         parse_fn: Callable that parses a response string. Must raise
             ValueError on invalid input.
         max_retries: Maximum number of attempts.
-        retry_template: Template string for retry messages. Must contain
-            a ``{validation_error}`` placeholder that will be formatted with
-            the string representation of the caught ValueError.
+        retry_template: Template string for retry messages used when
+            ``parse_fn`` raises ValueError. Must contain a
+            ``{validation_error}`` placeholder.
         actor_label: Display label for the actor (printed before each call).
         action_description: Short description of what the actor is doing
             (e.g. ``"thinking about a proposal"``).
@@ -54,13 +56,25 @@ def llm_retry_loop(
             ChatMessage is also appended. Used by LLMJudge to track
             per-turn responses separately from the full turn history.
             Retried or rejected responses are never added to this list.
+        post_parse_validator: Optional callable invoked with the parsed
+            result after ``parse_fn`` succeeds. Must raise ValueError if
+            the parsed result fails game-level validation (e.g. legality).
+            When it raises, the attempt is treated as a failure and the loop
+            retries using ``legality_retry_template`` (falling back to
+            ``retry_template`` if not provided). Retried responses are never
+            appended to ``secondary_append``.
+        legality_retry_template: Optional template used when
+            ``post_parse_validator`` raises ValueError. Must contain a
+            ``{validation_error}`` placeholder. Falls back to
+            ``retry_template`` when not provided.
 
     Returns:
-        The value returned by ``parse_fn`` on the first successful attempt.
+        The value returned by ``parse_fn`` on the first successful attempt
+        that also passes ``post_parse_validator`` (if provided).
 
     Raises:
         RuntimeError: When all retry attempts are exhausted without a
-            successful parse.
+            successful parse and validation.
     """
     for attempt in range(max_retries):
         print(f"\n{actor_label} is {action_description}...")
@@ -85,16 +99,6 @@ def llm_retry_loop(
 
         try:
             parsed = parse_fn(response_text)
-
-            assistant_msg = ChatMessage(
-                role="assistant", content=response_text
-            )
-            history.append(assistant_msg)
-            if secondary_append is not None:
-                secondary_append.append(assistant_msg)
-
-            return parsed
-
         except ValueError as e:
             logger.warning(
                 "%s: Invalid response on attempt %d/%d. Error: %s",
@@ -103,15 +107,42 @@ def llm_retry_loop(
                 max_retries,
                 e,
             )
+            if attempt < max_retries - 1:
+                history.append(
+                    ChatMessage(role="assistant", content=response_text)
+                )
+                retry_msg = retry_template.format(validation_error=str(e))
+                history.append(ChatMessage(role="user", content=retry_msg))
+            continue
 
-            if attempt >= max_retries - 1:
-                break
+        # Parse succeeded; run optional legality validation
+        if post_parse_validator is not None:
+            try:
+                post_parse_validator(parsed)
+            except ValueError as e:
+                logger.warning(
+                    "%s: Illegal response on attempt %d/%d. Error: %s",
+                    actor_label,
+                    attempt + 1,
+                    max_retries,
+                    e,
+                )
+                if attempt < max_retries - 1:
+                    history.append(
+                        ChatMessage(role="assistant", content=response_text)
+                    )
+                    template = legality_retry_template or retry_template
+                    retry_msg = template.format(validation_error=str(e))
+                    history.append(ChatMessage(role="user", content=retry_msg))
+                continue
 
-            history.append(
-                ChatMessage(role="assistant", content=response_text)
-            )
-            retry_msg = retry_template.format(validation_error=str(e))
-            history.append(ChatMessage(role="user", content=retry_msg))
+        # Both parse and legality (if applicable) succeeded
+        assistant_msg = ChatMessage(role="assistant", content=response_text)
+        history.append(assistant_msg)
+        if secondary_append is not None:
+            secondary_append.append(assistant_msg)
+
+        return parsed
 
     raise RuntimeError(
         f"LLM failed to complete '{action_description}' after "

@@ -1205,6 +1205,174 @@ class TestLLMPlayerPropose:
             memory_content="",
         )
 
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_retries_on_illegal_proposal(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """post_parse_validator raises ValueError on first call; player retries
+        and succeeds on the second attempt."""
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = (
+            ChatMessage(role="system", content="sys"),
+            ChatMessage(role="user", content="usr"),
+        )
+
+        good_data = {
+            "private_thoughts": "t",
+            "type": "Add",
+            "target_rule_id": None,
+            "new_text": "New rule",
+            "rationale": "r",
+        }
+        r = CompletionResult
+        mock_api_instance.get_completion.side_effect = [
+            r(text="bad", raw_response=None, client_latency_ms=0),
+            r(text="good", raw_response=None, client_latency_ms=0),
+        ]
+        mock_parse.return_value = good_data
+
+        # Validator: fail on first call, pass on second
+        validator_calls: list = []
+
+        def validator(data: dict) -> None:
+            validator_calls.append(data)
+            if len(validator_calls) == 1:
+                raise ValueError("Rule 999 not found.")
+
+        player = LLMPlayer("TestPlayer", model_config)
+        proposal_result = player.propose(
+            game_state, rules, post_parse_validator=validator
+        )
+
+        assert proposal_result.type == ProposalType.ADD
+        assert proposal_result.new_text == "New rule"
+        assert mock_api_instance.get_completion.call_count == 2
+        assert len(validator_calls) == 2
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_legality_exhaustion_raises_runtime_error(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """When all attempts fail legality, RuntimeError is raised."""
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = (
+            ChatMessage(role="system", content="sys"),
+            ChatMessage(role="user", content="usr"),
+        )
+
+        mock_parse.return_value = {
+            "private_thoughts": "t",
+            "type": "Add",
+            "target_rule_id": None,
+            "new_text": "New rule",
+            "rationale": "r",
+        }
+        # Return enough responses to exhaust retries
+        max_retries = 3  # default max_propose_retries
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text="response", raw_response=None, client_latency_ms=0
+        )
+
+        err = ValueError("Cannot amend immutable rule 101.")
+        validator = MagicMock(side_effect=err)
+
+        player = LLMPlayer("TestPlayer", model_config)
+        # Override tuning to use a small count for test speed
+        player.tuning.max_propose_retries = max_retries
+
+        with pytest.raises(RuntimeError):
+            player.propose(game_state, rules, post_parse_validator=validator)
+
+        assert mock_api_instance.get_completion.call_count == max_retries
+        assert validator.call_count == max_retries
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    @patch("src.nomic_engine.players.llm_player.parse_proposal_response")
+    def test_propose_combined_parse_and_legality_attempt_count(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        rules,
+    ):
+        """Parse and legality failures share the max_propose_retries budget."""
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        pb = mock_prompt_builder_instance
+        pb.build_proposer_system_message.return_value = (
+            ChatMessage(role="system", content="sys"),
+            ChatMessage(role="user", content="usr"),
+        )
+
+        good_data = {
+            "private_thoughts": "t",
+            "type": "Add",
+            "target_rule_id": None,
+            "new_text": "New rule",
+            "rationale": "r",
+        }
+        # Attempt 1: parse fails
+        # Attempt 2: parse succeeds but validator fails
+        # Attempt 3: both succeed
+        mock_parse.side_effect = [
+            ValueError("bad json"),
+            good_data,
+            good_data,
+        ]
+        r = CompletionResult
+        mock_api_instance.get_completion.side_effect = [
+            r(text="a1", raw_response=None, client_latency_ms=0),
+            r(text="a2", raw_response=None, client_latency_ms=0),
+            r(text="a3", raw_response=None, client_latency_ms=0),
+        ]
+
+        validator_calls: list = []
+
+        def validator(data: dict) -> None:
+            validator_calls.append(data)
+            if len(validator_calls) == 1:
+                raise ValueError("Rule 999 not found.")
+
+        player = LLMPlayer("TestPlayer", model_config)
+        player.tuning.max_propose_retries = 3
+
+        proposal_result = player.propose(
+            game_state, rules, post_parse_validator=validator
+        )
+
+        assert proposal_result.type == ProposalType.ADD
+        assert mock_api_instance.get_completion.call_count == 3
+        assert len(validator_calls) == 2  # only called on parse successes
+
 
 class TestLLMPlayerRevise:
     """Tests for LLMPlayer.revise() method."""
@@ -1701,6 +1869,108 @@ class TestLLMPlayerRevise:
             discussions=discussions,
             personality="friendly",
         )
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_retries_on_illegal_revised_proposal(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """Validator raises ValueError on MODIFY; retries and succeeds."""
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = ChatMessage(
+            role="user", content="revise instruction"
+        )
+
+        good_data = {
+            "private_thoughts": "t",
+            "action": "MODIFY",
+            "new_text": "Fixed rule text",
+            "rationale": "better",
+        }
+        r = CompletionResult
+        mock_api_instance.get_completion.side_effect = [
+            r(text="bad", raw_response=None, client_latency_ms=0),
+            r(text="good", raw_response=None, client_latency_ms=0),
+        ]
+        mock_parse.return_value = good_data
+
+        validator_calls: list = []
+
+        def validator(data: dict) -> None:
+            validator_calls.append(data)
+            if data.get("action") == "MODIFY" and len(validator_calls) == 1:
+                raise ValueError("Cannot amend immutable rule 101.")
+
+        player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [ChatMessage(role="system", content="sys")]
+        result = player.revise(
+            proposal, [], game_state, rules, post_parse_validator=validator
+        )
+
+        assert result is not None
+        assert result is not proposal  # MODIFY returned new proposal
+        assert mock_api_instance.get_completion.call_count == 2
+        assert len(validator_calls) == 2
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    @patch("src.nomic_engine.players.llm_player.parse_revision_response")
+    def test_revise_legality_exhaustion_returns_original_proposal(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        game_state,
+        proposal,
+        rules,
+    ):
+        """When all MODIFY attempts fail legality, revise() falls back to KEEP
+        (returns original proposal)."""
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        pb = mock_prompt_builder_instance
+        pb.build_revision_instruction.return_value = ChatMessage(
+            role="user", content="revise instruction"
+        )
+
+        mock_parse.return_value = {
+            "private_thoughts": "t",
+            "action": "MODIFY",
+            "new_text": "Illegal text",
+            "rationale": "r",
+        }
+        max_retries = 3
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text="response", raw_response=None, client_latency_ms=0
+        )
+        validator = MagicMock(side_effect=ValueError("Rule 999 not found."))
+
+        player = LLMPlayer("TestPlayer", model_config)
+        player.tuning.max_revise_retries = max_retries
+        player.turn_history = [ChatMessage(role="system", content="sys")]
+
+        result = player.revise(
+            proposal, [], game_state, rules, post_parse_validator=validator
+        )
+
+        # Exhaustion fallback: return original proposal (KEEP)
+        assert result is proposal
+        assert mock_api_instance.get_completion.call_count == max_retries
 
 
 class TestLLMPlayerStatefulHistory:

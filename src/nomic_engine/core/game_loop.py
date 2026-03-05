@@ -26,6 +26,7 @@ from ..judge_contracts import (
     JudgeVetoResponse,
     StateUpdates,
 )
+from ..llm.parsers import ProposalResponse, RevisionResponse
 from ..players.base_player import BasePlayer
 from ..players.llm_player import LLMPlayer
 from ..utils.player_label import format_player_label
@@ -368,30 +369,70 @@ class GameLoop:
         """
         Get proposal from current player and validate it.
 
-        This method gets the proposal from the player and validates it
-        for legality.
+        For LLMPlayer instances, a legality validator is passed into
+        propose() so that illegal proposals trigger a retry inside the
+        player's retry loop (counting against max_propose_retries).
+        The defensive validate_proposal() call below is kept as a safety
+        net for non-LLM players (e.g. HumanPlayer).
 
         Args:
             current_player: The player whose turn it is
             continue_turn: True when retrying after a withdrawal
 
         Returns:
-            Proposal object if valid, None if illegal
+            Proposal object if valid, None if illegal (non-LLM path)
 
         Raises:
             ValueError: If player returns invalid proposal
+            RuntimeError: If LLMPlayer exhausts all retries
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
 
         logger.info(f"Step 1: {current_player.player_name} proposing")
 
-        # Get the proposal from the player
-        proposal = current_player.propose(
-            game_state=self.game_manager.game_state,
-            rules=self.game_manager.rules_manager.rules,
-            continue_turn=continue_turn,
-        )
+        # Get the proposal from the player.
+        # For LLMPlayer: pass a legality validator so illegal proposals
+        # trigger a retry inside the player's retry loop rather than
+        # silently ending the turn.
+        if isinstance(current_player, LLMPlayer):
+            proposal_id_str = str(
+                self.game_manager.game_state.next_proposal_id
+            )
+            game_manager = self.game_manager
+            player_name = current_player.player_name
+
+            def _propose_legality_validator(
+                data: ProposalResponse,
+            ) -> None:
+                temp_proposal = Proposal(
+                    proposer_name=player_name,
+                    move_number=game_manager.game_state.move_number,  # type: ignore[union-attr]
+                    type=ProposalType(data["type"]),
+                    proposal_id=proposal_id_str,
+                    target_rule_id=data["target_rule_id"],
+                    new_text=data["new_text"],
+                    rationale=data["rationale"],
+                    private_thoughts=data["private_thoughts"],
+                )
+                is_valid, error_message = validate_proposal(
+                    temp_proposal, player_name, game_manager
+                )
+                if not is_valid:
+                    raise ValueError(error_message)
+
+            proposal = current_player.propose(
+                game_state=self.game_manager.game_state,
+                rules=self.game_manager.rules_manager.rules,
+                continue_turn=continue_turn,
+                post_parse_validator=_propose_legality_validator,
+            )
+        else:
+            proposal = current_player.propose(
+                game_state=self.game_manager.game_state,
+                rules=self.game_manager.rules_manager.rules,
+                continue_turn=continue_turn,
+            )
 
         logger.debug(
             f"Proposal received: type={proposal.type}, "
@@ -405,11 +446,13 @@ class GameLoop:
                 "It is assigned by the engine."
             )
 
-        # Assign the proposal ID before validation
+        # Assign the proposal ID before the defensive validation below
         current_id_str = str(self.game_manager.game_state.next_proposal_id)
         proposal.proposal_id = current_id_str
 
-        # Validate the proposal using the extracted validation logic
+        # Defensive validation: for LLMPlayer this should always pass
+        # (already validated inside propose()); for other player types
+        # this is the primary legality check.
         is_valid, error_message = validate_proposal(
             proposal, current_player.player_name, self.game_manager
         )
@@ -548,8 +591,14 @@ class GameLoop:
         reviewing discussions. If any discussion contains "UNCLEAR" or
         "AMBIGUOUS", the proposer must revise or withdraw (Rule 112).
 
-        CRITICAL: If the player returns a NEW proposal object (not the
-        original), it MUST be re-validated for legality.
+        For LLMPlayer instances, a legality validator is passed into
+        revise() so that an illegal MODIFY revision triggers a retry inside
+        the player's retry loop. On exhaustion, revise() returns the
+        original proposal (KEEP fallback).
+
+        The defensive validate_proposal() call below handles non-LLM
+        players. When it fails, the original proposal is returned (KEEP)
+        rather than treating the failure as a withdrawal.
 
         Args:
             current_player: The player who made the proposal
@@ -557,21 +606,55 @@ class GameLoop:
             discussions: List of Discussion objects from all players
 
         Returns:
-            The (potentially) revised Proposal object, or None if withdrawn
-            or if revised proposal is illegal
+            The (potentially) revised Proposal object, or None if withdrawn.
+            Never returns None due to an illegal revised proposal — falls
+            back to the original proposal (KEEP) instead.
         """
         assert self.game_manager.game_state is not None
         assert self.game_manager.rules_manager is not None
 
         logger.info("Step 3: Revision phase")
 
-        # Call the player's revise method
-        revised_proposal = current_player.revise(
-            proposal=proposal,
-            discussions=discussions,
-            game_state=self.game_manager.game_state,
-            rules=self.game_manager.rules_manager.rules,
-        )
+        # Call the player's revise method.
+        # For LLMPlayer: pass a legality validator so illegal MODIFY
+        # revisions are retried inside the player's retry loop.
+        if isinstance(current_player, LLMPlayer):
+            original_proposal = proposal
+            game_manager = self.game_manager
+            player_name = current_player.player_name
+
+            def _revise_legality_validator(
+                data: RevisionResponse,
+            ) -> None:
+                if data["action"] != "MODIFY":
+                    return  # KEEP and WITHDRAW need no legality check
+                revised = original_proposal.model_copy()
+                new_text = data["new_text"]
+                if new_text:
+                    revised.new_text = new_text
+                rationale = data["rationale"]
+                if rationale:
+                    revised.rationale = rationale
+                is_valid, error_message = validate_proposal(
+                    revised, player_name, game_manager
+                )
+                if not is_valid:
+                    raise ValueError(error_message)
+
+            revised_proposal = current_player.revise(
+                proposal=proposal,
+                discussions=discussions,
+                game_state=self.game_manager.game_state,
+                rules=self.game_manager.rules_manager.rules,
+                post_parse_validator=_revise_legality_validator,
+            )
+        else:
+            revised_proposal = current_player.revise(
+                proposal=proposal,
+                discussions=discussions,
+                game_state=self.game_manager.game_state,
+                rules=self.game_manager.rules_manager.rules,
+            )
 
         if revised_proposal is None:
             logger.info(f"Proposal withdrawn by {current_player.player_name}")
@@ -580,7 +663,8 @@ class GameLoop:
             logger.info("Proposal submitted as-is (no revision)")
             return revised_proposal
         else:
-            # Player returned a NEW proposal object - must re-validate
+            # Player returned a NEW proposal object - defensive re-validation
+            # (for LLMPlayer this already passed inside revise())
             logger.info("Proposal revised - re-validating for legality")
 
             # Ensure the revised proposal has the same proposal_id
@@ -596,10 +680,11 @@ class GameLoop:
                 logger.info("Revised proposal passed validation")
                 return revised_proposal
             else:
-                # Log illegal revised proposal
+                # Illegal revised proposal: fall back to original (KEEP)
+                # rather than treating this as a withdrawal.
                 logger.warning(
                     f"Revised proposal from {current_player.player_name} "
-                    f"is ILLEGAL: {error_message}"
+                    f"is ILLEGAL: {error_message}. Falling back to original."
                 )
                 self._log_illegal_proposal(
                     revised_proposal,
@@ -607,7 +692,7 @@ class GameLoop:
                     error_message,
                     is_revised=True,
                 )
-                return None
+                return proposal
 
     def _collect_votes(
         self, proposal: Proposal, players: list[BasePlayer]

@@ -342,3 +342,219 @@ def test_log_usage_not_required():
     )
 
     assert result == {"x": 1}
+
+
+# =====================================================================
+# post_parse_validator tests
+# =====================================================================
+
+LEGALITY_TEMPLATE = "Legality error: {validation_error}\nFix your proposal."
+
+
+def _passes(_: object) -> None:
+    """Validator that always passes."""
+
+
+def _fails_once(call_log: list) -> object:
+    """Return a validator that raises ValueError on first call."""
+
+    def validator(parsed: object) -> None:
+        call_log.append(parsed)
+        if len(call_log) == 1:
+            raise ValueError("illegal proposal")
+
+    return validator
+
+
+def test_post_parse_validator_success_first_attempt():
+    """When validator passes, result is returned on first attempt."""
+    api_client = _make_api_client(_completion("good"))
+    history = _history()
+
+    result = llm_retry_loop(
+        history=history,
+        api_client=api_client,
+        parse_fn=Mock(return_value={"ok": True}),
+        max_retries=3,
+        retry_template=TEMPLATE,
+        actor_label="Actor",
+        action_description="action",
+        post_parse_validator=_passes,
+    )
+
+    assert result == {"ok": True}
+    assert api_client.get_completion.call_count == 1
+    # Successful assistant message appended
+    assert history[-1].role == "assistant"
+
+
+def test_post_parse_validator_failure_then_success():
+    """Validator failure triggers retry; second attempt succeeds."""
+    call_log: list = []
+    validator = _fails_once(call_log)
+    parse_fn = Mock(return_value={"ok": True})
+    api_client = _make_api_client(
+        _completion("attempt1"), _completion("attempt2")
+    )
+    history = _history()
+
+    result = llm_retry_loop(
+        history=history,
+        api_client=api_client,
+        parse_fn=parse_fn,
+        max_retries=3,
+        retry_template=TEMPLATE,
+        actor_label="Actor",
+        action_description="action",
+        post_parse_validator=validator,
+        legality_retry_template=LEGALITY_TEMPLATE,
+    )
+
+    assert result == {"ok": True}
+    assert api_client.get_completion.call_count == 2
+    # History: [system, bad_assistant, legality_retry_user, good_assistant]
+    assert len(history) == 4
+    assert history[1].role == "assistant"
+    assert history[1].content == "attempt1"
+    assert history[2].role == "user"
+    assert "illegal proposal" in history[2].content
+    assert history[3].role == "assistant"
+    assert history[3].content == "attempt2"
+
+
+def test_post_parse_validator_uses_legality_template():
+    """Legality retry message uses legality_retry_template."""
+    call_log: list = []
+    validator = _fails_once(call_log)
+    parse_fn = Mock(return_value={"ok": True})
+    api_client = _make_api_client(_completion("bad"), _completion("good"))
+    history = _history()
+
+    llm_retry_loop(
+        history=history,
+        api_client=api_client,
+        parse_fn=parse_fn,
+        max_retries=3,
+        retry_template=TEMPLATE,
+        actor_label="Actor",
+        action_description="action",
+        post_parse_validator=validator,
+        legality_retry_template=LEGALITY_TEMPLATE,
+    )
+
+    retry_msg = history[2]
+    assert retry_msg.role == "user"
+    assert "Legality error:" in retry_msg.content
+    assert "illegal proposal" in retry_msg.content
+
+
+def test_post_parse_validator_falls_back_to_retry_template():
+    """Falls back to retry_template when legality_retry_template is None."""
+    call_log: list = []
+    validator = _fails_once(call_log)
+    parse_fn = Mock(return_value={"ok": True})
+    api_client = _make_api_client(_completion("bad"), _completion("good"))
+    history = _history()
+
+    llm_retry_loop(
+        history=history,
+        api_client=api_client,
+        parse_fn=parse_fn,
+        max_retries=3,
+        retry_template=TEMPLATE,
+        actor_label="Actor",
+        action_description="action",
+        post_parse_validator=validator,
+    )
+
+    retry_msg = history[2]
+    assert retry_msg.role == "user"
+    assert "Error:" in retry_msg.content
+    assert "illegal proposal" in retry_msg.content
+
+
+def test_post_parse_validator_exhaustion_raises_runtime_error():
+    """When all attempts fail the validator, RuntimeError is raised."""
+    validator = Mock(side_effect=ValueError("always illegal"))
+    parse_fn = Mock(return_value={"ok": True})
+    api_client = _make_api_client(
+        _completion("bad"),
+        _completion("bad"),
+        _completion("bad"),
+    )
+
+    with pytest.raises(RuntimeError):
+        llm_retry_loop(
+            history=_history(),
+            api_client=api_client,
+            parse_fn=parse_fn,
+            max_retries=3,
+            retry_template=TEMPLATE,
+            actor_label="Actor",
+            action_description="action",
+            post_parse_validator=validator,
+            legality_retry_template=LEGALITY_TEMPLATE,
+        )
+
+    assert api_client.get_completion.call_count == 3
+    assert parse_fn.call_count == 3
+    assert validator.call_count == 3
+
+
+def test_post_parse_validator_failure_not_appended_to_secondary():
+    """Failed-validator responses are never added to secondary_append."""
+    call_log: list = []
+    validator = _fails_once(call_log)
+    secondary: list = []
+    parse_fn = Mock(return_value={"ok": True})
+    api_client = _make_api_client(_completion("bad"), _completion("good"))
+
+    llm_retry_loop(
+        history=_history(),
+        api_client=api_client,
+        parse_fn=parse_fn,
+        max_retries=3,
+        retry_template=TEMPLATE,
+        actor_label="Actor",
+        action_description="action",
+        post_parse_validator=validator,
+        legality_retry_template=LEGALITY_TEMPLATE,
+        secondary_append=secondary,
+    )
+
+    # Only the second (successful) response should appear in secondary
+    assert len(secondary) == 1
+    assert secondary[0].content == "good"
+
+
+def test_combined_parse_failure_and_validator_failure_share_attempt_counter():
+    """Parse and validator failures together consume the max_retries budget."""
+    # Attempt 1: parse fails
+    # Attempt 2: parse succeeds but validator fails
+    # Attempt 3: parse succeeds and validator passes
+    parse_fn = Mock(
+        side_effect=[ValueError("bad json"), {"ok": True}, {"ok": True}]
+    )
+    call_log: list = []
+    validator = _fails_once(call_log)
+    api_client = _make_api_client(
+        _completion("attempt1"),
+        _completion("attempt2"),
+        _completion("attempt3"),
+    )
+    history = _history()
+
+    result = llm_retry_loop(
+        history=history,
+        api_client=api_client,
+        parse_fn=parse_fn,
+        max_retries=3,
+        retry_template=TEMPLATE,
+        actor_label="Actor",
+        action_description="action",
+        post_parse_validator=validator,
+        legality_retry_template=LEGALITY_TEMPLATE,
+    )
+
+    assert result == {"ok": True}
+    assert api_client.get_completion.call_count == 3

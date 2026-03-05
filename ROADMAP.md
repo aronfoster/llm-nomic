@@ -28,7 +28,7 @@ Our architecture is built on these principles:
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
 - Need to change text on last withdrawal attempt to make it clear that withdrawing is still an option, just skips your turn
 - Remove ephemeral block from `memory_update` for Anthropic clients so we're not paying to write to the cache.
-- On illegal proposal (e.g. AMEND a rule that doesn't exist) game should count as a withdrawal and allow a retry, not crash
+- ~~On illegal proposal (e.g. AMEND a rule that doesn't exist) game should count as a withdrawal and allow a retry, not crash~~ — **Done (Sprint 38 Task 2):** illegal proposals and illegal revised proposals now retry within the existing `max_propose_retries`/`max_revise_retries` budget using `post_parse_validator` in `llm_retry_loop`.
 
 
 ## Future Work

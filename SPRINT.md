@@ -294,24 +294,24 @@ is accepted by the parser but subsequently rejected for game-state reasons, and 
 same pattern. The two known cases are illegal proposals and illegal revised proposals.
 
 **Acceptance Criteria:**
-- [ ] An illegal proposal (bad rule ID, immutable target, etc.) causes a retry with the
+- [x] An illegal proposal (bad rule ID, immutable target, etc.) causes a retry with the
   legality error message injected into conversation history
-- [ ] An illegal revised proposal (MODIFY action) causes a retry, not a silent withdrawal
-- [ ] Combined JSON-parse + legality attempt count is bounded by `max_propose_retries`
+- [x] An illegal revised proposal (MODIFY action) causes a retry, not a silent withdrawal
+- [x] Combined JSON-parse + legality attempt count is bounded by `max_propose_retries`
   (proposal) and `max_revise_retries` (revision) respectively
-- [ ] On proposal exhaustion: `RuntimeError` raised (turn ends, same as today)
-- [ ] On revision exhaustion: original proposal returned unchanged (KEEP); turn proceeds
+- [x] On proposal exhaustion: `RuntimeError` raised (turn ends, same as today)
+- [x] On revision exhaustion: original proposal returned unchanged (KEEP); turn proceeds
   to vote — **not** treated as withdrawal
-- [ ] `PROPOSE_LEGALITY_RETRY_TEMPLATE` and `REVISE_LEGALITY_RETRY_TEMPLATE` added to
+- [x] `PROPOSE_LEGALITY_RETRY_TEMPLATE` and `REVISE_LEGALITY_RETRY_TEMPLATE` added to
   `llm/prompts.py`; both contain `{validation_error}`; neither embeds game rules in the
   template body
-- [ ] Tests added or updated to cover: proposal legality retry (succeeds on retry),
+- [x] Tests added or updated to cover: proposal legality retry (succeeds on retry),
   proposal legality exhaustion (RuntimeError), revision legality retry (succeeds on retry),
   revision legality exhaustion (KEEP fallback), combined parse+legality attempt counting
-- [ ] `test_run_turn_stops_on_illegal_proposal` and
+- [x] `test_run_turn_stops_on_illegal_proposal` and
   `test_step_3_revise_rejects_illegal_revised_proposal` updated to reflect new retry
   behavior (these currently test that failures end the turn immediately)
-- [ ] `make ci` passes
+- [x] `make ci` passes
 
 ---
 
