@@ -481,7 +481,7 @@ class TestLLMJudgeTurnResponses:
         score_text = '{"private_thoughts":"ok","score_adjustments":[]}'
         judge = _make_llm_judge()
         # Simulate state after get_veto ran by initializing _turn_history
-        judge._turn_history = [
+        judge.turn_history = [
             ChatMessage(role="system", content="sys"),
             ChatMessage(role="user", content="ctx"),
         ]
@@ -502,7 +502,7 @@ class TestLLMJudgeTurnResponses:
         )
         judge = _make_llm_judge()
         # Simulate state after get_veto ran by initializing _turn_history
-        judge._turn_history = [
+        judge.turn_history = [
             ChatMessage(role="system", content="sys"),
             ChatMessage(role="user", content="ctx"),
         ]
@@ -573,29 +573,29 @@ class TestLLMJudgeTurnResponses:
 
         judge.get_veto(gm, Mock(), [], [])
         # After get_veto: [system_with_ctx, veto_prompt, veto_response]
-        assert len(judge._turn_history) == 3
+        assert len(judge.turn_history) == 3
 
         judge.assess_scores(gm, [], Mock(), [], [], proposal_passed=True)
         # After assess_scores: [..., score_prompt, score_response]
-        assert len(judge._turn_history) == 5
+        assert len(judge.turn_history) == 5
 
         judge.maintain_state(gm, Mock(), None, None)
         # After maintain_state: [..., maintain_prompt, maintain_response]
-        assert len(judge._turn_history) == 7
+        assert len(judge.turn_history) == 7
 
         # Verify roles at known positions
-        assert judge._turn_history[0].role == "system"  # system+context
-        assert judge._turn_history[1].role == "user"  # veto prompt
-        assert judge._turn_history[2].role == "assistant"  # veto response
-        assert judge._turn_history[3].role == "user"  # score prompt
-        assert judge._turn_history[4].role == "assistant"  # score response
-        assert judge._turn_history[5].role == "user"  # maintain prompt
-        assert judge._turn_history[6].role == "assistant"  # maintain response
+        assert judge.turn_history[0].role == "system"  # system+context
+        assert judge.turn_history[1].role == "user"  # veto prompt
+        assert judge.turn_history[2].role == "assistant"  # veto response
+        assert judge.turn_history[3].role == "user"  # score prompt
+        assert judge.turn_history[4].role == "assistant"  # score response
+        assert judge.turn_history[5].role == "user"  # maintain prompt
+        assert judge.turn_history[6].role == "assistant"  # maintain response
 
         # Content is correct
-        assert judge._turn_history[2].content == veto_text
-        assert judge._turn_history[4].content == score_text
-        assert judge._turn_history[6].content == state_text
+        assert judge.turn_history[2].content == veto_text
+        assert judge.turn_history[4].content == score_text
+        assert judge.turn_history[6].content == state_text
 
 
 # =====================================================================
@@ -628,7 +628,7 @@ class TestLLMJudgeUpdateMemory:
         veto_prompt = ChatMessage(role="user", content="veto prompt")
         veto_resp = ChatMessage(role="assistant", content="veto response")
         history = [sys_msg, veto_prompt, veto_resp]
-        judge._turn_history = history
+        judge.turn_history = history
         judge._judge_turn_responses = [veto_resp]
         return judge, history
 
@@ -648,7 +648,7 @@ class TestLLMJudgeUpdateMemory:
         mm.max_characters = 5000
         judge = _make_llm_judge(memory_manager=mm)
         judge._judge_turn_responses = []
-        judge._turn_history = [
+        judge.turn_history = [
             ChatMessage(role="system", content="sys"),
         ]
 
@@ -793,7 +793,7 @@ class TestLLMJudgeUpdateMemory:
             state_p,
             state_r,
         ]
-        judge._turn_history = history
+        judge.turn_history = history
         judge._judge_turn_responses = [veto_r, score_r, state_r]
         judge.api_client.get_completion.return_value = CompletionResult(
             text="I" * 100, raw_response=None, client_latency_ms=0
@@ -859,7 +859,7 @@ class TestGameLoopResetJudgeTurnState:
     def test_clears_turn_history_on_llm_judge(self, mock_game_manager: Mock):
         """Empties _turn_history on an LLMJudge at turn reset."""
         judge = LLMJudge(Mock(), api_client=Mock())
-        judge._turn_history = [
+        judge.turn_history = [
             ChatMessage(role="system", content="Old system"),
             ChatMessage(role="user", content="Old context"),
             ChatMessage(role="assistant", content="Old veto response"),
@@ -870,7 +870,7 @@ class TestGameLoopResetJudgeTurnState:
         )
         game_loop._reset_judge_turn_state()
 
-        assert judge._turn_history == []
+        assert judge.turn_history == []
 
     def test_clears_both_accumulators_together(self, mock_game_manager: Mock):
         """_reset_judge_turn_state clears both _judge_turn_responses and
@@ -879,7 +879,7 @@ class TestGameLoopResetJudgeTurnState:
         judge._judge_turn_responses = [
             ChatMessage(role="assistant", content="Response")
         ]
-        judge._turn_history = [
+        judge.turn_history = [
             ChatMessage(role="system", content="System"),
             ChatMessage(role="user", content="Context"),
         ]
@@ -890,7 +890,7 @@ class TestGameLoopResetJudgeTurnState:
         game_loop._reset_judge_turn_state()
 
         assert judge._judge_turn_responses == []
-        assert judge._turn_history == []
+        assert judge.turn_history == []
 
     def test_no_op_on_human_judge(self, mock_game_manager: Mock):
         """Does not raise and is a no-op for a HumanJudge."""

@@ -1204,13 +1204,13 @@ class GameLoop:
     def _reset_judge_turn_state(self) -> None:
         """Reset the judge's per-turn state.
 
-        Clears ``_judge_turn_responses`` and ``_turn_history`` on an
+        Clears ``_judge_turn_responses`` and ``turn_history`` on an
         ``LLMJudge`` so each turn starts with fresh accumulators. Is a no-op
         for a ``HumanJudge`` or any other non-LLM judge.
         """
         if isinstance(self.judge, LLMJudge):
             self.judge._judge_turn_responses = []
-            self.judge._turn_history = []
+            self.judge.turn_history = []
 
     def _update_all_memories(self) -> None:
         """Trigger memory updates for all LLM players and the LLM judge.

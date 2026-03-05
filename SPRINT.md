@@ -155,13 +155,13 @@ Everything else must behave identically:
 - Remove tests that no longer reflect current structure
 
 **Acceptance Criteria:**
-- [ ] The retry loop is no longer duplicated across `LLMPlayer` and `LLMJudge`
-- [ ] All seven retry templates include `{validation_error}` and the helper always formats with it
-- [ ] A status print message is emitted before every LLM call (player and judge)
-- [ ] `LLMJudge._turn_history` renamed to `LLMJudge.turn_history`
-- [ ] `_judge_turn_responses` never contains retried/rejected responses
-- [ ] Tests added or updated to cover the retry helper directly
-- [ ] `make ci` passes
+- [x] The retry loop is no longer duplicated across `LLMPlayer` and `LLMJudge`
+- [x] All seven retry templates include `{validation_error}` and the helper always formats with it
+- [x] A status print message is emitted before every LLM call (player and judge)
+- [x] `LLMJudge._turn_history` renamed to `LLMJudge.turn_history`
+- [x] `_judge_turn_responses` never contains retried/rejected responses
+- [x] Tests added or updated to cover the retry helper directly
+- [x] `make ci` passes
 
 **Notes:**
 This is the natural foundation for Tasks 2 and 3, but those tasks may proceed before or

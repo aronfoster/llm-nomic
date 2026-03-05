@@ -75,7 +75,7 @@ def _make_judge_with_history(prompt_builder=None, api_client=None):
     # Simulate turn_history as initialized by a successful get_veto.
     # System message now embeds the full turn context; no separate
     # context user message.
-    judge._turn_history = [
+    judge.turn_history = [
         ChatMessage(
             role="system",
             content=llm_prompts.JUDGE_SYSTEM_PROMPT + "\n\nturn context",
@@ -138,13 +138,13 @@ def test_get_veto_initializes_turn_history(mock_game_manager):
     judge.get_veto(mock_game_manager, Mock(), [], [])
 
     # [system_with_context, veto_prompt, veto_response] — 3 items
-    assert len(judge._turn_history) == 3
-    assert judge._turn_history[0].role == "system"
-    assert llm_prompts.JUDGE_SYSTEM_PROMPT in judge._turn_history[0].content
-    assert "turn context" in judge._turn_history[0].content
-    assert judge._turn_history[1] is veto_prompt_msg
-    assert judge._turn_history[2].role == "assistant"
-    assert judge._turn_history[2].content == veto_text
+    assert len(judge.turn_history) == 3
+    assert judge.turn_history[0].role == "system"
+    assert llm_prompts.JUDGE_SYSTEM_PROMPT in judge.turn_history[0].content
+    assert "turn context" in judge.turn_history[0].content
+    assert judge.turn_history[1] is veto_prompt_msg
+    assert judge.turn_history[2].role == "assistant"
+    assert judge.turn_history[2].content == veto_text
 
 
 def test_assess_scores_returns_adjustments_without_mutation(
@@ -200,17 +200,17 @@ def test_assess_scores_appends_to_turn_history(mock_game_manager):
     judge = _make_judge_with_history(
         prompt_builder=prompt_builder, api_client=api_client
     )
-    history_len_before = len(judge._turn_history)
+    history_len_before = len(judge.turn_history)
 
     judge.assess_scores(
         mock_game_manager, [], Mock(), [], [], proposal_passed=True
     )
 
     # score_prompt + assistant_response were appended
-    assert len(judge._turn_history) == history_len_before + 2
-    assert judge._turn_history[history_len_before] is score_prompt_msg
-    assert judge._turn_history[history_len_before + 1].role == "assistant"
-    assert judge._turn_history[history_len_before + 1].content == score_text
+    assert len(judge.turn_history) == history_len_before + 2
+    assert judge.turn_history[history_len_before] is score_prompt_msg
+    assert judge.turn_history[history_len_before + 1].role == "assistant"
+    assert judge.turn_history[history_len_before + 1].content == score_text
 
 
 def test_maintain_state_appends_to_turn_history(mock_game_manager):
@@ -231,15 +231,15 @@ def test_maintain_state_appends_to_turn_history(mock_game_manager):
     judge = _make_judge_with_history(
         prompt_builder=prompt_builder, api_client=api_client
     )
-    history_len_before = len(judge._turn_history)
+    history_len_before = len(judge.turn_history)
 
     judge.maintain_state(mock_game_manager, Mock(), None, None)
 
     # maintain_prompt + assistant_response were appended
-    assert len(judge._turn_history) == history_len_before + 2
-    assert judge._turn_history[history_len_before] is maintain_msg
-    assert judge._turn_history[history_len_before + 1].role == "assistant"
-    assert judge._turn_history[history_len_before + 1].content == state_text
+    assert len(judge.turn_history) == history_len_before + 2
+    assert judge.turn_history[history_len_before] is maintain_msg
+    assert judge.turn_history[history_len_before + 1].role == "assistant"
+    assert judge.turn_history[history_len_before + 1].content == state_text
 
 
 def test_turn_history_sent_to_api_in_assess_scores(mock_game_manager):
@@ -254,7 +254,7 @@ def test_turn_history_sent_to_api_in_assess_scores(mock_game_manager):
     prompt_builder.build_judge_score_prompt.return_value = score_prompt_msg
 
     judge = _make_judge_with_history(prompt_builder=prompt_builder)
-    pre_history = list(judge._turn_history)  # snapshot before
+    pre_history = list(judge.turn_history)  # snapshot before
 
     # Capture messages at call time (before mutation on success)
     captured: list[list[ChatMessage]] = []
@@ -345,13 +345,13 @@ def test_get_veto_retry_appends_to_turn_history(mock_game_manager):
 
     # [system_with_ctx, veto_prompt, bad_response, retry_prompt,
     #  good_response] — 5 items
-    assert len(judge._turn_history) == 5
-    assert judge._turn_history[2].role == "assistant"
-    assert judge._turn_history[2].content == bad_text
-    assert judge._turn_history[3].role == "user"
-    assert "FINAL attempt" in judge._turn_history[3].content
-    assert judge._turn_history[4].role == "assistant"
-    assert judge._turn_history[4].content == good_text
+    assert len(judge.turn_history) == 5
+    assert judge.turn_history[2].role == "assistant"
+    assert judge.turn_history[2].content == bad_text
+    assert judge.turn_history[3].role == "user"
+    assert "FINAL attempt" in judge.turn_history[3].content
+    assert judge.turn_history[4].role == "assistant"
+    assert judge.turn_history[4].content == good_text
 
 
 def test_get_veto_raises_after_max_retries(mock_game_manager):
@@ -487,20 +487,20 @@ def test_assess_scores_retry_appends_to_turn_history(mock_game_manager):
     judge = _make_judge_with_history(
         prompt_builder=prompt_builder, api_client=api_client
     )
-    history_len_before = len(judge._turn_history)
+    history_len_before = len(judge.turn_history)
 
     judge.assess_scores(
         mock_game_manager, [], Mock(), [], [], proposal_passed=True
     )
 
     # score_prompt, bad_response, retry_prompt, good_response were appended
-    assert len(judge._turn_history) == history_len_before + 4
-    assert judge._turn_history[history_len_before] is score_prompt_msg
-    assert judge._turn_history[history_len_before + 1].role == "assistant"
-    assert judge._turn_history[history_len_before + 1].content == bad_text
-    assert judge._turn_history[history_len_before + 2].role == "user"
-    assert judge._turn_history[history_len_before + 3].role == "assistant"
-    assert judge._turn_history[history_len_before + 3].content == good_text
+    assert len(judge.turn_history) == history_len_before + 4
+    assert judge.turn_history[history_len_before] is score_prompt_msg
+    assert judge.turn_history[history_len_before + 1].role == "assistant"
+    assert judge.turn_history[history_len_before + 1].content == bad_text
+    assert judge.turn_history[history_len_before + 2].role == "user"
+    assert judge.turn_history[history_len_before + 3].role == "assistant"
+    assert judge.turn_history[history_len_before + 3].content == good_text
 
 
 def test_assess_scores_raises_after_max_retries(mock_game_manager):
