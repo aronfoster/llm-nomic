@@ -94,7 +94,7 @@ others. The helper always formats the template with `str(e)` from the caught `Va
 **LLMJudge-specific: secondary response tracking.**
 On a successful parse, the three `LLMJudge` actions also append the assistant message to
 `self._judge_turn_responses` (a separate list used later by `update_memory()`). Only the
-final successful response for each action (veto, score, maintain_state) should appear in
+final response for each action (veto, score, maintain_state; successful or unsuccessful) should appear in
 this list — retried or rejected responses must never be added to it. The helper
 must support an optional secondary-append parameter for this; the `LLMPlayer` actions do
 not use it.
