@@ -174,34 +174,144 @@ after this one at the Developer's discretion.
 **Priority:** High
 
 **Description:**
-When a player's proposal passes JSON parsing but fails game-legality validation (e.g.,
-AMEND/REPEAL/TRANSMUTE targeting a rule ID that does not exist), the engine should feed the
-error back to the LLM and retry rather than ending the turn. The error message sent to the
-LLM must describe the specific legality violation.
+When a player's proposal passes JSON parsing but fails game-legality validation, the engine
+currently ends the turn with no retry. This task wires legality failures into the same retry
+loop used for JSON-parse failures, so the LLM gets a chance to correct the mistake.
 
-Retry attempts for legality failures count against the same limit as JSON-parse failures
-(i.e., the total number of propose attempts is bounded by the existing
-`max_propose_retries`). If all retries are exhausted, the turn ends the same way it does
-today.
+The same fix applies to the revision phase: a MODIFY action that produces an illegal revised
+proposal currently ends the turn silently (treated as withdrawal); it should also retry.
 
-The same fix applies to the revision phase: if a MODIFY action produces an illegal revised
-proposal, that legality failure should also trigger a retry rather than silently treating
-the revision as a withdrawal.
+#### Current Behavior (the bugs being fixed)
+
+**Proposal step (`_get_and_validate_proposal` in `core/game_loop.py`):**
+After `propose()` returns, the game loop assigns `proposal_id`, calls `validate_proposal()`,
+and — if the proposal is illegal — logs it, clears `proposal_id`, and returns `None`. The
+turn ends immediately. The player is never told what was wrong; there is no retry.
+
+**Revision step (`_handle_revision` in `core/game_loop.py`):**
+After `revise()` returns a new proposal object (MODIFY action), the game loop re-validates
+it. If illegal, it logs the error and returns `None`. This is treated identically to a
+withdrawal — the turn ends with no vote, even though the original proposal was valid. There
+is no retry.
+
+#### Required New Behavior
+
+**Proposal legality retry:**
+- When a structurally-valid proposal fails `validate_proposal()`, inject the error message
+  into the player's conversation history and prompt the player to try again.
+- Retry attempts for legality failures count against the same per-turn limit as JSON-parse
+  failures: the combined total of all proposal attempts (parse failures + legality failures)
+  must not exceed `tuning.max_propose_retries`.
+- On exhaustion: raise `RuntimeError` (same as today — the turn ends).
+
+**Revision legality retry:**
+- When a MODIFY action produces an illegal revised proposal, inject the error message into
+  conversation history and prompt the player to try another revision (another
+  KEEP/MODIFY/WITHDRAW response).
+- Retry attempts count against `tuning.max_revise_retries`, shared with JSON-parse
+  failures in the revision phase.
+- On exhaustion: **fall back to KEEP** — return the original `proposal` unchanged and
+  proceed to the vote. Do **not** return `None`; the original proposal was valid and the
+  game should continue with it.
+  - This differs from the current behavior, which returns `None` (withdrawal).
+
+#### Retry Prompt Templates
+
+Add two new constants to `llm/prompts.py`:
+
+- `PROPOSE_LEGALITY_RETRY_TEMPLATE` — used when a proposal passes JSON parsing but fails
+  legality validation.
+- `REVISE_LEGALITY_RETRY_TEMPLATE` — used when a MODIFY revision passes JSON parsing but
+  fails legality validation.
+
+Both templates must follow a **generic format**: `{validation_error}` carries the full
+explanation of what went wrong (e.g., `"Rule 999 not found."` or `"Cannot amend immutable
+rule 101."`). The template body itself should **not** re-embed action-specific rules or
+the full JSON schema — the error message is self-explanatory. A short reminder of the
+expected output format (key names only, no rules) is acceptable and left to the Developer.
+Both templates must contain a `{validation_error}` placeholder.
+
+The existing `PROPOSE_RETRY_TEMPLATE` and `REVISE_RETRY_TEMPLATE` (used for JSON-parse
+failures) are unchanged.
+
+#### Wiring Legality Validation into the Retry Loop
+
+Legality validation must happen **inside** the retry loop so that its failures consume
+attempts from the same counter as JSON-parse failures. The Developer has full discretion
+over the implementation approach (e.g., a `post_parse_validator` parameter on
+`llm_retry_loop()`, a validator-wrapping closure passed as `parse_fn`, or another
+pattern). The constraint is purely behavioral: one shared attempt counter, one unified
+retry loop.
+
+**`proposal_id` handling:** `validate_proposal()` requires a non-`None` `proposal_id`.
+The game loop currently assigns this from `game_state.next_proposal_id` after `propose()`
+returns. If legality validation is pulled into the `propose()` retry loop, the Developer
+must ensure the correct ID is assigned before validation and that the proposal returned by
+`propose()` still has `proposal_id=None` (the game loop's post-return check at
+`_get_and_validate_proposal` line 402 enforces this).
+
+**Double-validation:** After this task, legality validation will happen inside the retry
+loop before `propose()` returns. The existing call to `validate_proposal()` in
+`_get_and_validate_proposal()` will be redundant for the normal path. The Developer should
+clean this up to avoid redundant work; keeping it as a defensive assertion is acceptable
+if the Developer prefers.
+
+#### Files to Be Aware Of
+
+| File | Relevance |
+|------|-----------|
+| `src/nomic_engine/players/llm_player.py` | `propose()` (lines 151–235) and `revise()` (lines 448–525) — primary change sites |
+| `src/nomic_engine/core/game_loop.py` | `_get_and_validate_proposal()` (lines 363–430) and `_handle_revision()` (lines 544–610) — existing legality-check logic |
+| `src/nomic_engine/validation/validator.py` | `validate_proposal(proposal, player_name, game_manager) -> tuple[bool, str]` |
+| `src/nomic_engine/llm/retry_helper.py` | `llm_retry_loop()` — the shared helper from Task 1; may need extension |
+| `src/nomic_engine/llm/prompts.py` | Add `PROPOSE_LEGALITY_RETRY_TEMPLATE`, `REVISE_LEGALITY_RETRY_TEMPLATE` |
+| `src/nomic_engine/data_models.py` | `Proposal` dataclass; `GameState.next_proposal_id` |
+
+#### Legality Error Messages (for reference)
+
+`validate_proposal()` returns these error strings on failure:
+
+| Scenario | Error string |
+|----------|-------------|
+| Proposer name mismatch | `"Player {player_name} submitted an illegal proposal attributed to {proposal.proposer_name}."` |
+| ADD with target_rule_id | `"Add proposals must not have a target_rule_id."` |
+| ADD without new_text | `"Add proposals must have new_text."` |
+| ADD where rule ID already exists | `"Rule {proposal_id} already exists."` |
+| AMEND without target_rule_id | `"Amend proposals must have a target_rule_id."` |
+| AMEND without new_text | `"Amend proposals must have new_text."` |
+| AMEND targeting non-existent rule | `"Rule {target_rule_id} not found."` |
+| AMEND targeting immutable rule | `"Cannot amend immutable rule {target_rule_id}."` |
+| REPEAL without target_rule_id | `"Repeal proposals must have a target_rule_id."` |
+| REPEAL targeting non-existent rule | `"Rule {target_rule_id} not found."` |
+| REPEAL targeting immutable rule | `"Cannot repeal immutable rule {target_rule_id}."` |
+| TRANSMUTE without target_rule_id | `"Transmute proposals must have a target_rule_id."` |
+| TRANSMUTE targeting non-existent rule | `"Rule {target_rule_id} not found."` |
+
+#### Other Similar Gaps
+
+The Developer should search for any other location where a structurally-valid LLM response
+is accepted by the parser but subsequently rejected for game-state reasons, and apply the
+same pattern. The two known cases are illegal proposals and illegal revised proposals.
 
 **Acceptance Criteria:**
-- [ ] An illegal proposal (bad rule ID, etc.) causes a retry with the legality error
-  message injected into conversation history
-- [ ] An illegal revised proposal (from the revision phase) causes a retry with the
-  legality error message, rather than silently withdrawing
-- [ ] The total propose/revise attempt count is bounded by the existing retry limits
-- [ ] On exhaustion, turn behavior matches the current fallback (turn ends)
-- [ ] Tests added or updated to cover both the proposal and revision retry paths
+- [ ] An illegal proposal (bad rule ID, immutable target, etc.) causes a retry with the
+  legality error message injected into conversation history
+- [ ] An illegal revised proposal (MODIFY action) causes a retry, not a silent withdrawal
+- [ ] Combined JSON-parse + legality attempt count is bounded by `max_propose_retries`
+  (proposal) and `max_revise_retries` (revision) respectively
+- [ ] On proposal exhaustion: `RuntimeError` raised (turn ends, same as today)
+- [ ] On revision exhaustion: original proposal returned unchanged (KEEP); turn proceeds
+  to vote — **not** treated as withdrawal
+- [ ] `PROPOSE_LEGALITY_RETRY_TEMPLATE` and `REVISE_LEGALITY_RETRY_TEMPLATE` added to
+  `llm/prompts.py`; both contain `{validation_error}`; neither embeds game rules in the
+  template body
+- [ ] Tests added or updated to cover: proposal legality retry (succeeds on retry),
+  proposal legality exhaustion (RuntimeError), revision legality retry (succeeds on retry),
+  revision legality exhaustion (KEEP fallback), combined parse+legality attempt counting
+- [ ] `test_run_turn_stops_on_illegal_proposal` and
+  `test_step_3_revise_rejects_illegal_revised_proposal` updated to reflect new retry
+  behavior (these currently test that failures end the turn immediately)
 - [ ] `make ci` passes
-
-**Notes:**
-The Developer should also look for any other similar gaps (valid JSON, failed legality) and
-apply the same pattern. The known cases are illegal proposals and illegal revised proposals;
-there may be others.
 
 ---
 
