@@ -436,7 +436,11 @@ class LLMPlayer(BasePlayer):
         """Append a pivot prompt while preserving full turn context."""
         del discussions
 
-        pivot_message = prompts.WITHDRAWAL_RETRY_TEMPLATE.format(
+        if withdrawal_attempt == max_withdrawal_retries:
+            template = prompts.WITHDRAWAL_LAST_ATTEMPT_TEMPLATE
+        else:
+            template = prompts.WITHDRAWAL_RETRY_TEMPLATE
+        pivot_message = template.format(
             withdrawal_attempt=withdrawal_attempt,
             max_withdrawal_retries=max_withdrawal_retries,
         )

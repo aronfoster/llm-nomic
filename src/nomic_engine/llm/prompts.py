@@ -340,6 +340,18 @@ WITHDRAWAL ATTEMPT: {withdrawal_attempt} of {max_withdrawal_retries}
 
 Return only valid JSON using the standard proposal schema."""
 
+WITHDRAWAL_LAST_ATTEMPT_TEMPLATE = """Your previous proposal was withdrawn \
+after discussion.
+
+WITHDRAWAL ATTEMPT: {withdrawal_attempt} of {max_withdrawal_retries} \
+(THIS IS YOUR LAST PROPOSAL ATTEMPT)
+
+Important: You may still choose to WITHDRAW during the revision phase, but \
+doing so will end your turn with no vote — your proposal will be skipped \
+entirely this round.
+
+Return only valid JSON using the standard proposal schema."""
+
 DISCUSS_PROPOSAL_UPDATED_TEMPLATE = """The proposer has withdrawn \
 their previous proposal and submitted a new one.
 
