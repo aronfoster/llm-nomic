@@ -19,18 +19,11 @@ Our architecture is built on these principles:
 
 ### HIGH PRIORITY
 
-- Need to have all LLM input failures (e.g. bad rule number, ABSTAIN vote when not allowed, etc.) go through retry logic with basic (sanitized) error descriptions so the LLM can fix it.
-  - Sprint 38 Task 1 complete: shared `llm_retry_loop` helper extracted; JSON-parse retries unified across all 7 actions; `DISCUSS_RETRY_TEMPLATE` and `VOTE_RETRY_TEMPLATE` now include validation error context.
-  - Sprint 38 Task 2 complete: illegal-proposal and illegal-revised-proposal failures now retry within existing attempt budgets using `post_parse_validator` in `llm_retry_loop`.
-  - Sprint 38 Task 3 complete: ABSTAIN-when-forbidden failures now retry via `post_parse_validator`; exhaustion fallback returns NO instead of ABSTAIN; `_collect_votes()` no longer raises `ValueError`.
-  - Sprint 38 Task 5 complete: `AnthropicApiClient.get_completion()` now accepts `use_cache_control=False` to skip the ephemeral cache write; `LLMPlayer.update_memory()` and `LLMJudge.update_memory()` use the opt-out path to avoid paying to re-write the already-cached system prefix.
+- None
 
 ### Low Priority
 
 - Rules 107, 202, and 205 interaction: If players amend the base rules to allow newly-passed scoring rules to apply retroactively to the turn they were adopted (contrary to current interpretation), the judge scoring prompt would need updating to reflect this change. Currently the prompt explicitly instructs judges not to apply rule changes retroactively.
-- Need to change text on last withdrawal attempt to make it clear that withdrawing is still an option, just skips your turn
-- Remove ephemeral block from `memory_update` for Anthropic clients so we're not paying to write to the cache.
-- ~~On illegal proposal (e.g. AMEND a rule that doesn't exist) game should count as a withdrawal and allow a retry, not crash~~ — **Done (Sprint 38 Task 2):** illegal proposals and illegal revised proposals now retry within the existing `max_propose_retries`/`max_revise_retries` budget using `post_parse_validator` in `llm_retry_loop`.
 
 
 ## Future Work
