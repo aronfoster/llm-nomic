@@ -236,10 +236,12 @@ def test_unanimous_all_abstain_zero_no_passes(
 # =========================================================================
 
 
-def test_collect_votes_rejects_abstain_when_flag_false(
+def test_collect_votes_accepts_abstain_when_flag_false_with_warning(
     mock_game_manager: Mock, mock_game_state: GameState
 ) -> None:
-    """Player returns ABSTAIN when allow_abstention=false → ValueError."""
+    """Player returns ABSTAIN when allow_abstention=false → logged warning,
+    no ValueError raised (ABSTAIN should be caught inside vote() before
+    _collect_votes() is reached, but _collect_votes() is defensive)."""
     from src.nomic_engine.data_models import Proposal, ProposalType
 
     mock_game_state.flags = {
@@ -263,8 +265,11 @@ def test_collect_votes_rejects_abstain_when_flag_false(
         new_text="Test rule.",
     )
 
-    with pytest.raises(ValueError, match="ABSTAIN"):
-        game_loop._collect_votes(proposal, [abstain_player])
+    # Should not raise — _collect_votes() now only logs a warning
+    votes = game_loop._collect_votes(proposal, [abstain_player])
+
+    assert len(votes) == 1
+    assert votes[0].vote == "ABSTAIN"
 
 
 def test_collect_votes_allows_abstain_when_flag_true(

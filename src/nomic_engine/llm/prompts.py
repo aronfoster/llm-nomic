@@ -244,6 +244,20 @@ in order:
 
 No other text. Just the JSON object:"""
 
+VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE = """Your vote is not valid.
+
+Error: {validation_error}
+
+ABSTAIN is not permitted in this game. You must vote YES or NO.
+
+Please try again. Output ONLY a valid JSON object with these exact keys
+in order:
+1. "private_thoughts"
+2. "public_reason"
+3. "vote" (one of: "YES" or "NO")
+
+No other text. Just the JSON object:"""
+
 JUDGE_VETO_RETRY_TEMPLATE = """Your previous response was not valid JSON.
 
 Error: {validation_error}

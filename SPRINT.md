@@ -420,22 +420,22 @@ New tests to add (in `tests/src/nomic_engine/players/` or the existing
 | `allow_abstention=True`, all retries exhausted | existing ABSTAIN fallback returned (unchanged behavior) |
 
 **Acceptance Criteria:**
-- [ ] An ABSTAIN vote when `allow_abstention=False` triggers a retry using
+- [x] An ABSTAIN vote when `allow_abstention=False` triggers a retry using
   `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE`, with the error injected into conversation
   history
-- [ ] After retries are exhausted and `allow_abstention=False`, the vote is recorded as
+- [x] After retries are exhausted and `allow_abstention=False`, the vote is recorded as
   NO (not ABSTAIN, no exception raised)
-- [ ] When `allow_abstention=True`, ABSTAIN votes are accepted and the exhaustion fallback
+- [x] When `allow_abstention=True`, ABSTAIN votes are accepted and the exhaustion fallback
   remains ABSTAIN (no behavior change)
-- [ ] The total vote attempt count (JSON-parse failures + ABSTAIN-when-forbidden failures)
+- [x] The total vote attempt count (JSON-parse failures + ABSTAIN-when-forbidden failures)
   is bounded by `tuning.max_vote_retries`
-- [ ] `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE` added to `llm/prompts.py` and contains
+- [x] `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE` added to `llm/prompts.py` and contains
   `{validation_error}`
-- [ ] `_collect_votes()` no longer raises `ValueError` for ABSTAIN-when-forbidden
-- [ ] `test_collect_votes_rejects_abstain_when_flag_false` updated to reflect new behavior
-- [ ] New tests cover: retry-then-success, exhaustion-NO-fallback, combined attempt
+- [x] `_collect_votes()` no longer raises `ValueError` for ABSTAIN-when-forbidden
+- [x] `test_collect_votes_rejects_abstain_when_flag_false` updated to reflect new behavior
+- [x] New tests cover: retry-then-success, exhaustion-NO-fallback, combined attempt
   counting, and unchanged allow-abstention=True paths
-- [ ] `make ci` passes
+- [x] `make ci` passes
 
 ---
 
