@@ -337,7 +337,7 @@ class TestLLMPlayerUpdateMemory:
         captured: list[list[ChatMessage]] = []
 
         def capture_and_return(
-            messages: list[ChatMessage],
+            messages: list[ChatMessage], **kwargs: object
         ) -> CompletionResult:
             captured.append(list(messages))
             return CompletionResult(
@@ -435,6 +435,24 @@ class TestLLMPlayerUpdateMemory:
         player.update_memory()
 
         mock_memory_manager.write.assert_called_once_with("Alice", response)
+
+    def test_uses_opt_out_cache_control(
+        self,
+        model_config: ModelDefinition,
+        mock_memory_manager: Mock,
+    ):
+        """update_memory() passes use_cache_control=False to get_completion."""
+        player = _make_llm_player(
+            model_config, memory_manager=mock_memory_manager
+        )
+        player.api_client.get_completion.return_value = CompletionResult(
+            text="C" * 100, raw_response=None, client_latency_ms=0
+        )
+
+        player.update_memory()
+
+        call_kwargs = player.api_client.get_completion.call_args.kwargs
+        assert call_kwargs.get("use_cache_control") is False
 
 
 # =====================================================================
@@ -831,6 +849,20 @@ class TestLLMJudgeUpdateMemory:
         assert "character limit" not in update_msg.content.lower()
         assert "truncated" not in update_msg.content.lower()
 
+    def test_uses_opt_out_cache_control(self):
+        """update_memory() passes use_cache_control=False to get_completion."""
+        mm = Mock()
+        mm.max_characters = 5000
+        judge, _ = self._make_judge_with_turn_history(memory_manager=mm)
+        judge.api_client.get_completion.return_value = CompletionResult(
+            text="J" * 100, raw_response=None, client_latency_ms=0
+        )
+
+        judge.update_memory()
+
+        call_kwargs = judge.api_client.get_completion.call_args.kwargs
+        assert call_kwargs.get("use_cache_control") is False
+
 
 # =====================================================================
 # GameLoop._reset_judge_turn_state() Tests
@@ -1122,7 +1154,7 @@ class TestLLMPlayerUpdateMemoryJudgeOutputs:
         captured: list[list[ChatMessage]] = []
 
         def capture_and_return(
-            messages: list[ChatMessage],
+            messages: list[ChatMessage], **kwargs: object
         ) -> CompletionResult:
             captured.append(list(messages))
             return CompletionResult(
@@ -1159,7 +1191,7 @@ class TestLLMPlayerUpdateMemoryJudgeOutputs:
         captured: list[list[ChatMessage]] = []
 
         def capture_and_return(
-            messages: list[ChatMessage],
+            messages: list[ChatMessage], **kwargs: object
         ) -> CompletionResult:
             captured.append(list(messages))
             return CompletionResult(
@@ -1189,7 +1221,7 @@ class TestLLMPlayerUpdateMemoryJudgeOutputs:
         captured: list[list[ChatMessage]] = []
 
         def capture_and_return(
-            messages: list[ChatMessage],
+            messages: list[ChatMessage], **kwargs: object
         ) -> CompletionResult:
             captured.append(list(messages))
             return CompletionResult(
@@ -1253,7 +1285,7 @@ class TestLLMPlayerUpdateMemoryJudgeOutputs:
         captured: list[list[ChatMessage]] = []
 
         def capture_and_return(
-            messages: list[ChatMessage],
+            messages: list[ChatMessage], **kwargs: object
         ) -> CompletionResult:
             captured.append(list(messages))
             return CompletionResult(

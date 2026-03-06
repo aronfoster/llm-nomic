@@ -612,7 +612,9 @@ class LLMPlayer(BasePlayer):
             ChatMessage(role="user", content=update_prompt)
         )
 
-        result = self.api_client.get_completion(self.turn_history)
+        result = self.api_client.get_completion(
+            self.turn_history, use_cache_control=False
+        )
         self._log_usage(result, "memory_update")
         response = result.text
 

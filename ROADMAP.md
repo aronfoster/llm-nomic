@@ -23,6 +23,7 @@ Our architecture is built on these principles:
   - Sprint 38 Task 1 complete: shared `llm_retry_loop` helper extracted; JSON-parse retries unified across all 7 actions; `DISCUSS_RETRY_TEMPLATE` and `VOTE_RETRY_TEMPLATE` now include validation error context.
   - Sprint 38 Task 2 complete: illegal-proposal and illegal-revised-proposal failures now retry within existing attempt budgets using `post_parse_validator` in `llm_retry_loop`.
   - Sprint 38 Task 3 complete: ABSTAIN-when-forbidden failures now retry via `post_parse_validator`; exhaustion fallback returns NO instead of ABSTAIN; `_collect_votes()` no longer raises `ValueError`.
+  - Sprint 38 Task 5 complete: `AnthropicApiClient.get_completion()` now accepts `use_cache_control=False` to skip the ephemeral cache write; `LLMPlayer.update_memory()` and `LLMJudge.update_memory()` use the opt-out path to avoid paying to re-write the already-cached system prefix.
 
 ### Low Priority
 
