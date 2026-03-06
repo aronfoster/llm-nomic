@@ -320,20 +320,121 @@ same pattern. The two known cases are illegal proposals and illegal revised prop
 **Priority:** High
 
 **Description:**
-When `allow_abstention` is False and an LLM player votes ABSTAIN, the engine should send
-the player an error message explaining that ABSTAIN is not permitted and ask them to vote
-YES or NO. Retry attempts count against the same `max_vote_retries` limit.
+When `allow_abstention` is `False` and an LLM player votes ABSTAIN, the engine currently
+raises a `ValueError` in `_collect_votes()` with no retry, crashing the turn. This task
+wires the ABSTAIN-when-forbidden check into the same retry loop used for JSON-parse
+failures, so the LLM gets a chance to correct the mistake.
 
-If all retries are exhausted and the player still votes ABSTAIN, the engine should record
-a NO vote as the fallback (not crash or raise).
+#### Current Behavior (the bug being fixed)
+
+`game_loop.py` `_collect_votes()` calls `player.vote()`, then — after `vote()` returns —
+checks whether `allow_abstention` is `False` and the returned vote is `ABSTAIN`. If so,
+it raises a `ValueError` (lines 730–735). There is no retry; the turn crashes.
+
+Two compounding bugs:
+1. The `ValueError` fires outside the retry loop, so the LLM never gets a second chance.
+2. The fallback inside `vote()` when all retries are exhausted (`RuntimeError` path,
+   `llm_player.py` lines 386–395) always returns an ABSTAIN vote — which is wrong when
+   ABSTAIN is forbidden.
+
+#### Required New Behavior
+
+**Retry on ABSTAIN-when-forbidden:**
+- When `allow_abstention` is `False`, wire an ABSTAIN check into the retry loop inside
+  `LLMPlayer.vote()` using the `post_parse_validator` parameter of `llm_retry_loop()`.
+  The validator raises `ValueError` if the parsed vote is `"ABSTAIN"`.
+- The retry message (injected into conversation history) must use a new template constant
+  `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE` (see below), passed as `legality_retry_template`
+  to `llm_retry_loop()`.
+- ABSTAIN-when-forbidden failures consume attempts from the same counter as JSON-parse
+  failures. The combined total of all vote attempts must not exceed `tuning.max_vote_retries`.
+
+**Exhaustion fallback:**
+- When `allow_abstention` is `False` and all retries are exhausted, return a `NO` vote
+  (not ABSTAIN) as the fallback. The ABSTAIN fallback is incorrect here — the engine would
+  immediately re-raise the error it was just trying to avoid.
+- When `allow_abstention` is `True` (or unset), keep the existing ABSTAIN fallback
+  unchanged.
+
+**Remove the `ValueError` from `_collect_votes()`:**
+- The check at `game_loop.py` lines 730–735 raises `ValueError` when an ABSTAIN vote is
+  returned and `allow_abstention` is `False`. After this task, that case is handled inside
+  `vote()` before it returns, so this check can never be triggered by an `LLMPlayer`.
+- Remove the `ValueError` raise entirely. The Developer may keep a defensive
+  `logger.warning` or `assert` if they prefer, but it must not raise.
+
+#### New Prompt Template
+
+Add one new constant to `llm/prompts.py`:
+
+- **`VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE`** — used when a syntactically valid vote
+  response contains `"ABSTAIN"` but `allow_abstention` is `False`.
+
+The template must:
+- Contain a `{validation_error}` placeholder (required by `llm_retry_loop()`).
+- Clearly state that ABSTAIN is not allowed in this game and that the player must vote
+  YES or NO.
+- Not embed the full JSON schema or game rules. A reminder of the expected keys is
+  acceptable and left to the Developer.
+
+The `{validation_error}` placeholder will be formatted with the `ValueError` message from
+the `post_parse_validator`. A reasonable validator message is `"ABSTAIN is not permitted;
+you must vote YES or NO."` — exact wording is left to the Developer.
+
+#### Files to Change
+
+| File | Change |
+|------|--------|
+| `src/nomic_engine/llm/prompts.py` | Add `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE` |
+| `src/nomic_engine/players/llm_player.py` | Update `vote()`: pass `post_parse_validator` and `legality_retry_template` to `llm_retry_loop()`; fix the exhaustion fallback to return NO when ABSTAIN is forbidden |
+| `src/nomic_engine/core/game_loop.py` | Remove the `ValueError` raise for ABSTAIN-when-forbidden in `_collect_votes()` (lines 730–735) |
+
+`llm_retry_loop()` in `llm/retry_helper.py` already accepts `post_parse_validator` and
+`legality_retry_template` (added in Task 2) and requires **no changes**.
+
+#### What Must Not Change
+
+- Behavior when `allow_abstention` is `True` (ABSTAIN is accepted; exhaustion fallback
+  remains ABSTAIN).
+- The number of LLM calls made for any sequence of vote outcomes when ABSTAIN is allowed.
+- Log output at `warning` and `error` levels for the existing JSON-parse retry paths.
+- All other vote return values (YES, NO) and their associated `reason` / `private_thoughts`
+  fields.
+
+#### Testing
+
+The existing test `test_collect_votes_rejects_abstain_when_flag_false` asserts that
+`_collect_votes()` raises `ValueError` when a player returns ABSTAIN and
+`allow_abstention=False`. After this task, `_collect_votes()` no longer raises — that
+test must be updated or replaced.
+
+New tests to add (in `tests/src/nomic_engine/players/` or the existing
+`test_allow_abstention.py`, Developer's discretion):
+
+| Scenario | Expected outcome |
+|----------|-----------------|
+| `allow_abstention=False`, first response ABSTAIN, second response YES | YES vote returned; two LLM calls made |
+| `allow_abstention=False`, all responses ABSTAIN (exhaustion) | NO vote returned; no `ValueError` or `RuntimeError` raised |
+| `allow_abstention=False`, ABSTAIN attempt count added to JSON-parse attempt count, together reaching `max_vote_retries` | exhaustion fallback (NO) triggered at correct total count |
+| `allow_abstention=True`, response ABSTAIN | ABSTAIN accepted without retry (unchanged behavior) |
+| `allow_abstention=True`, all retries exhausted | existing ABSTAIN fallback returned (unchanged behavior) |
 
 **Acceptance Criteria:**
-- [ ] An ABSTAIN vote when `allow_abstention=False` triggers a retry with a clear error
-  message injected into conversation history
-- [ ] After retries are exhausted, the vote is recorded as NO
-- [ ] The total vote attempt count is bounded by the existing `max_vote_retries` limit
-- [ ] No `ValueError` is raised by the vote collection path for this case
-- [ ] Tests added or updated to cover the retry and fallback paths
+- [ ] An ABSTAIN vote when `allow_abstention=False` triggers a retry using
+  `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE`, with the error injected into conversation
+  history
+- [ ] After retries are exhausted and `allow_abstention=False`, the vote is recorded as
+  NO (not ABSTAIN, no exception raised)
+- [ ] When `allow_abstention=True`, ABSTAIN votes are accepted and the exhaustion fallback
+  remains ABSTAIN (no behavior change)
+- [ ] The total vote attempt count (JSON-parse failures + ABSTAIN-when-forbidden failures)
+  is bounded by `tuning.max_vote_retries`
+- [ ] `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE` added to `llm/prompts.py` and contains
+  `{validation_error}`
+- [ ] `_collect_votes()` no longer raises `ValueError` for ABSTAIN-when-forbidden
+- [ ] `test_collect_votes_rejects_abstain_when_flag_false` updated to reflect new behavior
+- [ ] New tests cover: retry-then-success, exhaustion-NO-fallback, combined attempt
+  counting, and unchanged allow-abstention=True paths
 - [ ] `make ci` passes
 
 ---
