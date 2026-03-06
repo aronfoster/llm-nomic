@@ -270,9 +270,10 @@ class TestLLMPlayerVote:
 
         vote = player.vote(proposal, game_state, rules)
 
-        # Assertions - should return ABSTAIN with error message
+        # Assertions — allow_abstention=False (default), so exhaustion
+        # fallback is NO, not ABSTAIN
         assert vote.player_name == "TestPlayer"
-        assert vote.vote == "ABSTAIN"
+        assert vote.vote == "NO"
         assert vote.reason == "LLM Error: Failed to generate valid vote."
 
         # Verify API was called MAX_VOTE_RETRIES times (2)
@@ -315,7 +316,7 @@ class TestLLMPlayerVote:
         good_json_response = """{
             "private_thoughts": "Analysis",
             "public_reason": "Reason",
-            "vote": "ABSTAIN"
+            "vote": "YES"
         }"""
         mock_api_instance.get_completion.side_effect = [
             CompletionResult(
@@ -336,7 +337,7 @@ class TestLLMPlayerVote:
 
         # Assertions
         assert vote.player_name == "TestPlayer"
-        assert vote.vote == "ABSTAIN"
+        assert vote.vote == "YES"
         assert vote.reason == "Reason"
 
         # Verify API was called twice
@@ -382,9 +383,10 @@ class TestLLMPlayerVote:
 
         vote = player.vote(proposal, game_state, rules)
 
-        # Assertions - should return ABSTAIN with error message
+        # Assertions — allow_abstention=False (default), so exhaustion
+        # fallback is NO, not ABSTAIN
         assert vote.player_name == "TestPlayer"
-        assert vote.vote == "ABSTAIN"
+        assert vote.vote == "NO"
         assert vote.reason == "LLM Error: Failed to generate valid vote."
 
         # Verify API was called MAX_VOTE_RETRIES times
@@ -451,6 +453,282 @@ class TestLLMPlayerVote:
             player_name="TestPlayer",
             personality="friendly",
             game_state=game_state,
+        )
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    @patch("src.nomic_engine.players.llm_player.parse_vote_response")
+    def test_vote_abstain_forbidden_retries_then_yes(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        proposal,
+        rules,
+    ):
+        """ABSTAIN when allow_abstention=False triggers retry; YES on 2nd."""
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            ChatMessage(role="user", content="Vote instruction")
+        )
+
+        abstain_response = (
+            '{"private_thoughts":"","public_reason":"","vote":"ABSTAIN"}'
+        )
+        yes_response = (
+            '{"private_thoughts":"ok","public_reason":"yes","vote":"YES"}'
+        )
+        mock_api_instance.get_completion.side_effect = [
+            CompletionResult(
+                text=abstain_response, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=yes_response, raw_response=None, client_latency_ms=0
+            ),
+        ]
+        mock_parse.side_effect = [
+            {"private_thoughts": "", "public_reason": "", "vote": "ABSTAIN"},
+            {"private_thoughts": "ok", "public_reason": "yes", "vote": "YES"},
+        ]
+
+        game_state_no_abstain = GameState(
+            scores={"Alice": 0},
+            current_player_name="Alice",
+            move_number=1,
+            turn_order=["Alice"],
+            next_proposal_id=301,
+            flags={"allow_abstention": False},
+        )
+
+        player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [ChatMessage(role="system", content="Sys")]
+
+        vote = player.vote(proposal, game_state_no_abstain, rules)
+
+        assert vote.vote == "YES"
+        assert mock_api_instance.get_completion.call_count == 2
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    @patch("src.nomic_engine.players.llm_player.parse_vote_response")
+    def test_vote_abstain_forbidden_exhaustion_returns_no(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        proposal,
+        rules,
+    ):
+        """All retries ABSTAIN when forbidden → NO fallback, no exception."""
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            ChatMessage(role="user", content="Vote instruction")
+        )
+
+        abstain_response = (
+            '{"private_thoughts":"","public_reason":"","vote":"ABSTAIN"}'
+        )
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=abstain_response, raw_response=None, client_latency_ms=0
+        )
+        mock_parse.return_value = {
+            "private_thoughts": "",
+            "public_reason": "",
+            "vote": "ABSTAIN",
+        }
+
+        game_state_no_abstain = GameState(
+            scores={"Alice": 0},
+            current_player_name="Alice",
+            move_number=1,
+            turn_order=["Alice"],
+            next_proposal_id=301,
+            flags={"allow_abstention": False},
+        )
+
+        player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [ChatMessage(role="system", content="Sys")]
+
+        vote = player.vote(proposal, game_state_no_abstain, rules)
+
+        assert vote.vote == "NO"
+        assert vote.reason == "LLM Error: Failed to generate valid vote."
+        assert (
+            mock_api_instance.get_completion.call_count
+            == player.tuning.max_vote_retries
+        )
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    @patch("src.nomic_engine.players.llm_player.parse_vote_response")
+    def test_vote_abstain_forbidden_combined_attempt_count(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        proposal,
+        rules,
+    ):
+        """JSON-parse + ABSTAIN failures share the same attempt counter."""
+        from src.nomic_engine.data_models import EngineTuningConfig
+
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            ChatMessage(role="user", content="Vote instruction")
+        )
+
+        bad_response = "not json"
+        abstain_response = (
+            '{"private_thoughts":"","public_reason":"","vote":"ABSTAIN"}'
+        )
+        mock_api_instance.get_completion.side_effect = [
+            CompletionResult(
+                text=bad_response, raw_response=None, client_latency_ms=0
+            ),
+            CompletionResult(
+                text=abstain_response, raw_response=None, client_latency_ms=0
+            ),
+            # Third call should never happen because max_vote_retries=2
+        ]
+        mock_parse.side_effect = [
+            ValueError("bad json"),
+            {"private_thoughts": "", "public_reason": "", "vote": "ABSTAIN"},
+        ]
+
+        game_state_no_abstain = GameState(
+            scores={"Alice": 0},
+            current_player_name="Alice",
+            move_number=1,
+            turn_order=["Alice"],
+            next_proposal_id=301,
+            flags={"allow_abstention": False},
+        )
+
+        player = LLMPlayer(
+            "TestPlayer",
+            model_config,
+            tuning=EngineTuningConfig(max_vote_retries=2),
+        )
+        player.turn_history = [ChatMessage(role="system", content="Sys")]
+
+        vote = player.vote(proposal, game_state_no_abstain, rules)
+
+        # Both failures consumed the 2 attempts — exhaustion fallback NO
+        assert vote.vote == "NO"
+        assert mock_api_instance.get_completion.call_count == 2
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    @patch("src.nomic_engine.players.llm_player.parse_vote_response")
+    def test_vote_abstain_allowed_accepted_without_retry(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        proposal,
+        rules,
+    ):
+        """When allow_abstention=True, ABSTAIN is accepted on first call."""
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            ChatMessage(role="user", content="Vote instruction")
+        )
+
+        abstain_response = (
+            '{"private_thoughts":"","public_reason":"","vote":"ABSTAIN"}'
+        )
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=abstain_response, raw_response=None, client_latency_ms=0
+        )
+        mock_parse.return_value = {
+            "private_thoughts": "",
+            "public_reason": "",
+            "vote": "ABSTAIN",
+        }
+
+        game_state_allow_abstain = GameState(
+            scores={"Alice": 0},
+            current_player_name="Alice",
+            move_number=1,
+            turn_order=["Alice"],
+            next_proposal_id=301,
+            flags={"allow_abstention": True},
+        )
+
+        player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [ChatMessage(role="system", content="Sys")]
+
+        vote = player.vote(proposal, game_state_allow_abstain, rules)
+
+        assert vote.vote == "ABSTAIN"
+        # ABSTAIN accepted on first attempt — no retry
+        assert mock_api_instance.get_completion.call_count == 1
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    @patch("src.nomic_engine.players.llm_player.parse_vote_response")
+    def test_vote_abstain_allowed_exhaustion_returns_abstain(
+        self,
+        mock_parse,
+        mock_api_client_class,
+        mock_prompt_builder_class,
+        model_config,
+        proposal,
+        rules,
+    ):
+        """When allow_abstention=True, exhaustion fallback remains ABSTAIN."""
+        mock_api_instance = MagicMock()
+        mock_api_client_class.return_value = mock_api_instance
+
+        mock_prompt_builder_instance = MagicMock()
+        mock_prompt_builder_class.return_value = mock_prompt_builder_instance
+        mock_prompt_builder_instance.build_vote_instruction.return_value = (
+            ChatMessage(role="user", content="Vote instruction")
+        )
+
+        mock_api_instance.get_completion.return_value = CompletionResult(
+            text=None, raw_response=None, client_latency_ms=0
+        )
+
+        game_state_allow_abstain = GameState(
+            scores={"Alice": 0},
+            current_player_name="Alice",
+            move_number=1,
+            turn_order=["Alice"],
+            next_proposal_id=301,
+            flags={"allow_abstention": True},
+        )
+
+        player = LLMPlayer("TestPlayer", model_config)
+        player.turn_history = [ChatMessage(role="system", content="Sys")]
+
+        vote = player.vote(proposal, game_state_allow_abstain, rules)
+
+        assert vote.vote == "ABSTAIN"
+        assert vote.reason == "LLM Error: Failed to generate valid vote."
+        assert (
+            mock_api_instance.get_completion.call_count
+            == player.tuning.max_vote_retries
         )
 
 

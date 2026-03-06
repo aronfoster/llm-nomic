@@ -728,10 +728,12 @@ class GameLoop:
             )
 
             if not allow_abstention and vote.vote == "ABSTAIN":
-                raise ValueError(
-                    f"Player '{player.player_name}' cast an ABSTAIN vote, "
-                    "but allow_abstention flag is false. "
-                    "Only YES and NO votes are permitted."
+                logger.warning(
+                    "Player '%s' returned an ABSTAIN vote but "
+                    "allow_abstention is false. This should have been "
+                    "caught inside vote(); accepting the vote to avoid "
+                    "crashing the turn.",
+                    player.player_name,
                 )
 
             votes.append(vote)

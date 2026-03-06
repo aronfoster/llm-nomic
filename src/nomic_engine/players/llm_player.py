@@ -31,7 +31,7 @@ from ..llm import (
     parse_vote_response,
     prompts,
 )
-from ..llm.parsers import ProposalResponse, RevisionResponse
+from ..llm.parsers import ProposalResponse, RevisionResponse, VoteResponse
 from ..llm.retry_helper import llm_retry_loop
 from ..memory.memory_manager import MemoryManager
 from ..utils.player_label import assemble_player_label
@@ -358,6 +358,8 @@ class LLMPlayer(BasePlayer):
         if discussions is None:
             discussions = []
 
+        allow_abstention = game_state.flags.get("allow_abstention", False)
+
         # Build vote instruction and append to history (continues turn)
         vote_instruction = self.prompt_builder.build_vote_instruction(
             proposal=proposal,
@@ -368,6 +370,16 @@ class LLMPlayer(BasePlayer):
             game_state=game_state,
         )
         self.turn_history.append(vote_instruction)
+
+        # When ABSTAIN is forbidden, validate parsed votes against it
+        abstain_validator: Callable[[VoteResponse], None] | None = None
+        if not allow_abstention:
+
+            def abstain_validator(parsed: VoteResponse) -> None:
+                if parsed.get("vote") == "ABSTAIN":
+                    raise ValueError(
+                        "ABSTAIN is not permitted; you must vote YES or NO."
+                    )
 
         # Retry loop with maximum attempts
         max_vote_retries = self.tuning.max_vote_retries
@@ -381,9 +393,23 @@ class LLMPlayer(BasePlayer):
                 actor_label=self.player_label,
                 action_description="thinking...",
                 log_usage=lambda result: self._log_usage(result, "vote"),
+                post_parse_validator=abstain_validator,
+                legality_retry_template=prompts.VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE,
             )
         except RuntimeError:
-            # All retries exhausted - return ABSTAIN as fallback
+            # All retries exhausted
+            if not allow_abstention:
+                # ABSTAIN is forbidden — fall back to NO to avoid crashing
+                logger.error(
+                    f"{self.player_name}: Failed to generate valid vote after "
+                    f"{max_vote_retries} attempts. Defaulting to NO "
+                    "(ABSTAIN is forbidden)."
+                )
+                return Vote(
+                    player_name=self.player_name,
+                    vote="NO",
+                    reason="LLM Error: Failed to generate valid vote.",
+                )
             logger.error(
                 f"{self.player_name}: Failed to generate valid vote after "
                 f"{max_vote_retries} attempts. Defaulting to ABSTAIN."
