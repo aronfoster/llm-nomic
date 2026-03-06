@@ -75,12 +75,21 @@ class HumanPlayer(BasePlayer):
                 "You may now submit a fresh proposal with any type or "
                 "target rule."
             )
-            print(
-                "NOTE: If during the revision phase you want to change the "
-                "proposal TYPE or TARGET RULE, choose WITHDRAW — not MODIFY. "
-                "Withdrawing there will give you another proposal opportunity "
-                "(if retries remain)."
-            )
+            if withdrawal_attempt == max_withdrawal_retries:
+                print(
+                    "NOTE: If during the revision phase you want to change "
+                    "the proposal TYPE or TARGET RULE, choose WITHDRAW — not "
+                    "MODIFY. However, this is your last proposal attempt: "
+                    "withdrawing in the revision phase will end your turn "
+                    "with no vote (your proposal will be skipped entirely)."
+                )
+            else:
+                print(
+                    "NOTE: If during the revision phase you want to change "
+                    "the proposal TYPE or TARGET RULE, choose WITHDRAW — not "
+                    "MODIFY. Withdrawing there will give you another proposal "
+                    "opportunity (if retries remain)."
+                )
         else:
             print(f"\n--- {self.player_label}'s Turn: Making a Proposal ---")
 

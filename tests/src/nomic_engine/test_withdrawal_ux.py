@@ -912,3 +912,181 @@ class TestHumanPlayerOnProposalUpdated:
                 withdrawal_attempt=1,
                 max_withdrawal_retries=2,
             )
+
+
+# =====================================================================
+# Sprint 38 Task 4: WITHDRAWAL_LAST_ATTEMPT_TEMPLATE
+# =====================================================================
+
+
+class TestWithdrawalLastAttemptTemplate:
+    """Tests for WITHDRAWAL_LAST_ATTEMPT_TEMPLATE constant in prompts.py."""
+
+    def test_template_exists(self) -> None:
+        """WITHDRAWAL_LAST_ATTEMPT_TEMPLATE must be defined in prompts."""
+        assert hasattr(prompts, "WITHDRAWAL_LAST_ATTEMPT_TEMPLATE")
+
+    def test_template_has_required_placeholders(self) -> None:
+        """Template must contain both attempt-count placeholders."""
+        template = prompts.WITHDRAWAL_LAST_ATTEMPT_TEMPLATE
+        assert "{withdrawal_attempt}" in template
+        assert "{max_withdrawal_retries}" in template
+
+    def test_template_formats_without_error(self) -> None:
+        """Template must render without error when all placeholders filled."""
+        rendered = prompts.WITHDRAWAL_LAST_ATTEMPT_TEMPLATE.format(
+            withdrawal_attempt=3,
+            max_withdrawal_retries=3,
+        )
+        assert "3" in rendered
+
+    def test_template_signals_turn_end_consequence(self) -> None:
+        """Template must mention that withdrawal will skip or end the turn."""
+        rendered = prompts.WITHDRAWAL_LAST_ATTEMPT_TEMPLATE.format(
+            withdrawal_attempt=3,
+            max_withdrawal_retries=3,
+        )
+        lower = rendered.lower()
+        assert any(
+            word in lower for word in ("skip", "end", "no vote", "skipped")
+        )
+
+
+# =====================================================================
+# Sprint 38 Task 4: LLMPlayer.note_withdrawal_for_retry template selection
+# =====================================================================
+
+
+class TestLLMPlayerNoteWithdrawalLastAttempt:
+    """Tests for LLMPlayer.note_withdrawal_for_retry() template selection."""
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    def test_last_attempt_uses_last_attempt_template(
+        self,
+        mock_api_client_class: MagicMock,
+        mock_prompt_builder_class: MagicMock,
+        model_config: ModelDefinition,
+    ) -> None:
+        """On the final attempt, note_withdrawal_for_retry must use
+        WITHDRAWAL_LAST_ATTEMPT_TEMPLATE."""
+        player = LLMPlayer("Alice", model_config)
+        player.turn_history = [ChatMessage(role="system", content="sys")]
+
+        player.note_withdrawal_for_retry(
+            discussions=[],
+            withdrawal_attempt=2,
+            max_withdrawal_retries=2,
+        )
+
+        appended = player.turn_history[-1].content
+        # Should contain last-attempt signal keywords
+        lower = appended.lower()
+        assert any(
+            word in lower
+            for word in ("last", "skip", "end", "no vote", "skipped")
+        )
+        # Should NOT contain intermediate-attempt language
+        assert "another proposal opportunity" not in appended
+
+    @patch("src.nomic_engine.players.llm_player.PromptBuilder")
+    @patch("src.nomic_engine.players.llm_player.create_api_client")
+    def test_intermediate_attempt_uses_retry_template(
+        self,
+        mock_api_client_class: MagicMock,
+        mock_prompt_builder_class: MagicMock,
+        model_config: ModelDefinition,
+    ) -> None:
+        """On non-final attempts, note_withdrawal_for_retry must use
+        WITHDRAWAL_RETRY_TEMPLATE."""
+        player = LLMPlayer("Alice", model_config)
+        player.turn_history = [ChatMessage(role="system", content="sys")]
+
+        player.note_withdrawal_for_retry(
+            discussions=[],
+            withdrawal_attempt=1,
+            max_withdrawal_retries=2,
+        )
+
+        appended = player.turn_history[-1].content
+        # Should match WITHDRAWAL_RETRY_TEMPLATE (no last-attempt language)
+        lower = appended.lower()
+        assert "last" not in lower or "last attempt" not in lower
+        # The WITHDRAWAL_RETRY_TEMPLATE text should be there
+        assert "withdrawn" in lower
+
+
+# =====================================================================
+# Sprint 38 Task 4: HumanPlayer.propose() last-attempt output
+# =====================================================================
+
+
+class TestHumanPlayerProposeLastAttempt:
+    """Tests for HumanPlayer.propose() last-attempt withdrawal guidance."""
+
+    def test_last_attempt_prints_turn_end_signal(
+        self,
+        game_state: GameState,
+        rules: list[Rule],
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """On the last attempt, propose() must print about turn ending."""
+        player = HumanPlayer("Alice")
+        with patch("builtins.input") as mock_input:
+            mock_input.side_effect = ["A", "New rule text", "rationale"]
+            player.propose(
+                game_state,
+                rules,
+                continue_turn=True,
+                withdrawal_attempt=3,
+                max_withdrawal_retries=3,
+            )
+
+        captured = capsys.readouterr()
+        lower = captured.out.lower()
+        assert any(
+            word in lower for word in ("skip", "end", "no vote", "skipped")
+        )
+
+    def test_last_attempt_does_not_say_another_opportunity(
+        self,
+        game_state: GameState,
+        rules: list[Rule],
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """On the last attempt, propose() must not claim another
+        opportunity remains."""
+        player = HumanPlayer("Alice")
+        with patch("builtins.input") as mock_input:
+            mock_input.side_effect = ["A", "New rule text", "rationale"]
+            player.propose(
+                game_state,
+                rules,
+                continue_turn=True,
+                withdrawal_attempt=3,
+                max_withdrawal_retries=3,
+            )
+
+        captured = capsys.readouterr()
+        assert "another proposal opportunity" not in captured.out
+
+    def test_intermediate_attempt_says_another_opportunity(
+        self,
+        game_state: GameState,
+        rules: list[Rule],
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """On an intermediate attempt, propose() keeps original guidance."""
+        player = HumanPlayer("Alice")
+        with patch("builtins.input") as mock_input:
+            mock_input.side_effect = ["A", "New rule text", "rationale"]
+            player.propose(
+                game_state,
+                rules,
+                continue_turn=True,
+                withdrawal_attempt=1,
+                max_withdrawal_retries=3,
+            )
+
+        captured = capsys.readouterr()
+        assert "another proposal opportunity" in captured.out

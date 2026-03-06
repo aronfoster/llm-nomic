@@ -533,16 +533,16 @@ Developer's discretion):
 | `HumanPlayer.propose(continue_turn=True, withdrawal_attempt < max_withdrawal_retries, max_withdrawal_retries=N)` — printed output does NOT contain last-attempt turn-end signal | Intermediate text unchanged |
 
 **Acceptance Criteria:**
-- [ ] `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE` added to `llm/prompts.py`; contains
+- [x] `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE` added to `llm/prompts.py`; contains
   `{withdrawal_attempt}`, `{max_withdrawal_retries}`, and language about skipping
   the turn if withdrawal is chosen
-- [ ] `LLMPlayer.note_withdrawal_for_retry()` uses `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE`
+- [x] `LLMPlayer.note_withdrawal_for_retry()` uses `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE`
   on the final attempt and `WITHDRAWAL_RETRY_TEMPLATE` on all other attempts
-- [ ] `HumanPlayer.propose()` on the last withdrawal attempt prints a message that
+- [x] `HumanPlayer.propose()` on the last withdrawal attempt prints a message that
   accurately conveys that withdrawal will skip the turn (not give another chance)
-- [ ] Tests added to cover: last-attempt template content, LLMPlayer template
+- [x] Tests added to cover: last-attempt template content, LLMPlayer template
   selection, HumanPlayer last-attempt output, and unchanged intermediate behaviour
-- [ ] `make ci` passes
+- [x] `make ci` passes
 
 ---
 
