@@ -631,16 +631,16 @@ opt-out path so that `cache_control` is **not** sent for the memory update API c
 | `test_persistent_memory_update.py` | `LLMPlayer.update_memory()` invokes `get_completion` | API called via opt-out path (no `cache_control`) |
 
 **Acceptance Criteria:**
-- [ ] `AnthropicApiClient.get_completion()` supports an opt-out path that omits
+- [x] `AnthropicApiClient.get_completion()` supports an opt-out path that omits
   `cache_control` from the Anthropic API call; default behaviour (sending
   `cache_control`) is unchanged for all other call sites
-- [ ] `LLMJudge.update_memory()` uses the opt-out path
-- [ ] `LLMPlayer.update_memory()` uses the opt-out path
-- [ ] `test_get_completion_anthropic_automatic_cache_control_always_sent` updated or
+- [x] `LLMJudge.update_memory()` uses the opt-out path
+- [x] `LLMPlayer.update_memory()` uses the opt-out path
+- [x] `test_get_completion_anthropic_automatic_cache_control_always_sent` updated or
   split to cover both default and opt-out behaviours
-- [ ] New tests confirm that `update_memory()` in both judge and player triggers the
+- [x] New tests confirm that `update_memory()` in both judge and player triggers the
   opt-out path
-- [ ] `make ci` passes
+- [x] `make ci` passes
 
 ---
 

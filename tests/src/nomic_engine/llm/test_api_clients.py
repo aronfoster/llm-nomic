@@ -527,7 +527,7 @@ def test_get_completion_anthropic_no_system(monkeypatch):
 def test_get_completion_anthropic_automatic_cache_control_always_sent(
     monkeypatch,
 ):
-    """cache_control is sent on every Anthropic call for automatic caching."""
+    """cache_control is sent by default (default path)."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
     mock_model_def = ModelDefinition(
@@ -555,7 +555,7 @@ def test_get_completion_anthropic_automatic_cache_control_always_sent(
 
         api_client = AnthropicApiClient(mock_model_def)
 
-        # With system message
+        # With system message — default path sends cache_control
         api_client.get_completion(
             [
                 ChatMessage(role="system", content="System prompt."),
@@ -566,10 +566,64 @@ def test_get_completion_anthropic_automatic_cache_control_always_sent(
         assert call_args.kwargs["cache_control"] == {"type": "ephemeral"}
         assert call_args.kwargs["system"] == "System prompt."
 
-        # Without system message
+        # Without system message — default path still sends cache_control
         api_client.get_completion([ChatMessage(role="user", content="Hello!")])
         call_args = mock_client.messages.with_raw_response.create.call_args
         assert call_args.kwargs["cache_control"] == {"type": "ephemeral"}
+        assert "system" not in call_args.kwargs
+
+
+def test_get_completion_anthropic_opt_out_omits_cache_control(
+    monkeypatch,
+):
+    """cache_control is absent when use_cache_control=False (opt-out path)."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    mock_model_def = ModelDefinition(
+        id="claude-sonnet-4-5",
+        provider="anthropic",
+        api_model_id="claude-sonnet-4-5",
+        env_key_name="ANTHROPIC_API_KEY",
+    )
+
+    mock_text_block = MagicMock()
+    mock_text_block.text = "Response without cache write"
+    mock_response = MagicMock()
+    mock_response.content = [mock_text_block]
+
+    with patch(
+        "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
+    ) as mock_anthropic_class:
+        mock_client = MagicMock()
+        mock_http_response = MagicMock()
+        mock_http_response.parse.return_value = mock_response
+        mock_client.messages.with_raw_response.create.return_value = (
+            mock_http_response
+        )
+        mock_anthropic_class.return_value = mock_client
+
+        api_client = AnthropicApiClient(mock_model_def)
+
+        # With system message — opt-out path omits cache_control
+        result = api_client.get_completion(
+            [
+                ChatMessage(role="system", content="System prompt."),
+                ChatMessage(role="user", content="Hello!"),
+            ],
+            use_cache_control=False,
+        )
+        call_args = mock_client.messages.with_raw_response.create.call_args
+        assert "cache_control" not in call_args.kwargs
+        assert call_args.kwargs["system"] == "System prompt."
+        assert result.text == "Response without cache write"
+
+        # Without system message — opt-out path omits cache_control
+        api_client.get_completion(
+            [ChatMessage(role="user", content="Hello!")],
+            use_cache_control=False,
+        )
+        call_args = mock_client.messages.with_raw_response.create.call_args
+        assert "cache_control" not in call_args.kwargs
         assert "system" not in call_args.kwargs
 
 

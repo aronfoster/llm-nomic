@@ -459,7 +459,9 @@ class LLMJudge(BaseJudge):
             ChatMessage(role="user", content=update_prompt)
         ]
 
-        result = self.api_client.get_completion(messages)
+        result = self.api_client.get_completion(
+            messages, use_cache_control=False
+        )
         self._log_usage(result, "memory_update")
         response = result.text
 

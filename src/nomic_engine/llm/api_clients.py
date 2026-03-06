@@ -29,7 +29,7 @@ class ApiClientProtocol(Protocol):
     """Protocol defining the interface for all LLM API clients."""
 
     def get_completion(
-        self, messages: list[ChatMessage]
+        self, messages: list[ChatMessage], *, use_cache_control: bool = True
     ) -> CompletionResult: ...
 
 
@@ -90,11 +90,14 @@ class OpenAICompatibleApiClient:
                 f"{model_config.provider}"
             )
 
-    def get_completion(self, messages: list[ChatMessage]) -> CompletionResult:
+    def get_completion(
+        self, messages: list[ChatMessage], *, use_cache_control: bool = True
+    ) -> CompletionResult:
         """Get a chat completion from an OpenAI-compatible API.
 
         Args:
             messages: List of ChatMessage objects forming the conversation.
+            use_cache_control: Ignored for OpenAI-compatible providers.
 
         Returns:
             A CompletionResult with text (or None on error), the raw
@@ -173,11 +176,19 @@ class AnthropicApiClient:
         )
         self.model_id_for_api = self.model_config.api_model_id
 
-    def get_completion(self, messages: list[ChatMessage]) -> CompletionResult:
+    def get_completion(
+        self, messages: list[ChatMessage], *, use_cache_control: bool = True
+    ) -> CompletionResult:
         """Get a chat completion from the Anthropic API.
 
         Args:
             messages: List of ChatMessage objects forming the conversation.
+            use_cache_control: When True (default), sends
+                ``cache_control: {"type": "ephemeral"}`` to trigger an
+                Anthropic cache write. When False, omits the header so
+                the call reads from an existing cache entry without
+                refreshing it (useful for memory-update calls where the
+                system prefix was already cached earlier in the turn).
 
         Returns:
             A CompletionResult with text (or None on error), the raw
@@ -211,21 +222,25 @@ class AnthropicApiClient:
                         msg.role,
                     )
 
+            extra_kwargs: dict[str, Any] = {}
+            if use_cache_control:
+                extra_kwargs["cache_control"] = {"type": "ephemeral"}
+
             client = self._anthropic_client
             if system_prompt:
                 http_response = client.messages.with_raw_response.create(
                     model=self.model_id_for_api,
                     max_tokens=8192,
-                    cache_control={"type": "ephemeral"},
                     system=system_prompt,
                     messages=anthropic_messages,
+                    **extra_kwargs,
                 )
             else:
                 http_response = client.messages.with_raw_response.create(
                     model=self.model_id_for_api,
                     max_tokens=8192,
-                    cache_control={"type": "ephemeral"},
                     messages=anthropic_messages,
+                    **extra_kwargs,
                 )
             anthropic_response = http_response.parse()
 
@@ -292,11 +307,14 @@ class GoogleApiClient:
         self._google_client = genai.Client(api_key=api_key)
         self.model_id_for_api = self.model_config.api_model_id
 
-    def get_completion(self, messages: list[ChatMessage]) -> CompletionResult:
+    def get_completion(
+        self, messages: list[ChatMessage], *, use_cache_control: bool = True
+    ) -> CompletionResult:
         """Get a chat completion from the Google Gemini API.
 
         Args:
             messages: List of ChatMessage objects forming the conversation.
+            use_cache_control: Ignored for Google provider.
 
         Returns:
             A CompletionResult with text (or None on error), the raw
