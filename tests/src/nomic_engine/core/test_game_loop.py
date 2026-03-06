@@ -425,11 +425,15 @@ def test_step_3_revise_rejects_illegal_revised_proposal(
     mock_players: list[Mock],
     mock_game_manager: Mock,
 ) -> None:
-    """Test _handle_revision rejects illegal revised proposals.
+    """Test _handle_revision falls back to original on illegal revision.
 
-    This test verifies that when a player returns a NEW proposal object
-    (not the original), it is re-validated for legality. If the revised
-    proposal is illegal, the turn should end.
+    When a non-LLM player returns a NEW proposal object that fails
+    legality validation, _handle_revision now returns the original
+    proposal (KEEP fallback) rather than None.  The illegal proposal
+    is still logged to the transcript.
+
+    For LLMPlayer instances, the retry loop inside revise() handles
+    legality failures before this defensive check is reached.
     """
     alice = mock_players[0]
 
@@ -459,8 +463,9 @@ def test_step_3_revise_rejects_illegal_revised_proposal(
 
     result = game_loop._handle_revision(alice, original_proposal, discussions)
 
-    # CRITICAL: Should return None (illegal revised proposal)
-    assert result is None
+    # New behavior: returns the ORIGINAL proposal (KEEP fallback), not None.
+    # Illegal revised proposals no longer end the turn as a withdrawal.
+    assert result is original_proposal
     alice.revise.assert_called_once()
 
     # Verify the illegal revised proposal was logged to transcript
@@ -1247,7 +1252,15 @@ def test_run_turn_stops_on_illegal_proposal(
     mock_players: list[Mock],
     mock_game_manager: Mock,
 ) -> None:
-    """Test run_turn stops early if proposal is illegal."""
+    """Test run_turn stops early on illegal proposal (non-LLM player path).
+
+    For LLMPlayer instances, legality failures are retried inside
+    propose() via post_parse_validator; on exhaustion RuntimeError is
+    raised.  This test exercises the defensive path in
+    _get_and_validate_proposal() for non-LLM players (Mocks), where an
+    illegal proposal still ends the turn immediately with no vote or
+    resolution.
+    """
     # Make Alice propose an ILLEGAL proposal (amend immutable rule)
     mock_players[0].propose.return_value = Proposal(
         proposer_name="Alice",

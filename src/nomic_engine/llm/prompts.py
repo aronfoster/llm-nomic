@@ -215,6 +215,35 @@ Remember:
 
 No other text. Just the JSON object:"""
 
+PROPOSE_LEGALITY_RETRY_TEMPLATE = """Your proposal failed game \
+legality validation.
+
+Error: {validation_error}
+
+Please revise your proposal. Output ONLY a valid JSON object with these
+exact keys in order:
+1. "private_thoughts"
+2. "type" (one of: "ADD", "AMEND", "REPEAL", "TRANSMUTE")
+3. "target_rule_id" (rule ID string or null)
+4. "new_text" (rule text string or null)
+5. "rationale"
+
+No other text. Just the JSON object:"""
+
+REVISE_LEGALITY_RETRY_TEMPLATE = """Your revised proposal failed game \
+legality validation.
+
+Error: {validation_error}
+
+Please try again. Output ONLY a valid JSON object with these exact keys
+in order:
+1. "private_thoughts"
+2. "action" (one of: "KEEP", "MODIFY", "WITHDRAW")
+3. "new_text" (string if modifying rule text, else null)
+4. "rationale" (string if modifying rationale, else null)
+
+No other text. Just the JSON object:"""
+
 JUDGE_VETO_RETRY_TEMPLATE = """Your previous response was not valid JSON.
 
 Error: {validation_error}

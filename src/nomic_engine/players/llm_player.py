@@ -8,7 +8,7 @@ eventually use language models to participate in the game.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from ..data_models import (
     ChatMessage,
@@ -31,6 +31,7 @@ from ..llm import (
     parse_vote_response,
     prompts,
 )
+from ..llm.parsers import ProposalResponse, RevisionResponse
 from ..llm.retry_helper import llm_retry_loop
 from ..memory.memory_manager import MemoryManager
 from ..utils.player_label import assemble_player_label
@@ -155,6 +156,7 @@ class LLMPlayer(BasePlayer):
         continue_turn: bool = False,
         withdrawal_attempt: int = 0,
         max_withdrawal_retries: int = 0,
+        post_parse_validator: Callable[[ProposalResponse], None] | None = None,
     ) -> Proposal:
         """
         Generate a proposal using an LLM.
@@ -208,6 +210,8 @@ class LLMPlayer(BasePlayer):
                 actor_label=self.player_label,
                 action_description="thinking about a proposal",
                 log_usage=lambda result: self._log_usage(result, "propose"),
+                post_parse_validator=post_parse_validator,
+                legality_retry_template=prompts.PROPOSE_LEGALITY_RETRY_TEMPLATE,
             )
         except RuntimeError:
             # All retries exhausted - raise RuntimeError (better to crash than
@@ -451,6 +455,7 @@ class LLMPlayer(BasePlayer):
         discussions: list[Discussion],
         game_state: GameState,
         rules: list[Rule],
+        post_parse_validator: Callable[[RevisionResponse], None] | None = None,
     ) -> Proposal | None:
         """
         Revise a proposal based on discussion using an LLM.
@@ -490,6 +495,8 @@ class LLMPlayer(BasePlayer):
                 actor_label=self.player_label,
                 action_description="reviewing feedback...",
                 log_usage=lambda result: self._log_usage(result, "revise"),
+                post_parse_validator=post_parse_validator,
+                legality_retry_template=prompts.REVISE_LEGALITY_RETRY_TEMPLATE,
             )
         except RuntimeError:
             # All retries exhausted - return original proposal (KEEP) as
