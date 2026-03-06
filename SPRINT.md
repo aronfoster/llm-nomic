@@ -444,14 +444,104 @@ New tests to add (in `tests/src/nomic_engine/players/` or the existing
 **Priority:** Low
 
 **Description:**
-On the final withdrawal retry attempt, the prompt sent to the LLM implies that withdrawing
-is not an option. It should instead make clear that withdrawing is still possible, but
-doing so will skip the player's turn entirely.
+When a player withdraws their proposal, the game loop calls
+`note_withdrawal_for_retry()` and then asks them to propose again. On the final
+allowed attempt, the prompt injected into the conversation history (for LLM players)
+and the console message (for human players) do not tell the player that withdrawal is
+still available in the upcoming revision phase — but that choosing it will end the
+turn with no vote. This can mislead the LLM (or human) into thinking they must commit
+to a proposal regardless of what it is.
+
+#### Current Behavior
+
+**LLM players** (`LLMPlayer.note_withdrawal_for_retry()`):
+`WITHDRAWAL_RETRY_TEMPLATE` is always used, regardless of attempt number. Its
+closing instruction is `"Return only valid JSON using the standard proposal schema."`
+There is no mention that WITHDRAW remains an option in the revision phase, nor of the
+consequence if chosen on the last attempt.
+
+**Human players** (`HumanPlayer.propose()` with `continue_turn=True`):
+The method prints a fixed notice that includes:
+`"Withdrawing there will give you another proposal opportunity (if retries remain)."`
+On the last attempt there are no retries remaining, so this guidance is factually
+wrong — withdrawing in the revision phase will skip the turn entirely, not yield
+another chance.
+
+#### Required Changes
+
+**1. New prompt template in `llm/prompts.py`**
+
+Add `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE`. This constant:
+- Must contain `{withdrawal_attempt}` and `{max_withdrawal_retries}` placeholders
+  (same as `WITHDRAWAL_RETRY_TEMPLATE`, for structural consistency)
+- Must clearly state this is the **last** proposal attempt
+- Must explicitly state that WITHDRAW is still available in the revision phase, but
+  if chosen, will **end the turn with no vote** (i.e., skip the player's turn)
+- Must ask for a valid JSON proposal response
+- Exact wording is left to the Developer
+
+The existing `WITHDRAWAL_RETRY_TEMPLATE` is **unchanged**.
+
+**2. `LLMPlayer.note_withdrawal_for_retry()` in `players/llm_player.py`**
+
+`note_withdrawal_for_retry()` already receives `withdrawal_attempt` and
+`max_withdrawal_retries`. Use them to select the correct template:
+
+- When `withdrawal_attempt == max_withdrawal_retries` (last attempt): format and
+  inject `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE`
+- Otherwise (intermediate attempt): continue using `WITHDRAWAL_RETRY_TEMPLATE`
+  unchanged
+
+No other behaviour of this method changes.
+
+**3. `HumanPlayer.propose()` in `players/human_player.py`**
+
+When `continue_turn=True`, the method already receives `withdrawal_attempt` and
+`max_withdrawal_retries`. Update the printed guidance so that:
+
+- On **intermediate attempts** (`withdrawal_attempt < max_withdrawal_retries`):
+  the existing message is unchanged
+- On the **last attempt** (`withdrawal_attempt == max_withdrawal_retries`): replace
+  the "gives another opportunity" sentence with text that clearly states withdrawal
+  is still possible but will skip the turn entirely. Exact wording is left to the
+  Developer.
+
+#### What Must Not Change
+
+- `WITHDRAWAL_RETRY_TEMPLATE` is unchanged
+- `note_withdrawal_for_retry` behaviour on intermediate attempts is unchanged
+- `HumanPlayer.propose()` behaviour on intermediate attempts is unchanged
+- Neither `LLMJudge` nor `HumanPlayer.note_withdrawal_for_retry()` is affected
+  (judge does not call this method; `HumanPlayer` inherits the base-class no-op)
+
+#### Testing
+
+Existing tests in `test_withdrawal_ux.py` that verify `WITHDRAWAL_RETRY_TEMPLATE`
+content and `note_withdrawal_for_retry` basic behaviour must continue to pass
+unchanged.
+
+New tests to add (all in `test_withdrawal_ux.py` or a focused new file at the
+Developer's discretion):
+
+| Scenario | Expected |
+|----------|----------|
+| `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE` constant exists in `prompts` with `{withdrawal_attempt}` and `{max_withdrawal_retries}` placeholders | Template present and formattable |
+| `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE` content signals last-attempt turn-end consequence (e.g., contains "skip", "end", "no vote", or equivalent) | Keyword present |
+| `LLMPlayer.note_withdrawal_for_retry(withdrawal_attempt=2, max_withdrawal_retries=2)` — appended message uses last-attempt language | Message content contains last-attempt keyword, NOT intermediate-attempt language |
+| `LLMPlayer.note_withdrawal_for_retry(withdrawal_attempt=1, max_withdrawal_retries=2)` — appended message uses `WITHDRAWAL_RETRY_TEMPLATE` language, NOT last-attempt language | Unchanged intermediate behaviour |
+| `HumanPlayer.propose(continue_turn=True, withdrawal_attempt=max_withdrawal_retries, max_withdrawal_retries=N)` — printed output signals turn-end consequence | Printed text contains last-attempt turn-end signal |
+| `HumanPlayer.propose(continue_turn=True, withdrawal_attempt < max_withdrawal_retries, max_withdrawal_retries=N)` — printed output does NOT contain last-attempt turn-end signal | Intermediate text unchanged |
 
 **Acceptance Criteria:**
-- [ ] On the last withdrawal attempt, the prompt text communicates that withdrawal is
-  still available but results in a skipped turn
-- [ ] Tests updated to reflect the new prompt text
+- [ ] `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE` added to `llm/prompts.py`; contains
+  `{withdrawal_attempt}`, `{max_withdrawal_retries}`, and language about skipping
+  the turn if withdrawal is chosen
+- [ ] `LLMPlayer.note_withdrawal_for_retry()` uses `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE`
+  on the final attempt and `WITHDRAWAL_RETRY_TEMPLATE` on all other attempts
+- [ ] `HumanPlayer.propose()` on the last withdrawal attempt prints a message that
+  accurately conveys that withdrawal will skip the turn (not give another chance)
+- [ ] Tests added to cover: last-attempt template content, LLMPlayer template
+  selection, HumanPlayer last-attempt output, and unchanged intermediate behaviour
 - [ ] `make ci` passes
 
 ---
@@ -461,15 +551,95 @@ doing so will skip the player's turn entirely.
 **Priority:** Low
 
 **Description:**
-The `memory_update` call for Anthropic clients sends an ephemeral cache block, which
-incurs unnecessary cache-write charges. The system message is already cached from the
-earlier `get_veto` call, so the ephemeral block is redundant. Remove it so Anthropic
-clients benefit from the cache hit without paying to write again.
+`AnthropicApiClient.get_completion()` currently sends `cache_control: {"type":
+"ephemeral"}` on every API call. For `update_memory()` calls, this triggers an
+unnecessary Anthropic cache **write** (which incurs a ~25% surcharge on input tokens)
+because the system message prefix was already cached by an earlier call in the same
+turn. The fix is to let `update_memory()` call `get_completion()` without the
+`cache_control` marker. The existing cache entry from the earlier call is still active
+and Anthropic will return a cache **read** (charged at ~10% of input tokens) without
+requiring a new write.
+
+This fix applies to both `LLMJudge.update_memory()` and `LLMPlayer.update_memory()`.
+In both cases, the system message prefix was already written to cache earlier in the
+same turn (`get_veto` for the judge; `propose` for the player).
+
+#### Current Behavior
+
+`AnthropicApiClient.get_completion(messages)` always passes `cache_control:
+{"type": "ephemeral"}` to the Anthropic SDK, regardless of the call context. The
+test `test_get_completion_anthropic_automatic_cache_control_always_sent` explicitly
+documents and asserts this always-on behaviour.
+
+Both `LLMJudge.update_memory()` and `LLMPlayer.update_memory()` call
+`self.api_client.get_completion(messages)` with no way to suppress the
+`cache_control` marker.
+
+#### Required Changes
+
+**1. `AnthropicApiClient.get_completion()` in `llm/api_clients.py`**
+
+Add a mechanism by which a caller can suppress the `cache_control` marker on a
+specific call. The default behaviour (sending `cache_control`) must remain unchanged
+for all existing call sites — this is a backwards-compatible, opt-out change.
+
+The Developer has full discretion over the implementation: optional keyword parameter,
+a separate method, or another pattern. The sole behavioral requirement is:
+
+- **Default / opt-in path**: `cache_control: {"type": "ephemeral"}` is sent (unchanged)
+- **Opt-out path**: `cache_control` is **not** included in the API call kwargs
+
+If the opt-out mechanism is expressed as a parameter on `get_completion()`, update
+`ApiClientProtocol` accordingly. Non-Anthropic clients (`OpenAICompatibleApiClient`,
+`GoogleApiClient`) must continue to work; they may accept and ignore the parameter.
+
+**2. `LLMJudge.update_memory()` in `judge/llm_judge.py`**
+
+Change the `self.api_client.get_completion(messages)` call to use the opt-out path
+so that `cache_control` is **not** sent for the memory update API call.
+
+**3. `LLMPlayer.update_memory()` in `players/llm_player.py`**
+
+Change the `self.api_client.get_completion(self.turn_history)` call to use the
+opt-out path so that `cache_control` is **not** sent for the memory update API call.
+
+#### What Must Not Change
+
+- Every call originating from `llm_retry_loop()` continues to send `cache_control`
+  (cache-write semantics are correct there; subsequent calls in the same turn benefit
+  from the resulting cache hit)
+- `LLMJudge.update_memory()` and `LLMPlayer.update_memory()` still expect a cache
+  **read** hit on the system prefix — the fix avoids paying to **refresh** the cache
+  entry, not avoid the cache entirely
+- Non-Anthropic providers are unaffected
+
+#### Testing
+
+**Tests to update:**
+- `test_get_completion_anthropic_automatic_cache_control_always_sent` in
+  `test_api_clients.py` currently asserts `cache_control` is present on every call.
+  This test must be updated (or split into two tests) to assert: (a) the **default**
+  path still sends `cache_control`, and (b) the **opt-out** path does not.
+
+**New tests to add:**
+
+| File | Scenario | Expected |
+|------|----------|----------|
+| `test_api_clients.py` | `AnthropicApiClient.get_completion()` via opt-out path | `cache_control` key absent from API call kwargs |
+| `test_api_clients.py` | `AnthropicApiClient.get_completion()` via default path | `cache_control: {"type": "ephemeral"}` present (unchanged) |
+| `test_persistent_memory_update.py` | `LLMJudge.update_memory()` invokes `get_completion` | API called via opt-out path (no `cache_control`) |
+| `test_persistent_memory_update.py` | `LLMPlayer.update_memory()` invokes `get_completion` | API called via opt-out path (no `cache_control`) |
 
 **Acceptance Criteria:**
-- [ ] The `memory_update` call for Anthropic clients no longer sends an ephemeral block
-- [ ] Cache hit behavior is preserved for the system message prefix
-- [ ] Tests updated or added to cover the change
+- [ ] `AnthropicApiClient.get_completion()` supports an opt-out path that omits
+  `cache_control` from the Anthropic API call; default behaviour (sending
+  `cache_control`) is unchanged for all other call sites
+- [ ] `LLMJudge.update_memory()` uses the opt-out path
+- [ ] `LLMPlayer.update_memory()` uses the opt-out path
+- [ ] `test_get_completion_anthropic_automatic_cache_control_always_sent` updated or
+  split to cover both default and opt-out behaviours
+- [ ] New tests confirm that `update_memory()` in both judge and player triggers the
+  opt-out path
 - [ ] `make ci` passes
 
 ---
