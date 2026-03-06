@@ -33,7 +33,6 @@ This is the long-term backlog and TODO scratchpad.
 ### Engine Features
 
 * **Improve LLM API Efficiency**
-  * Should remove json instruction and have per-provider json flags set for 4 big providers. Fallback to the instruction for Ollama + new providers.
   * Implement async behavior (per model provider?)
     * Batch processing for 24 hour turn around (game summary?). Unlikely to benefit for the near future.
   * Can we get the "thinking" from thinking llm models? Add that as a new field into the logs and transcript?
@@ -69,11 +68,7 @@ This is the long-term backlog and TODO scratchpad.
   * Support for multiple votes per player
 
 * **Game Loop: Looping**
-  * Explore running more than one turn on application execution
-  * Could turn it into a more mature CLI app:
-    * Pick an existing (unfinished) game or create a new one
-    * Run turns until key press, then finish the in-progress turn
-    * Improve console logging to only show game output, not INFO logging about engine steps
+  * Pick an existing (unfinished) game or create a new one interactively (game selection UI)
 
 ### Visualization (Web app)
 
