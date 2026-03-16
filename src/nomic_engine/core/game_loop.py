@@ -113,6 +113,9 @@ class GameLoop:
             # Get current player
             current_player = self._get_current_player()
 
+            # Print pre-turn header before any LLM calls
+            self._print_turn_header(current_player)
+
             max_withdrawal_retries = 2
             withdrawal_policy = WithdrawalPolicy.FORFEIT
             if self.game_manager.game_config is not None:
@@ -1339,6 +1342,28 @@ class GameLoop:
             print()
             for line in lines:
                 print(f"  {line}")
+
+    def _print_turn_header(self, current_player: BasePlayer) -> None:
+        """Print a concise pre-turn header to the console."""
+        assert self.game_manager.game_state is not None
+        state = self.game_manager.game_state
+        move = state.move_number
+        player_label = format_player_label(
+            current_player.player_name, self.game_manager.game_config
+        )
+        sorted_scores = sorted(
+            state.scores.items(), key=lambda kv: kv[1], reverse=True
+        )
+        scores_str = "  ".join(f"{name}: {pts}" for name, pts in sorted_scores)
+        target_str = (
+            f"  |  Target: {state.target_score}"
+            if state.target_score is not None
+            else ""
+        )
+        print(f"\n{'='*60}")
+        print(f"TURN {move}  |  {player_label}")
+        print(f"Scores: {scores_str}{target_str}")
+        print("=" * 60)
 
     def _advance_turn_state(self) -> None:
         """
