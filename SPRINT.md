@@ -49,11 +49,11 @@ After this task:
   appear on the console as-is.
 
 **Acceptance Criteria:**
-- [ ] Normal game execution produces no `logging`-originated lines on the console
-- [ ] `WARNING` and `ERROR` log messages still appear on the console
-- [ ] `game_log.jsonl` is unchanged (all log levels still written to file)
-- [ ] All `print()`-based status messages from LLM/player actions are unaffected
-- [ ] `make ci` passes
+- [x] Normal game execution produces no `logging`-originated lines on the console
+- [x] `WARNING` and `ERROR` log messages still appear on the console
+- [x] `game_log.jsonl` is unchanged (all log levels still written to file)
+- [x] All `print()`-based status messages from LLM/player actions are unaffected
+- [x] `make ci` passes
 
 ---
 
@@ -94,15 +94,15 @@ proposal") are unaffected and continue to appear just before the API call they
 describe.
 
 **Acceptance Criteria:**
-- [ ] The proposal is printed to the console as soon as it is received, before
+- [x] The proposal is printed to the console as soon as it is received, before
   discussion begins
-- [ ] Each discussion comment is printed as soon as it is received, not batched
-- [ ] Each vote is printed as soon as it is received, not batched
-- [ ] The vote tally, judge decision, scoring outcome, and any applied rule changes
+- [x] Each discussion comment is printed as soon as it is received, not batched
+- [x] Each vote is printed as soon as it is received, not batched
+- [x] The vote tally, judge decision, scoring outcome, and any applied rule changes
   are each printed when they occur
-- [ ] A proposal withdrawal is printed immediately when it occurs
-- [ ] `_print_proposal_summary()` and `_print_outcome_summary()` are no longer called
-- [ ] `make ci` passes
+- [x] A proposal withdrawal is printed immediately when it occurs
+- [x] `_print_proposal_summary()` and `_print_outcome_summary()` are no longer called
+- [x] `make ci` passes
 
 ---
 
@@ -128,11 +128,11 @@ This header is printed once per turn, at the very start of `run_turn()`, before 
 player or judge actions are taken.
 
 **Acceptance Criteria:**
-- [ ] A header is printed to the console at the start of every turn
-- [ ] The header shows: turn number, active player (name + model), all player scores,
+- [x] A header is printed to the console at the start of every turn
+- [x] The header shows: turn number, active player (name + model), all player scores,
   and target score (when set)
-- [ ] The header appears before any LLM status messages for that turn
-- [ ] `make ci` passes
+- [x] The header appears before any LLM status messages for that turn
+- [x] `make ci` passes
 
 ---
 
@@ -167,16 +167,16 @@ turn does not start. This mirrors the existing single-turn behaviour and applies
 equally in multi-turn mode.
 
 **Acceptance Criteria:**
-- [ ] `--turns N` runs exactly N turns (or fewer if game ends), then exits
-- [ ] `--until-victory` runs until the victory condition is reached, then exits
-- [ ] `--turns` and `--until-victory` together produce a clear CLI error and exit
+- [x] `--turns N` runs exactly N turns (or fewer if game ends), then exits
+- [x] `--until-victory` runs until the victory condition is reached, then exits
+- [x] `--turns` and `--until-victory` together produce a clear CLI error and exit
   without running any turns
-- [ ] Omitting both flags runs exactly one turn (unchanged default)
-- [ ] Invalid values for `--turns` (non-integer, zero, negative) produce a clear
+- [x] Omitting both flags runs exactly one turn (unchanged default)
+- [x] Invalid values for `--turns` (non-integer, zero, negative) produce a clear
   error
-- [ ] A `KeyboardInterrupt` hard-terminates at any point
-- [ ] An unrecoverable error in any turn stops the application; no further turns run
-- [ ] `make ci` passes
+- [x] A `KeyboardInterrupt` hard-terminates at any point
+- [x] An unrecoverable error in any turn stops the application; no further turns run
+- [x] `make ci` passes
 
 ---
 
