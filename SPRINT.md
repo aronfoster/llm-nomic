@@ -106,7 +106,7 @@ describe.
 
 ---
 
-### Task 3 — Pre-turn game state header
+### DONE ✅ Task 3 — Pre-turn game state header
 
 **Priority:** Medium
 
