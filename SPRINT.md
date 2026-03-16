@@ -57,7 +57,7 @@ After this task:
 
 ---
 
-### Task 2 — Real-time event output as player and judge actions arrive
+### DONE ✅ Task 2 — Real-time event output as player and judge actions arrive
 
 **Priority:** High
 

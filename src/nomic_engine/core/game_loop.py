@@ -139,6 +139,8 @@ class GameLoop:
                     logger.warning("Turn ended due to illegal proposal")
                     break
 
+                self._print_proposal(proposal)
+
                 # Step 2: Discuss
                 discussions = self._collect_discussions(
                     proposal,
@@ -169,6 +171,7 @@ class GameLoop:
                     proposal.proposal_id,
                     current_player.player_name,
                 )
+                self._print_withdrawal(proposal)
 
                 retries_exhausted = (
                     withdrawal_attempt >= max_withdrawal_retries
@@ -569,6 +572,7 @@ class GameLoop:
                 rules=self.game_manager.rules_manager.rules,
             )
 
+            self._print_discussion_comment(discussion)
             discussions.append(discussion)
             if discussion.text:
                 logger.debug(f"{player.player_name} provided discussion")
@@ -678,6 +682,7 @@ class GameLoop:
 
             if is_valid:
                 logger.info("Revised proposal passed validation")
+                self._print_revised_proposal(revised_proposal)
                 return revised_proposal
             else:
                 # Illegal revised proposal: fall back to original (KEEP)
@@ -736,6 +741,7 @@ class GameLoop:
                     player.player_name,
                 )
 
+            self._print_vote_cast(vote)
             votes.append(vote)
             logger.debug(f"{player.player_name} voted: {vote.vote}")
 
@@ -930,6 +936,7 @@ class GameLoop:
             )
             judge_vetoed = veto_response["veto"]
             logger.debug(f"Judge veto decision: vetoed={judge_vetoed}")
+            self._print_veto_decision(veto_response)
         else:
             # Proposal failed vote, no veto needed
             logger.debug("Proposal failed vote, skipping veto consultation")
@@ -954,6 +961,7 @@ class GameLoop:
             f"Judge score assessment complete: "
             f"{len(score_response.get('score_adjustments', []))} adjustments"
         )
+        self._print_score_assessment(score_response)
 
         # Calculate approval status
         judge_approved = vote_result.passed and not judge_vetoed
@@ -1169,6 +1177,12 @@ class GameLoop:
                 "skipping rule modifications"
             )
 
+        self._print_applied_changes(
+            proposal,
+            judge_decisions.state_updates,
+            judge_decisions.judge_approved,
+        )
+
         self._increment_proposal_counter()
 
         victory_reached, winners, winning_score = self._detect_victory()
@@ -1202,61 +1216,129 @@ class GameLoop:
         )
         return victory_reached
 
-    def _print_proposal_summary(
-        self, proposal: Proposal, vote_result: VoteResult
-    ) -> None:
-        """
-        Print proposal details and voting results to console.
-
-        Args:
-            proposal: The proposal being voted on
-            vote_result: The vote tallying result
-        """
+    def _print_proposal(self, proposal: Proposal) -> None:
+        """Print proposal details to console when received."""
         assert self.game_manager.game_state is not None
-
         proposer_label = format_player_label(
             proposal.proposer_name, self.game_manager.game_config
         )
-        print("\n" + "=" * 60)
-        print(f"PROPOSAL #{self.game_manager.game_state.move_number}")
-        print(f"Proposal ID: {proposal.proposal_id}")
-        print(f"Proposer: {proposer_label}")
-        print(f"Type: {proposal.type}")
+        move = self.game_manager.game_state.move_number
+        print(f"\n--- MOVE #{move} | {proposer_label} proposes ---")
+        print(f"Type: {proposal.type.value}")
         if proposal.target_rule_id:
-            print(f"Target Rule ID: {proposal.target_rule_id}")
+            print(f"Target Rule: {proposal.target_rule_id}")
         if proposal.new_text:
             print(f"New Text: {proposal.new_text}")
         if proposal.rationale:
             print(f"Rationale: {proposal.rationale}")
-        print("\nVOTING RESULTS:")
-        print(f"  YES: {vote_result.yes_count}")
-        print(f"  NO: {vote_result.no_count}")
-        print(f"  ABSTAIN: {vote_result.abstain_count}")
-        print(f"\nResult: {'PASSED' if vote_result.passed else 'FAILED'}")
-        print("=" * 60)
 
-    def _print_outcome_summary(
-        self, vote_result: VoteResult, judge_decisions: JudgeDecisions
-    ) -> None:
-        """
-        Print judge decision outcome to console.
+    def _print_withdrawal(self, proposal: Proposal) -> None:
+        """Print withdrawal notice to console."""
+        proposer_label = format_player_label(
+            proposal.proposer_name, self.game_manager.game_config
+        )
+        print(
+            f"\n<-- {proposer_label} withdrew proposal "
+            f"#{proposal.proposal_id}."
+        )
 
-        Args:
-            vote_result: The vote tallying result
-            judge_decisions: The consolidated judge decisions
-        """
-        if judge_decisions.judge_approved:
-            logger.info("Proposal PASSED and was not vetoed.")
-            print("\n⚖️  JUDGE: Outcome stands. Applying PASSED proposal.")
+    def _print_discussion_comment(self, discussion: Discussion) -> None:
+        """Print a single discussion comment to console."""
+        player_label = format_player_label(
+            discussion.player_name, self.game_manager.game_config
+        )
+        if discussion.text:
+            print(f"  [{player_label}]: {discussion.text}")
         else:
-            # Proposal failed or was vetoed
-            if not vote_result.passed:
-                logger.info("Proposal FAILED by vote.")
-                print("\n⚖️  JUDGE: Outcome stands. Proposal FAILED.")
+            print(f"  [{player_label}]: (abstained from discussion)")
+
+    def _print_revised_proposal(self, revised: Proposal) -> None:
+        """Print revised proposal to console when MODIFY is returned."""
+        proposer_label = format_player_label(
+            revised.proposer_name, self.game_manager.game_config
+        )
+        print(f"\n[revised] {proposer_label} modified the proposal:")
+        if revised.new_text:
+            print(f"  New Text: {revised.new_text}")
+        if revised.rationale:
+            print(f"  Rationale: {revised.rationale}")
+
+    def _print_vote_cast(self, vote: Vote) -> None:
+        """Print a single vote to console when cast."""
+        player_label = format_player_label(
+            vote.player_name, self.game_manager.game_config
+        )
+        icons = {"YES": "[Y]", "NO": "[N]", "ABSTAIN": "[A]"}
+        icon = icons.get(vote.vote, "[?]")
+        if vote.reason:
+            print(f"  {icon} {player_label}: {vote.vote} -- {vote.reason}")
+        else:
+            print(f"  {icon} {player_label}: {vote.vote}")
+
+    def _print_vote_tally(self, vote_result: VoteResult) -> None:
+        """Print final vote tally to console."""
+        result_str = "PASSED" if vote_result.passed else "FAILED"
+        print(
+            f"\nVote tally ({vote_result.vote_mode}): "
+            f"YES={vote_result.yes_count} "
+            f"NO={vote_result.no_count} "
+            f"ABSTAIN={vote_result.abstain_count} "
+            f"-> {result_str}"
+        )
+
+    def _print_veto_decision(
+        self,
+        veto_response: JudgeVetoResponse,
+    ) -> None:
+        """Print judge veto decision to console."""
+        if veto_response["veto"]:
+            reason = veto_response["reason"] or ""
+            msg = f"VETOED -- {reason}" if reason else "VETOED"
+            print(f"\n[Judge] {msg}")
+        else:
+            print("\n[Judge] No veto. Proposal stands.")
+
+    def _print_score_assessment(
+        self, score_response: JudgeScoreResponse
+    ) -> None:
+        """Print score adjustments to console when assessed."""
+        adjustments = score_response.get("score_adjustments", [])
+        if not adjustments:
+            return
+        print("\nScoring:")
+        for adj in adjustments:
+            sign = "+" if adj["delta"] >= 0 else ""
+            print(
+                f"  {adj['player']}: {sign}{adj['delta']} pts"
+                f" -- {adj['reason']}"
+            )
+
+    def _print_applied_changes(
+        self,
+        proposal: Proposal,
+        state_updates: StateUpdates,
+        judge_approved: bool,
+    ) -> None:
+        """Print rule and state changes to console after they are applied."""
+        lines: list[str] = []
+        if judge_approved:
+            ptype = proposal.type.value
+            rule_id = proposal.target_rule_id
+            if rule_id:
+                lines.append(f"Rule change applied: {ptype} {rule_id}")
             else:
-                # Proposal passed but was vetoed
-                logger.warning("Judge VETOED passed proposal")
-                print("\n⚖️  JUDGE VETO: Proposal has been VETOED and FAILED.")
+                lines.append(f"Rule change applied: {ptype}")
+        if "flags" in state_updates:
+            for k, v in state_updates["flags"].items():
+                lines.append(f"Flag updated: {k} = {v}")
+        if "target_score" in state_updates:
+            lines.append(
+                f"Target score updated: {state_updates['target_score']}"
+            )
+        if lines:
+            print()
+            for line in lines:
+                print(f"  {line}")
 
     def _advance_turn_state(self) -> None:
         """
@@ -1548,17 +1630,13 @@ class GameLoop:
         vote_mode_override = self._resolve_effective_vote_mode(proposal)
         vote_result = self._tally_vote_results(votes, vote_mode_override)
 
-        # Print proposal and voting results to console
-        self._print_proposal_summary(proposal, vote_result)
+        self._print_vote_tally(vote_result)
 
         # Phase 2: Get judge decisions (veto and scoring)
         logger.info("Phase 2: Consulting judge")
         judge_decisions = self._get_judge_decisions(
             proposal, votes, discussions, vote_result
         )
-
-        # Communicate outcome before application
-        self._print_outcome_summary(vote_result, judge_decisions)
 
         # Phase 3: Apply mutations (the ONLY phase with side effects)
         logger.info("Phase 3: Applying turn mutations")
