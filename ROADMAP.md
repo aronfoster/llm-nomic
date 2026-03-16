@@ -69,11 +69,14 @@ This is the long-term backlog and TODO scratchpad.
   * Support for multiple votes per player
 
 * **Game Loop: Looping**
-  * Explore running more than one turn on application execution
-  * Could turn it into a more mature CLI app:
-    * Pick an existing (unfinished) game or create a new one
-    * Run turns until key press, then finish the in-progress turn
-    * Improve console logging to only show game output, not INFO logging about engine steps
+  * ~~Explore running more than one turn on application execution~~ *(Sprint 39)*
+  * ~~Improve console logging to only show game output, not INFO logging about engine steps~~ *(Sprint 39)*
+  * **Graceful soft-interrupt**: Detect a keypress (e.g., any non-Ctrl+C key) while a turn is running
+    and finish the current turn cleanly before pausing, rather than hard-terminating. Requires
+    background thread polling for input while the turn executes. Ctrl+C remains a hard interrupt.
+  * **Full interactive CLI app**: A single long-running process that lets the operator pick an
+    existing (unfinished) game or create a new one, then runs turns continuously — all without
+    relaunching the application. Includes a clean prompt between sessions and graceful shutdown.
 
 ### Visualization (Web app)
 
