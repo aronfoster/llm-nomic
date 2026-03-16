@@ -57,46 +57,51 @@ After this task:
 
 ---
 
-### Task 2 — Echo the transcript to the console at end of each turn
+### Task 2 — Real-time event output as player and judge actions arrive
 
 **Priority:** High
 
 **Description:**
-`GameLogger.log_transcript()` already writes a rich markdown turn summary to
-`game_transcript.md` at the end of every turn. That same content should also be
-printed to the console, so an operator watching a live run sees exactly the same
-structured record that lands in the file.
+The console should show game events as they happen — not batched at the end of the
+turn. When a player's proposal comes back from the LLM, it should appear immediately.
+When each discussion comment arrives, it should appear immediately. The same for
+votes, the judge's veto decision, scoring, and any rule changes applied. An observer
+watching a live run should be able to follow the game moment-to-moment without waiting
+for the entire turn to finish before seeing any content.
 
-The ad-hoc console prints that duplicate a subset of this content —
-`_print_proposal_summary()` and `_print_outcome_summary()` in `game_loop.py` — are
-removed. The transcript entry that already covers all of this becomes the single
-source of console output for turn resolution.
+The existing ad-hoc prints (`_print_proposal_summary()`, `_print_outcome_summary()`)
+print a partial summary at the *wrong* time — after voting has already completed —
+and omit discussions entirely. These are replaced with targeted prints at the point
+each event actually occurs in the game loop:
 
-After this task, the console output for a completed turn contains exactly: the
-real-time LLM status messages that were printed during the turn (unchanged), followed
-by the full transcript entry for that turn (proposal, discussions, votes, judge
-decision, scoring, rule changes — as markdown). Nothing else.
+| Event | When to print |
+|-------|---------------|
+| Proposal submitted (or withdrawn) | When `propose()` returns |
+| Each player's discussion comment | When each `discuss()` returns |
+| Revised proposal (if MODIFY) | When `revise()` returns a changed proposal |
+| Each player's vote | When each `vote()` returns |
+| Vote tally | After all votes are collected |
+| Judge veto decision | When `get_veto()` returns |
+| Scoring | When `assess_scores()` returns |
+| Rule/state changes applied | After `_apply_turn_mutations()` completes |
 
-This also applies to special-case turn endings:
-- **Withdrawn proposal** — the transcript entry for a withdrawal is already written
-  to `game_transcript.md`; it must also be echoed to the console.
-- **Illegal proposal (exhausted retries)** — the transcript entry for an illegal
-  proposal is already written; it must also be echoed to the console.
-- **Victory** — the victory summary is already written and printed; no change needed.
+The content and formatting of each event print is left to the Developer, but must be
+consistent and human-readable. It does not need to mirror the markdown format of the
+transcript file — the transcript is the durable record; the console is the live view.
 
-The existing `_print_proposal_summary()` and `_print_outcome_summary()` methods may
-be removed once their call sites have been replaced by the transcript echo.
+The existing real-time LLM status messages (e.g., "🤔 Alice is thinking about a
+proposal") are unaffected and continue to appear just before the API call they
+describe.
 
 **Acceptance Criteria:**
-- [ ] At the end of every completed turn, the full transcript entry is printed to
-  the console
-- [ ] The withdrawn-proposal and illegal-proposal transcript entries are also echoed
-  to the console
+- [ ] The proposal is printed to the console as soon as it is received, before
+  discussion begins
+- [ ] Each discussion comment is printed as soon as it is received, not batched
+- [ ] Each vote is printed as soon as it is received, not batched
+- [ ] The vote tally, judge decision, scoring outcome, and any applied rule changes
+  are each printed when they occur
+- [ ] A proposal withdrawal is printed immediately when it occurs
 - [ ] `_print_proposal_summary()` and `_print_outcome_summary()` are no longer called
-- [ ] The real-time LLM status messages (printed during the turn) are unaffected and
-  appear before the end-of-turn transcript echo
-- [ ] The content printed to the console matches exactly what was appended to
-  `game_transcript.md` for that turn
 - [ ] `make ci` passes
 
 ---

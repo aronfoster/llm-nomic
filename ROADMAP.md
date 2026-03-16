@@ -74,9 +74,12 @@ This is the long-term backlog and TODO scratchpad.
   * **Graceful soft-interrupt**: Detect a keypress (e.g., any non-Ctrl+C key) while a turn is running
     and finish the current turn cleanly before pausing, rather than hard-terminating. Requires
     background thread polling for input while the turn executes. Ctrl+C remains a hard interrupt.
-  * **Full interactive CLI app**: A single long-running process that lets the operator pick an
-    existing (unfinished) game or create a new one, then runs turns continuously — all without
-    relaunching the application. Includes a clean prompt between sessions and graceful shutdown.
+  * **Full interactive CLI app** *(long-term goal)*: Replace the current "one invocation =
+    one turn" model with a single long-running process that is the primary way to play.
+    The operator launches the CLI once and is presented with a menu to continue an existing
+    game or create a new one. The selected game then runs turn-by-turn with no manual
+    re-launch. When a game ends (or the operator quits), the menu returns. The CLI should
+    never require the operator to pass `--game_dir` flags or know about internal file paths.
 
 ### Visualization (Web app)
 
