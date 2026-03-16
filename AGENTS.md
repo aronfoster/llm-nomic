@@ -7,13 +7,45 @@ These rules apply to every AI coding agent working in this repository
 
 ## Environment and setup
 
-TODO
+- **Python version:** 3.12
+- **Install dependencies:** `make install` (runs `pip install -r requirements.txt` and
+  `pre-commit install`)
+- **Key dependencies:** pydantic, pyyaml, openai, anthropic, google-genai,
+  python-json-logger, python-dotenv
+- **Dev tooling:** pytest, mypy (strict), black (line-length=79), ruff
+
+### Common make targets
+
+| Command | What it does |
+|---------|--------------|
+| `make ci` | Full quality gate — lint + typecheck + test. **Run before every commit.** |
+| `make format` | Auto-format with black and ruff --fix |
+| `make lint` | Check-only lint (no changes) |
+| `make typecheck` | mypy over `src/` |
+| `make test` | pytest over `tests/` |
+
+`make ci` is the single command that must pass before pushing. It runs all three
+checks in sequence and prints `✓ All quality checks passed!` on success.
+
+Tests require `PYTHONPATH=.:src` (already set by the Makefile targets).
 
 ---
 
 ## Git hooks
 
-TODO
+Pre-commit hooks are configured in `.pre-commit-config.yaml` and installed by
+`make install`. They run automatically on every `git commit`:
+
+- **black** — reformats Python files under `src/` and `tests/` (line-length 79)
+- **ruff** — lints and auto-fixes Python files under `src/` and `tests/`
+
+The hooks are **fast formatters only** — mypy and pytest are intentionally
+excluded from pre-commit (they run in `make ci` instead).
+
+If pre-commit is not yet installed (e.g. a fresh clone), run `make install` once
+to activate the hooks. After that, `git commit` will auto-format and auto-fix
+before the commit is recorded. If hooks modify files, the commit is aborted so
+you can stage the changes and re-commit — this is normal behaviour.
 
 ---
 
