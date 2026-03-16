@@ -32,7 +32,7 @@ def setup_logging(game_dir: str) -> None:
     Configure logging for the application.
 
     Sets up:
-    - Console handler: INFO level with text formatter
+    - Console handler: WARNING level with text formatter
     - File handler: DEBUG level with JSON formatter to game_log.jsonl
 
     Args:
@@ -41,9 +41,9 @@ def setup_logging(game_dir: str) -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
 
-    # Console handler - INFO level with text formatter
+    # Console handler - WARNING level so only warnings/errors appear on console
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.WARNING)
     console_formatter = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     )

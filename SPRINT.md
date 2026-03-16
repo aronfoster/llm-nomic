@@ -25,7 +25,7 @@ the transcript.
 
 ## Tasks
 
-### Task 1 — Silence engine logging on the console
+### DONE ✅ Task 1 — Silence engine logging on the console
 
 **Priority:** High (foundation for Task 2)
 
