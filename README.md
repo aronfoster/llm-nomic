@@ -102,22 +102,34 @@ Available LLM models:
 Choose a model by number: 2
 ```
 
-### Running a Turn
+### Running the Game
 
-After creating a game, run one turn at a time with:
+After creating a game, run turns with:
 
 ```bash
+# Run exactly one turn (default)
 python -m src.nomic_engine.main --game_dir games/<game-name>
+
+# Run a fixed number of turns
+python -m src.nomic_engine.main --game_dir games/<game-name> --turns 5
+
+# Run until the victory condition is reached
+python -m src.nomic_engine.main --game_dir games/<game-name> --until-victory
 ```
 
-The command will:
+`--turns N` and `--until-victory` are mutually exclusive. If the game ends
+before N turns are completed, execution stops and the victory summary is shown.
+Press Ctrl+C at any point to hard-terminate the process.
+
+Each invocation will:
 
 1. Load the specified game directory
 2. Instantiate each configured player
-3. Walk through the proposal, discussion, vote, judge, and scoring steps
-4. Save the updated game state and transcript back into the same directory
+3. Walk through the proposal, discussion, vote, judge, and scoring steps for each turn
+4. Save the updated game state and transcript back into the same directory after each turn
 
-Logging is written to the console and to `game_log.jsonl` inside the game directory so you can review detailed turn data.
+`WARNING` and `ERROR` messages are written to the console; full debug logs go to
+`game_log.jsonl` inside the game directory.
 
 ### Game Files
 
