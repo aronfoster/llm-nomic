@@ -145,7 +145,7 @@ def main() -> None:
     Main entrypoint for the Nomic game engine.
 
     Parses command-line arguments, loads the game, instantiates players,
-    and runs a single turn before exiting.
+    and runs one or more turns before exiting.
 
     Exit codes:
         0: Success or user interrupt
@@ -153,7 +153,7 @@ def main() -> None:
     """
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
-        description="Run one turn of a Nomic game."
+        description="Run one or more turns of a Nomic game."
     )
     parser.add_argument(
         "--game_dir",
@@ -161,7 +161,26 @@ def main() -> None:
         required=True,
         help="Path to the game instance directory",
     )
+    turn_mode = parser.add_mutually_exclusive_group()
+    turn_mode.add_argument(
+        "--turns",
+        type=int,
+        metavar="N",
+        help=(
+            "Run up to N turns in a single invocation "
+            "(must be a positive integer)"
+        ),
+    )
+    turn_mode.add_argument(
+        "--until-victory",
+        action="store_true",
+        default=False,
+        help="Run turns continuously until the victory condition is reached",
+    )
     args = parser.parse_args()
+
+    if args.turns is not None and args.turns < 1:
+        parser.error("--turns must be a positive integer")
 
     # Setup logging (after args so we have game_dir)
     setup_logging(args.game_dir)
@@ -246,15 +265,27 @@ def main() -> None:
     # Validate startup configuration (API keys + personality files)
     validate_startup(players, judge, manager)
 
-    # Run single turn
+    # Determine how many turns to run
+    if args.until_victory:
+        max_turns = None  # unlimited — run until victory
+    elif args.turns is not None:
+        max_turns = args.turns
+    else:
+        max_turns = 1  # default: one turn
+
+    # Run turns
+    turns_run = 0
+    game_over = False
     try:
         logger.info("Starting turn execution")
-        game_over = game_loop.run_turn()
-        if game_over:
-            logger.info("Game ended due to target score.")
-        else:
-            print("\n Turn complete. State saved.")
-            logger.info("Turn completed successfully")
+        while True:
+            game_over = game_loop.run_turn()
+            turns_run += 1
+            if game_over:
+                logger.info("Game ended due to target score.")
+                break
+            if max_turns is not None and turns_run >= max_turns:
+                break
     except KeyboardInterrupt:
         print("\n\nGame interrupted.")
         logger.info("Game interrupted by user")
@@ -262,6 +293,13 @@ def main() -> None:
     except Exception as e:
         logger.error(f"Error during game execution: {e}", exc_info=True)
         sys.exit(1)
+
+    if not game_over:
+        if turns_run == 1:
+            print("\n Turn complete. State saved.")
+        else:
+            print(f"\n {turns_run} turns complete. State saved.")
+        logger.info("Turn(s) completed successfully")
 
 
 if __name__ == "__main__":

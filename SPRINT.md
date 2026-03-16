@@ -136,7 +136,7 @@ player or judge actions are taken.
 
 ---
 
-### Task 4 — Multi-turn CLI flags
+### DONE ✅ Task 4 — Multi-turn CLI flags
 
 **Priority:** High
 
