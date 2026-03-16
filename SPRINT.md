@@ -1,646 +1,182 @@
-# Sprint 38 — Better Loops
+# Sprint 39 — Run the Game
 
 **Goal(s):**
-- Need to have all LLM input failures (e.g. bad rule number, ABSTAIN vote when not allowed, etc.) go through retry logic with basic (sanitized) error descriptions so the LLM can fix it.
-- This should be a smart refactor that creates reusable components appropriately, and leaves the codebase easier to understand
-- Secondary Goals - if sprint has room, fix bugs:
-  - Need to change text on last withdrawal attempt to make it clear that withdrawing is still an option, just skips your turn
-  - Remove ephemeral block from memory_update for Anthropic clients so we're not paying to write to the cache.
+- Allow the engine to run multiple turns in a single invocation via new CLI flags
+- Clean up the console so it shows meaningful, readable game content and nothing else
+- Unrecoverable errors in any turn stop the application immediately; the next turn never starts
 
 ---
 
 ## Background
 
-The existing retry pattern covers JSON-parse failures. When an LLM returns malformed JSON
-or a response that fails schema validation, the engine appends the bad response and an error
-message to the conversation history and asks the LLM to try again. This pattern is
-duplicated identically in seven places across `LLMPlayer` (propose, discuss, revise, vote)
-and `LLMJudge` (veto, score, maintain_state).
+Today the engine runs exactly one turn per invocation. To play a full game you must
+re-run the command after every turn, which makes watching or testing a game painful.
 
-Two classes of failure are **not** covered today:
+The console output also mixes two very different streams: structured engine-internal
+`logging` calls (e.g., "Loading game", "Starting turn N", "EVENT: move_start") with
+intentional game-facing `print()` output. The transcript file (`game_transcript.md`)
+already contains a well-structured, readable markdown summary of every turn. The
+console should show exactly that content — nothing more, nothing less.
 
-1. **Illegal proposals** — A proposal passes JSON parsing (valid structure, valid rule type)
-   but fails game-legality validation (e.g., AMEND targeting a rule ID that doesn't exist).
-   The engine currently logs the illegal proposal and ends the turn with no retry.
-
-2. **ABSTAIN-when-forbidden** — A player votes ABSTAIN when the `allow_abstention` flag is
-   False. The engine currently raises a `ValueError` immediately with no retry.
-
-The sprint fixes both gaps and refactors the duplicate retry code into a shared component.
+This sprint delivers both: multi-turn execution and a console experience that mirrors
+the transcript.
 
 ---
 
 ## Tasks
 
-### Task 1 — Extract shared retry helper
+### Task 1 — Silence engine logging on the console
+
+**Priority:** High (foundation for Task 2)
+
+**Description:**
+The console log handler currently emits `INFO`-level messages. This causes engine
+internals — model loading messages, turn-start notices, `EVENT:` entries from
+`GameLogger.log_event()`, and similar — to appear alongside the game output that
+players care about. All of these should be invisible on the console.
+
+After this task:
+- The console handler threshold is raised so that only `WARNING` and above appear on
+  the console. Normal game execution produces no console output from the `logging`
+  system at all.
+- The file handler is unchanged: `DEBUG` and above continues to be written to
+  `game_log.jsonl`.
+- `WARNING` and `ERROR` log messages (unexpected conditions, API failures, etc.)
+  remain visible on the console because they represent conditions the operator
+  needs to know about immediately.
+- All existing `print()` statements used for real-time status during LLM calls
+  (e.g., "🤔 Alice is thinking about a proposal") are unaffected and continue to
+  appear on the console as-is.
+
+**Acceptance Criteria:**
+- [ ] Normal game execution produces no `logging`-originated lines on the console
+- [ ] `WARNING` and `ERROR` log messages still appear on the console
+- [ ] `game_log.jsonl` is unchanged (all log levels still written to file)
+- [ ] All `print()`-based status messages from LLM/player actions are unaffected
+- [ ] `make ci` passes
+
+---
+
+### Task 2 — Real-time event output as player and judge actions arrive
 
 **Priority:** High
 
 **Description:**
-The retry loop for JSON-parse failures is copy-pasted in seven places across `LLMPlayer`
-and `LLMJudge`. Each copy has the same shape: loop up to N attempts, call the API, try to
-parse, on `ValueError` append the bad response + error message to conversation history and
-continue, on success return the result, on exhaustion fall back or raise.
+The console should show game events as they happen — not batched at the end of the
+turn. When a player's proposal comes back from the LLM, it should appear immediately.
+When each discussion comment arrives, it should appear immediately. The same for
+votes, the judge's veto decision, scoring, and any rule changes applied. An observer
+watching a live run should be able to follow the game moment-to-moment without waiting
+for the entire turn to finish before seeing any content.
 
-Extract this pattern into a single shared helper so the duplication is gone and future
-changes to retry behavior only need to happen in one place. This task also makes three
-small, targeted behavior improvements while touching these call sites (see Intentional
-Behavior Changes below).
+The existing ad-hoc prints (`_print_proposal_summary()`, `_print_outcome_summary()`)
+print a partial summary at the *wrong* time — after voting has already completed —
+and omit discussions entirely. These are replaced with targeted prints at the point
+each event actually occurs in the game loop:
 
-#### The Seven Locations
+| Event | When to print |
+|-------|---------------|
+| Proposal submitted (or withdrawn) | When `propose()` returns |
+| Each player's discussion comment | When each `discuss()` returns |
+| Revised proposal (if MODIFY) | When `revise()` returns a changed proposal |
+| Each player's vote | When each `vote()` returns |
+| Vote tally | After all votes are collected |
+| Judge veto decision | When `get_veto()` returns |
+| Scoring | When `assess_scores()` returns |
+| Rule/state changes applied | After `_apply_turn_mutations()` completes |
 
-| Action | File | Approx. Lines | Max-retries config key | Fallback on exhaustion |
-|--------|------|---------------|------------------------|------------------------|
-| `propose` | `players/llm_player.py` | 150–281 | `tuning.max_propose_retries` | raise `RuntimeError` |
-| `discuss` | `players/llm_player.py` | 316–416 | `tuning.max_discuss_retries` | return empty `Discussion` (abstain) |
-| `vote` | `players/llm_player.py` | 418–535 | `tuning.max_vote_retries` | return `Vote(vote="ABSTAIN")` |
-| `revise` | `players/llm_player.py` | 585–709 | `tuning.max_revise_retries` | return original proposal (KEEP) |
-| `get_veto` | `judge/llm_judge.py` | 172–288 | `tuning.max_judge_veto_retries` | raise `RuntimeError` |
-| `assess_scores` | `judge/llm_judge.py` | 290–413 | `tuning.max_judge_score_retries` | raise `RuntimeError` |
-| `maintain_state` | `judge/llm_judge.py` | 415–540 | `tuning.max_judge_maintain_state_retries` | raise `RuntimeError` |
+The content and formatting of each event print is left to the Developer, but must be
+consistent and human-readable. It does not need to mirror the markdown format of the
+transcript file — the transcript is the durable record; the console is the live view.
 
-#### Common Loop Shape (All 7 Copies)
-
-Every loop:
-
-1. Iterates `for attempt in range(max_retries)`
-2. Calls `self.api_client.get_completion(history)` and extracts `result.text`
-3. On `response_text is None` (API error): logs and `continue`s to next attempt
-4. Calls the action-specific parse function inside a `try` block
-5. On parse success: appends the response as an `assistant` `ChatMessage` to the
-   conversation history, then returns the result
-6. On `ValueError`: logs the error; if this was the last attempt, `break`s; otherwise
-   appends the bad response as `assistant` + a retry `user` message, then continues
-7. After the loop: executes the action-specific fallback (return or raise)
-
-#### Per-Action Differences the Helper Must Preserve
-
-**Retry message templates** (all defined in `llm/prompts.py`):
-
-| Action | Template constant |
-|--------|------------------|
-| `propose` | `PROPOSE_RETRY_TEMPLATE` |
-| `discuss` | `DISCUSS_RETRY_TEMPLATE` |
-| `vote` | `VOTE_RETRY_TEMPLATE` |
-| `revise` | `REVISE_RETRY_TEMPLATE` |
-| `get_veto` | `JUDGE_VETO_RETRY_TEMPLATE` |
-| `assess_scores` | `JUDGE_SCORE_RETRY_TEMPLATE` |
-| `maintain_state` | `JUDGE_MAINTAIN_STATE_RETRY_TEMPLATE` |
-
-All seven templates must include a `{validation_error}` placeholder. Currently
-`DISCUSS_RETRY_TEMPLATE` and `VOTE_RETRY_TEMPLATE` do not — update them to match the
-others. The helper always formats the template with `str(e)` from the caught `ValueError`.
-
-**LLMJudge-specific: secondary response tracking.**
-On a successful parse, the three `LLMJudge` actions also append the assistant message to
-`self._judge_turn_responses` (a separate list used later by `update_memory()`). Only the
-final response for each action (veto, score, maintain_state; successful or unsuccessful) should appear in
-this list — retried or rejected responses must never be added to it. The helper
-must support an optional secondary-append parameter for this; the `LLMPlayer` actions do
-not use it.
-
-**UX print statement (standardized for all actions).**
-Every LLM call — player and judge alike — must print a status message before the API call
-is made. Currently only `LLMPlayer` actions do this. The helper should accept a short
-action description string (e.g., `"thinking about a proposal"`, `"deciding on a veto"`)
-and print a consistent message using it. Exact wording is left to the Developer, but the
-format should be uniform and work for both player and judge contexts.
-
-**Conversation history variable name (standardize in this task).**
-`LLMPlayer` stores its history in `self.turn_history`; `LLMJudge` stores it in
-`self._turn_history`. Standardize both to `turn_history`. The rename is small and natural
-here because the helper already abstracts away the variable name (history is passed as a
-parameter). The helper itself does not care about the name — this is purely cleanup at the
-class level.
-
-**`_log_usage` call.**
-Each loop calls `self._log_usage(result, "<action_name>")` immediately after getting the
-completion. This is a one-liner per call site and is fine to keep at each call site rather
-than inside the helper, as the action label differs each time.
-
-#### Intentional Behavior Changes
-
-These three behaviors change deliberately as part of this task:
-
-1. **Retry error context for `discuss` and `vote`**: After this task, retry prompts for
-   `discuss` and `vote` will include the specific validation error (matching all other
-   actions). Previously they sent a generic message with no error detail.
-
-2. **Judge UX print statements**: `LLMJudge` actions will now print a status message
-   before each LLM call, the same as `LLMPlayer` actions. Previously judge calls were
-   silent.
-
-3. **History variable name**: `LLMJudge._turn_history` will be renamed to
-   `LLMJudge.turn_history`, matching `LLMPlayer`. No runtime behavior change.
-
-#### What Must Not Change
-
-Everything else must behave identically:
-
-- The number of LLM calls made for any sequence of parse outcomes
-- The exact sequence of `ChatMessage` objects appended to conversation history on both
-  success and failure paths (aside from the retry-message content change for `discuss`/`vote`)
-- The exact object returned (or exception raised) on success, on each specific exhaustion
-  fallback, and on repeated API-error (`None`) responses
-- Log output at `warning` and `error` levels (level and approximate message content)
-- `_judge_turn_responses` contains only the single successful assistant message per action,
-  never retried responses
-
-#### Testing
-
-- Add direct unit tests for the helper that exercise: (a) success on first attempt,
-  (b) failure then success (retry path), (c) exhaustion with raise, (d) exhaustion with
-  graceful fallback return, (e) `None` API response handling (skip and continue)
-- Update or fix any existing tests that break due to the refactor
-- Remove tests that no longer reflect current structure
+The existing real-time LLM status messages (e.g., "🤔 Alice is thinking about a
+proposal") are unaffected and continue to appear just before the API call they
+describe.
 
 **Acceptance Criteria:**
-- [x] The retry loop is no longer duplicated across `LLMPlayer` and `LLMJudge`
-- [x] All seven retry templates include `{validation_error}` and the helper always formats with it
-- [x] A status print message is emitted before every LLM call (player and judge)
-- [x] `LLMJudge._turn_history` renamed to `LLMJudge.turn_history`
-- [x] `_judge_turn_responses` never contains retried/rejected responses
-- [x] Tests added or updated to cover the retry helper directly
-- [x] `make ci` passes
-
-**Notes:**
-This is the natural foundation for Tasks 2 and 3, but those tasks may proceed before or
-after this one at the Developer's discretion.
+- [ ] The proposal is printed to the console as soon as it is received, before
+  discussion begins
+- [ ] Each discussion comment is printed as soon as it is received, not batched
+- [ ] Each vote is printed as soon as it is received, not batched
+- [ ] The vote tally, judge decision, scoring outcome, and any applied rule changes
+  are each printed when they occur
+- [ ] A proposal withdrawal is printed immediately when it occurs
+- [ ] `_print_proposal_summary()` and `_print_outcome_summary()` are no longer called
+- [ ] `make ci` passes
 
 ---
 
-### Task 2 — Retry on illegal proposals
+### Task 3 — Pre-turn game state header
+
+**Priority:** Medium
+
+**Description:**
+Before each turn begins — before any LLM calls are made — print a concise header to
+the console that summarises the current game state. This gives the operator at-a-glance
+context before the real-time status messages start appearing.
+
+The header must include:
+- Turn number
+- Name (and model label) of the player whose turn it is
+- Current scores for all players, sorted descending
+- Target score (if one is set)
+
+The exact formatting is left to the Developer, but it must be clearly visually
+separated from the previous turn's output (e.g., a horizontal rule or blank lines).
+
+This header is printed once per turn, at the very start of `run_turn()`, before any
+player or judge actions are taken.
+
+**Acceptance Criteria:**
+- [ ] A header is printed to the console at the start of every turn
+- [ ] The header shows: turn number, active player (name + model), all player scores,
+  and target score (when set)
+- [ ] The header appears before any LLM status messages for that turn
+- [ ] `make ci` passes
+
+---
+
+### Task 4 — Multi-turn CLI flags
 
 **Priority:** High
 
 **Description:**
-When a player's proposal passes JSON parsing but fails game-legality validation, the engine
-currently ends the turn with no retry. This task wires legality failures into the same retry
-loop used for JSON-parse failures, so the LLM gets a chance to correct the mistake.
+Add two new optional flags to the CLI. The existing default behaviour (run exactly
+one turn, then exit) is unchanged when neither flag is provided.
 
-The same fix applies to the revision phase: a MODIFY action that produces an illegal revised
-proposal currently ends the turn silently (treated as withdrawal); it should also retry.
+**`--turns N`**
+Run up to N turns in a single invocation. Turns execute back-to-back with no pause
+between them. If the game ends (victory condition reached) before N turns have been
+played, execution stops and the victory summary is shown. N must be a positive
+integer; the CLI should reject invalid values with a clear error message.
 
-#### Current Behavior (the bugs being fixed)
+**`--until-victory`**
+Run turns continuously until the victory condition is reached. If the game has no
+target score configured, the flag is accepted but the engine runs indefinitely (the
+operator must use Ctrl+C to stop). `--turns` and `--until-victory` are mutually
+exclusive; providing both is a CLI error.
 
-**Proposal step (`_get_and_validate_proposal` in `core/game_loop.py`):**
-After `propose()` returns, the game loop assigns `proposal_id`, calls `validate_proposal()`,
-and — if the proposal is illegal — logs it, clears `proposal_id`, and returns `None`. The
-turn ends immediately. The player is never told what was wrong; there is no retry.
+**Ctrl+C behaviour (unchanged):**
+A `KeyboardInterrupt` at any point hard-terminates the process immediately, exactly
+as it does today. State is only guaranteed consistent at turn boundaries (the engine
+already saves state atomically at the end of each turn).
 
-**Revision step (`_handle_revision` in `core/game_loop.py`):**
-After `revise()` returns a new proposal object (MODIFY action), the game loop re-validates
-it. If illegal, it logs the error and returns `None`. This is treated identically to a
-withdrawal — the turn ends with no vote, even though the original proposal was valid. There
-is no retry.
-
-#### Required New Behavior
-
-**Proposal legality retry:**
-- When a structurally-valid proposal fails `validate_proposal()`, inject the error message
-  into the player's conversation history and prompt the player to try again.
-- Retry attempts for legality failures count against the same per-turn limit as JSON-parse
-  failures: the combined total of all proposal attempts (parse failures + legality failures)
-  must not exceed `tuning.max_propose_retries`.
-- On exhaustion: raise `RuntimeError` (same as today — the turn ends).
-
-**Revision legality retry:**
-- When a MODIFY action produces an illegal revised proposal, inject the error message into
-  conversation history and prompt the player to try another revision (another
-  KEEP/MODIFY/WITHDRAW response).
-- Retry attempts count against `tuning.max_revise_retries`, shared with JSON-parse
-  failures in the revision phase.
-- On exhaustion: **fall back to KEEP** — return the original `proposal` unchanged and
-  proceed to the vote. Do **not** return `None`; the original proposal was valid and the
-  game should continue with it.
-  - This differs from the current behavior, which returns `None` (withdrawal).
-
-#### Retry Prompt Templates
-
-Add two new constants to `llm/prompts.py`:
-
-- `PROPOSE_LEGALITY_RETRY_TEMPLATE` — used when a proposal passes JSON parsing but fails
-  legality validation.
-- `REVISE_LEGALITY_RETRY_TEMPLATE` — used when a MODIFY revision passes JSON parsing but
-  fails legality validation.
-
-Both templates must follow a **generic format**: `{validation_error}` carries the full
-explanation of what went wrong (e.g., `"Rule 999 not found."` or `"Cannot amend immutable
-rule 101."`). The template body itself should **not** re-embed action-specific rules or
-the full JSON schema — the error message is self-explanatory. A short reminder of the
-expected output format (key names only, no rules) is acceptable and left to the Developer.
-Both templates must contain a `{validation_error}` placeholder.
-
-The existing `PROPOSE_RETRY_TEMPLATE` and `REVISE_RETRY_TEMPLATE` (used for JSON-parse
-failures) are unchanged.
-
-#### Wiring Legality Validation into the Retry Loop
-
-Legality validation must happen **inside** the retry loop so that its failures consume
-attempts from the same counter as JSON-parse failures. The Developer has full discretion
-over the implementation approach (e.g., a `post_parse_validator` parameter on
-`llm_retry_loop()`, a validator-wrapping closure passed as `parse_fn`, or another
-pattern). The constraint is purely behavioral: one shared attempt counter, one unified
-retry loop.
-
-**`proposal_id` handling:** `validate_proposal()` requires a non-`None` `proposal_id`.
-The game loop currently assigns this from `game_state.next_proposal_id` after `propose()`
-returns. If legality validation is pulled into the `propose()` retry loop, the Developer
-must ensure the correct ID is assigned before validation and that the proposal returned by
-`propose()` still has `proposal_id=None` (the game loop's post-return check at
-`_get_and_validate_proposal` line 402 enforces this).
-
-**Double-validation:** After this task, legality validation will happen inside the retry
-loop before `propose()` returns. The existing call to `validate_proposal()` in
-`_get_and_validate_proposal()` will be redundant for the normal path. The Developer should
-clean this up to avoid redundant work; keeping it as a defensive assertion is acceptable
-if the Developer prefers.
-
-#### Files to Be Aware Of
-
-| File | Relevance |
-|------|-----------|
-| `src/nomic_engine/players/llm_player.py` | `propose()` (lines 151–235) and `revise()` (lines 448–525) — primary change sites |
-| `src/nomic_engine/core/game_loop.py` | `_get_and_validate_proposal()` (lines 363–430) and `_handle_revision()` (lines 544–610) — existing legality-check logic |
-| `src/nomic_engine/validation/validator.py` | `validate_proposal(proposal, player_name, game_manager) -> tuple[bool, str]` |
-| `src/nomic_engine/llm/retry_helper.py` | `llm_retry_loop()` — the shared helper from Task 1; may need extension |
-| `src/nomic_engine/llm/prompts.py` | Add `PROPOSE_LEGALITY_RETRY_TEMPLATE`, `REVISE_LEGALITY_RETRY_TEMPLATE` |
-| `src/nomic_engine/data_models.py` | `Proposal` dataclass; `GameState.next_proposal_id` |
-
-#### Legality Error Messages (for reference)
-
-`validate_proposal()` returns these error strings on failure:
-
-| Scenario | Error string |
-|----------|-------------|
-| Proposer name mismatch | `"Player {player_name} submitted an illegal proposal attributed to {proposal.proposer_name}."` |
-| ADD with target_rule_id | `"Add proposals must not have a target_rule_id."` |
-| ADD without new_text | `"Add proposals must have new_text."` |
-| ADD where rule ID already exists | `"Rule {proposal_id} already exists."` |
-| AMEND without target_rule_id | `"Amend proposals must have a target_rule_id."` |
-| AMEND without new_text | `"Amend proposals must have new_text."` |
-| AMEND targeting non-existent rule | `"Rule {target_rule_id} not found."` |
-| AMEND targeting immutable rule | `"Cannot amend immutable rule {target_rule_id}."` |
-| REPEAL without target_rule_id | `"Repeal proposals must have a target_rule_id."` |
-| REPEAL targeting non-existent rule | `"Rule {target_rule_id} not found."` |
-| REPEAL targeting immutable rule | `"Cannot repeal immutable rule {target_rule_id}."` |
-| TRANSMUTE without target_rule_id | `"Transmute proposals must have a target_rule_id."` |
-| TRANSMUTE targeting non-existent rule | `"Rule {target_rule_id} not found."` |
-
-#### Other Similar Gaps
-
-The Developer should search for any other location where a structurally-valid LLM response
-is accepted by the parser but subsequently rejected for game-state reasons, and apply the
-same pattern. The two known cases are illegal proposals and illegal revised proposals.
+**Error behaviour:**
+If a turn raises an unrecoverable error, the application stops immediately. The next
+turn does not start. This mirrors the existing single-turn behaviour and applies
+equally in multi-turn mode.
 
 **Acceptance Criteria:**
-- [x] An illegal proposal (bad rule ID, immutable target, etc.) causes a retry with the
-  legality error message injected into conversation history
-- [x] An illegal revised proposal (MODIFY action) causes a retry, not a silent withdrawal
-- [x] Combined JSON-parse + legality attempt count is bounded by `max_propose_retries`
-  (proposal) and `max_revise_retries` (revision) respectively
-- [x] On proposal exhaustion: `RuntimeError` raised (turn ends, same as today)
-- [x] On revision exhaustion: original proposal returned unchanged (KEEP); turn proceeds
-  to vote — **not** treated as withdrawal
-- [x] `PROPOSE_LEGALITY_RETRY_TEMPLATE` and `REVISE_LEGALITY_RETRY_TEMPLATE` added to
-  `llm/prompts.py`; both contain `{validation_error}`; neither embeds game rules in the
-  template body
-- [x] Tests added or updated to cover: proposal legality retry (succeeds on retry),
-  proposal legality exhaustion (RuntimeError), revision legality retry (succeeds on retry),
-  revision legality exhaustion (KEEP fallback), combined parse+legality attempt counting
-- [x] `test_run_turn_stops_on_illegal_proposal` and
-  `test_step_3_revise_rejects_illegal_revised_proposal` updated to reflect new retry
-  behavior (these currently test that failures end the turn immediately)
-- [x] `make ci` passes
-
----
-
-### Task 3 — Retry on ABSTAIN-when-forbidden
-
-**Priority:** High
-
-**Description:**
-When `allow_abstention` is `False` and an LLM player votes ABSTAIN, the engine currently
-raises a `ValueError` in `_collect_votes()` with no retry, crashing the turn. This task
-wires the ABSTAIN-when-forbidden check into the same retry loop used for JSON-parse
-failures, so the LLM gets a chance to correct the mistake.
-
-#### Current Behavior (the bug being fixed)
-
-`game_loop.py` `_collect_votes()` calls `player.vote()`, then — after `vote()` returns —
-checks whether `allow_abstention` is `False` and the returned vote is `ABSTAIN`. If so,
-it raises a `ValueError` (lines 730–735). There is no retry; the turn crashes.
-
-Two compounding bugs:
-1. The `ValueError` fires outside the retry loop, so the LLM never gets a second chance.
-2. The fallback inside `vote()` when all retries are exhausted (`RuntimeError` path,
-   `llm_player.py` lines 386–395) always returns an ABSTAIN vote — which is wrong when
-   ABSTAIN is forbidden.
-
-#### Required New Behavior
-
-**Retry on ABSTAIN-when-forbidden:**
-- When `allow_abstention` is `False`, wire an ABSTAIN check into the retry loop inside
-  `LLMPlayer.vote()` using the `post_parse_validator` parameter of `llm_retry_loop()`.
-  The validator raises `ValueError` if the parsed vote is `"ABSTAIN"`.
-- The retry message (injected into conversation history) must use a new template constant
-  `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE` (see below), passed as `legality_retry_template`
-  to `llm_retry_loop()`.
-- ABSTAIN-when-forbidden failures consume attempts from the same counter as JSON-parse
-  failures. The combined total of all vote attempts must not exceed `tuning.max_vote_retries`.
-
-**Exhaustion fallback:**
-- When `allow_abstention` is `False` and all retries are exhausted, return a `NO` vote
-  (not ABSTAIN) as the fallback. The ABSTAIN fallback is incorrect here — the engine would
-  immediately re-raise the error it was just trying to avoid.
-- When `allow_abstention` is `True` (or unset), keep the existing ABSTAIN fallback
-  unchanged.
-
-**Remove the `ValueError` from `_collect_votes()`:**
-- The check at `game_loop.py` lines 730–735 raises `ValueError` when an ABSTAIN vote is
-  returned and `allow_abstention` is `False`. After this task, that case is handled inside
-  `vote()` before it returns, so this check can never be triggered by an `LLMPlayer`.
-- Remove the `ValueError` raise entirely. The Developer may keep a defensive
-  `logger.warning` or `assert` if they prefer, but it must not raise.
-
-#### New Prompt Template
-
-Add one new constant to `llm/prompts.py`:
-
-- **`VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE`** — used when a syntactically valid vote
-  response contains `"ABSTAIN"` but `allow_abstention` is `False`.
-
-The template must:
-- Contain a `{validation_error}` placeholder (required by `llm_retry_loop()`).
-- Clearly state that ABSTAIN is not allowed in this game and that the player must vote
-  YES or NO.
-- Not embed the full JSON schema or game rules. A reminder of the expected keys is
-  acceptable and left to the Developer.
-
-The `{validation_error}` placeholder will be formatted with the `ValueError` message from
-the `post_parse_validator`. A reasonable validator message is `"ABSTAIN is not permitted;
-you must vote YES or NO."` — exact wording is left to the Developer.
-
-#### Files to Change
-
-| File | Change |
-|------|--------|
-| `src/nomic_engine/llm/prompts.py` | Add `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE` |
-| `src/nomic_engine/players/llm_player.py` | Update `vote()`: pass `post_parse_validator` and `legality_retry_template` to `llm_retry_loop()`; fix the exhaustion fallback to return NO when ABSTAIN is forbidden |
-| `src/nomic_engine/core/game_loop.py` | Remove the `ValueError` raise for ABSTAIN-when-forbidden in `_collect_votes()` (lines 730–735) |
-
-`llm_retry_loop()` in `llm/retry_helper.py` already accepts `post_parse_validator` and
-`legality_retry_template` (added in Task 2) and requires **no changes**.
-
-#### What Must Not Change
-
-- Behavior when `allow_abstention` is `True` (ABSTAIN is accepted; exhaustion fallback
-  remains ABSTAIN).
-- The number of LLM calls made for any sequence of vote outcomes when ABSTAIN is allowed.
-- Log output at `warning` and `error` levels for the existing JSON-parse retry paths.
-- All other vote return values (YES, NO) and their associated `reason` / `private_thoughts`
-  fields.
-
-#### Testing
-
-The existing test `test_collect_votes_rejects_abstain_when_flag_false` asserts that
-`_collect_votes()` raises `ValueError` when a player returns ABSTAIN and
-`allow_abstention=False`. After this task, `_collect_votes()` no longer raises — that
-test must be updated or replaced.
-
-New tests to add (in `tests/src/nomic_engine/players/` or the existing
-`test_allow_abstention.py`, Developer's discretion):
-
-| Scenario | Expected outcome |
-|----------|-----------------|
-| `allow_abstention=False`, first response ABSTAIN, second response YES | YES vote returned; two LLM calls made |
-| `allow_abstention=False`, all responses ABSTAIN (exhaustion) | NO vote returned; no `ValueError` or `RuntimeError` raised |
-| `allow_abstention=False`, ABSTAIN attempt count added to JSON-parse attempt count, together reaching `max_vote_retries` | exhaustion fallback (NO) triggered at correct total count |
-| `allow_abstention=True`, response ABSTAIN | ABSTAIN accepted without retry (unchanged behavior) |
-| `allow_abstention=True`, all retries exhausted | existing ABSTAIN fallback returned (unchanged behavior) |
-
-**Acceptance Criteria:**
-- [x] An ABSTAIN vote when `allow_abstention=False` triggers a retry using
-  `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE`, with the error injected into conversation
-  history
-- [x] After retries are exhausted and `allow_abstention=False`, the vote is recorded as
-  NO (not ABSTAIN, no exception raised)
-- [x] When `allow_abstention=True`, ABSTAIN votes are accepted and the exhaustion fallback
-  remains ABSTAIN (no behavior change)
-- [x] The total vote attempt count (JSON-parse failures + ABSTAIN-when-forbidden failures)
-  is bounded by `tuning.max_vote_retries`
-- [x] `VOTE_ABSTAIN_FORBIDDEN_RETRY_TEMPLATE` added to `llm/prompts.py` and contains
-  `{validation_error}`
-- [x] `_collect_votes()` no longer raises `ValueError` for ABSTAIN-when-forbidden
-- [x] `test_collect_votes_rejects_abstain_when_flag_false` updated to reflect new behavior
-- [x] New tests cover: retry-then-success, exhaustion-NO-fallback, combined attempt
-  counting, and unchanged allow-abstention=True paths
-- [x] `make ci` passes
-
----
-
-### Task 4 — Fix withdrawal last-attempt text (if sprint has room)
-
-**Priority:** Low
-
-**Description:**
-When a player withdraws their proposal, the game loop calls
-`note_withdrawal_for_retry()` and then asks them to propose again. On the final
-allowed attempt, the prompt injected into the conversation history (for LLM players)
-and the console message (for human players) do not tell the player that withdrawal is
-still available in the upcoming revision phase — but that choosing it will end the
-turn with no vote. This can mislead the LLM (or human) into thinking they must commit
-to a proposal regardless of what it is.
-
-#### Current Behavior
-
-**LLM players** (`LLMPlayer.note_withdrawal_for_retry()`):
-`WITHDRAWAL_RETRY_TEMPLATE` is always used, regardless of attempt number. Its
-closing instruction is `"Return only valid JSON using the standard proposal schema."`
-There is no mention that WITHDRAW remains an option in the revision phase, nor of the
-consequence if chosen on the last attempt.
-
-**Human players** (`HumanPlayer.propose()` with `continue_turn=True`):
-The method prints a fixed notice that includes:
-`"Withdrawing there will give you another proposal opportunity (if retries remain)."`
-On the last attempt there are no retries remaining, so this guidance is factually
-wrong — withdrawing in the revision phase will skip the turn entirely, not yield
-another chance.
-
-#### Required Changes
-
-**1. New prompt template in `llm/prompts.py`**
-
-Add `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE`. This constant:
-- Must contain `{withdrawal_attempt}` and `{max_withdrawal_retries}` placeholders
-  (same as `WITHDRAWAL_RETRY_TEMPLATE`, for structural consistency)
-- Must clearly state this is the **last** proposal attempt
-- Must explicitly state that WITHDRAW is still available in the revision phase, but
-  if chosen, will **end the turn with no vote** (i.e., skip the player's turn)
-- Must ask for a valid JSON proposal response
-- Exact wording is left to the Developer
-
-The existing `WITHDRAWAL_RETRY_TEMPLATE` is **unchanged**.
-
-**2. `LLMPlayer.note_withdrawal_for_retry()` in `players/llm_player.py`**
-
-`note_withdrawal_for_retry()` already receives `withdrawal_attempt` and
-`max_withdrawal_retries`. Use them to select the correct template:
-
-- When `withdrawal_attempt == max_withdrawal_retries` (last attempt): format and
-  inject `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE`
-- Otherwise (intermediate attempt): continue using `WITHDRAWAL_RETRY_TEMPLATE`
-  unchanged
-
-No other behaviour of this method changes.
-
-**3. `HumanPlayer.propose()` in `players/human_player.py`**
-
-When `continue_turn=True`, the method already receives `withdrawal_attempt` and
-`max_withdrawal_retries`. Update the printed guidance so that:
-
-- On **intermediate attempts** (`withdrawal_attempt < max_withdrawal_retries`):
-  the existing message is unchanged
-- On the **last attempt** (`withdrawal_attempt == max_withdrawal_retries`): replace
-  the "gives another opportunity" sentence with text that clearly states withdrawal
-  is still possible but will skip the turn entirely. Exact wording is left to the
-  Developer.
-
-#### What Must Not Change
-
-- `WITHDRAWAL_RETRY_TEMPLATE` is unchanged
-- `note_withdrawal_for_retry` behaviour on intermediate attempts is unchanged
-- `HumanPlayer.propose()` behaviour on intermediate attempts is unchanged
-- Neither `LLMJudge` nor `HumanPlayer.note_withdrawal_for_retry()` is affected
-  (judge does not call this method; `HumanPlayer` inherits the base-class no-op)
-
-#### Testing
-
-Existing tests in `test_withdrawal_ux.py` that verify `WITHDRAWAL_RETRY_TEMPLATE`
-content and `note_withdrawal_for_retry` basic behaviour must continue to pass
-unchanged.
-
-New tests to add (all in `test_withdrawal_ux.py` or a focused new file at the
-Developer's discretion):
-
-| Scenario | Expected |
-|----------|----------|
-| `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE` constant exists in `prompts` with `{withdrawal_attempt}` and `{max_withdrawal_retries}` placeholders | Template present and formattable |
-| `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE` content signals last-attempt turn-end consequence (e.g., contains "skip", "end", "no vote", or equivalent) | Keyword present |
-| `LLMPlayer.note_withdrawal_for_retry(withdrawal_attempt=2, max_withdrawal_retries=2)` — appended message uses last-attempt language | Message content contains last-attempt keyword, NOT intermediate-attempt language |
-| `LLMPlayer.note_withdrawal_for_retry(withdrawal_attempt=1, max_withdrawal_retries=2)` — appended message uses `WITHDRAWAL_RETRY_TEMPLATE` language, NOT last-attempt language | Unchanged intermediate behaviour |
-| `HumanPlayer.propose(continue_turn=True, withdrawal_attempt=max_withdrawal_retries, max_withdrawal_retries=N)` — printed output signals turn-end consequence | Printed text contains last-attempt turn-end signal |
-| `HumanPlayer.propose(continue_turn=True, withdrawal_attempt < max_withdrawal_retries, max_withdrawal_retries=N)` — printed output does NOT contain last-attempt turn-end signal | Intermediate text unchanged |
-
-**Acceptance Criteria:**
-- [x] `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE` added to `llm/prompts.py`; contains
-  `{withdrawal_attempt}`, `{max_withdrawal_retries}`, and language about skipping
-  the turn if withdrawal is chosen
-- [x] `LLMPlayer.note_withdrawal_for_retry()` uses `WITHDRAWAL_LAST_ATTEMPT_TEMPLATE`
-  on the final attempt and `WITHDRAWAL_RETRY_TEMPLATE` on all other attempts
-- [x] `HumanPlayer.propose()` on the last withdrawal attempt prints a message that
-  accurately conveys that withdrawal will skip the turn (not give another chance)
-- [x] Tests added to cover: last-attempt template content, LLMPlayer template
-  selection, HumanPlayer last-attempt output, and unchanged intermediate behaviour
-- [x] `make ci` passes
-
----
-
-### Task 5 — Remove ephemeral block from memory_update (if sprint has room)
-
-**Priority:** Low
-
-**Description:**
-`AnthropicApiClient.get_completion()` currently sends `cache_control: {"type":
-"ephemeral"}` on every API call. For `update_memory()` calls, this triggers an
-unnecessary Anthropic cache **write** (which incurs a ~25% surcharge on input tokens)
-because the system message prefix was already cached by an earlier call in the same
-turn. The fix is to let `update_memory()` call `get_completion()` without the
-`cache_control` marker. The existing cache entry from the earlier call is still active
-and Anthropic will return a cache **read** (charged at ~10% of input tokens) without
-requiring a new write.
-
-This fix applies to both `LLMJudge.update_memory()` and `LLMPlayer.update_memory()`.
-In both cases, the system message prefix was already written to cache earlier in the
-same turn (`get_veto` for the judge; `propose` for the player).
-
-#### Current Behavior
-
-`AnthropicApiClient.get_completion(messages)` always passes `cache_control:
-{"type": "ephemeral"}` to the Anthropic SDK, regardless of the call context. The
-test `test_get_completion_anthropic_automatic_cache_control_always_sent` explicitly
-documents and asserts this always-on behaviour.
-
-Both `LLMJudge.update_memory()` and `LLMPlayer.update_memory()` call
-`self.api_client.get_completion(messages)` with no way to suppress the
-`cache_control` marker.
-
-#### Required Changes
-
-**1. `AnthropicApiClient.get_completion()` in `llm/api_clients.py`**
-
-Add a mechanism by which a caller can suppress the `cache_control` marker on a
-specific call. The default behaviour (sending `cache_control`) must remain unchanged
-for all existing call sites — this is a backwards-compatible, opt-out change.
-
-The Developer has full discretion over the implementation: optional keyword parameter,
-a separate method, or another pattern. The sole behavioral requirement is:
-
-- **Default / opt-in path**: `cache_control: {"type": "ephemeral"}` is sent (unchanged)
-- **Opt-out path**: `cache_control` is **not** included in the API call kwargs
-
-If the opt-out mechanism is expressed as a parameter on `get_completion()`, update
-`ApiClientProtocol` accordingly. Non-Anthropic clients (`OpenAICompatibleApiClient`,
-`GoogleApiClient`) must continue to work; they may accept and ignore the parameter.
-
-**2. `LLMJudge.update_memory()` in `judge/llm_judge.py`**
-
-Change the `self.api_client.get_completion(messages)` call to use the opt-out path
-so that `cache_control` is **not** sent for the memory update API call.
-
-**3. `LLMPlayer.update_memory()` in `players/llm_player.py`**
-
-Change the `self.api_client.get_completion(self.turn_history)` call to use the
-opt-out path so that `cache_control` is **not** sent for the memory update API call.
-
-#### What Must Not Change
-
-- Every call originating from `llm_retry_loop()` continues to send `cache_control`
-  (cache-write semantics are correct there; subsequent calls in the same turn benefit
-  from the resulting cache hit)
-- `LLMJudge.update_memory()` and `LLMPlayer.update_memory()` still expect a cache
-  **read** hit on the system prefix — the fix avoids paying to **refresh** the cache
-  entry, not avoid the cache entirely
-- Non-Anthropic providers are unaffected
-
-#### Testing
-
-**Tests to update:**
-- `test_get_completion_anthropic_automatic_cache_control_always_sent` in
-  `test_api_clients.py` currently asserts `cache_control` is present on every call.
-  This test must be updated (or split into two tests) to assert: (a) the **default**
-  path still sends `cache_control`, and (b) the **opt-out** path does not.
-
-**New tests to add:**
-
-| File | Scenario | Expected |
-|------|----------|----------|
-| `test_api_clients.py` | `AnthropicApiClient.get_completion()` via opt-out path | `cache_control` key absent from API call kwargs |
-| `test_api_clients.py` | `AnthropicApiClient.get_completion()` via default path | `cache_control: {"type": "ephemeral"}` present (unchanged) |
-| `test_persistent_memory_update.py` | `LLMJudge.update_memory()` invokes `get_completion` | API called via opt-out path (no `cache_control`) |
-| `test_persistent_memory_update.py` | `LLMPlayer.update_memory()` invokes `get_completion` | API called via opt-out path (no `cache_control`) |
-
-**Acceptance Criteria:**
-- [x] `AnthropicApiClient.get_completion()` supports an opt-out path that omits
-  `cache_control` from the Anthropic API call; default behaviour (sending
-  `cache_control`) is unchanged for all other call sites
-- [x] `LLMJudge.update_memory()` uses the opt-out path
-- [x] `LLMPlayer.update_memory()` uses the opt-out path
-- [x] `test_get_completion_anthropic_automatic_cache_control_always_sent` updated or
-  split to cover both default and opt-out behaviours
-- [x] New tests confirm that `update_memory()` in both judge and player triggers the
-  opt-out path
-- [x] `make ci` passes
+- [ ] `--turns N` runs exactly N turns (or fewer if game ends), then exits
+- [ ] `--until-victory` runs until the victory condition is reached, then exits
+- [ ] `--turns` and `--until-victory` together produce a clear CLI error and exit
+  without running any turns
+- [ ] Omitting both flags runs exactly one turn (unchanged default)
+- [ ] Invalid values for `--turns` (non-integer, zero, negative) produce a clear
+  error
+- [ ] A `KeyboardInterrupt` hard-terminates at any point
+- [ ] An unrecoverable error in any turn stops the application; no further turns run
+- [ ] `make ci` passes
 
 ---
 
