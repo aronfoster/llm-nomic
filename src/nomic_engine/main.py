@@ -2,7 +2,8 @@
 Main entrypoint for the Nomic game engine.
 
 This module provides the command-line interface to load and run a game,
-executing one turn at a time.
+executing one or more turns at a time, as well as an interactive console
+menu for managing multiple games within a single process.
 """
 
 import argparse
@@ -17,6 +18,8 @@ from .constants import GAME_LOG_FILE
 from .core.game_loop import GameLoop
 from .core.game_manager import GameManager
 from .data_models import JudgeType, ModelLibrary
+from .game_creator import run_creation_flow
+from .game_discovery import GameInfo, discover_games
 from .judge import BaseJudge
 from .judge.human_judge import HumanJudge
 from .judge.llm_judge import LLMJudge
@@ -140,63 +143,32 @@ def instantiate_judge(game_manager: GameManager) -> BaseJudge:
     return HumanJudge()
 
 
-def main() -> None:
+def run_game(
+    game_dir: str,
+    max_turns: int | None,
+) -> None:
     """
-    Main entrypoint for the Nomic game engine.
+    Load and run a game from *game_dir*.
 
-    Parses command-line arguments, loads the game, instantiates players,
-    and runs one or more turns before exiting.
+    Args:
+        game_dir: Path to the game instance directory.
+        max_turns: Maximum number of turns to run, or None for unlimited.
 
-    Exit codes:
-        0: Success or user interrupt
-        1: Error occurred (file not found, validation error, game error)
+    Side-effects:
+        Prints output to stdout. Calls sys.exit(1) on unrecoverable errors.
     """
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(
-        description="Run one or more turns of a Nomic game."
-    )
-    parser.add_argument(
-        "--game_dir",
-        type=str,
-        required=True,
-        help="Path to the game instance directory",
-    )
-    turn_mode = parser.add_mutually_exclusive_group()
-    turn_mode.add_argument(
-        "--turns",
-        type=int,
-        metavar="N",
-        help=(
-            "Run up to N turns in a single invocation "
-            "(must be a positive integer)"
-        ),
-    )
-    turn_mode.add_argument(
-        "--until-victory",
-        action="store_true",
-        default=False,
-        help="Run turns continuously until the victory condition is reached",
-    )
-    args = parser.parse_args()
-
-    if args.turns is not None and args.turns < 1:
-        parser.error("--turns must be a positive integer")
-
-    # Setup logging (after args so we have game_dir)
-    setup_logging(args.game_dir)
     logger = logging.getLogger(__name__)
 
     # Load model library
     try:
         model_library = load_model_library()
     except SystemExit:
-        # load_model_library already logged the error and called sys.exit
         raise
 
     # Load game
     try:
-        logger.info(f"Loading game from {args.game_dir}")
-        manager = GameManager(args.game_dir)
+        logger.info(f"Loading game from {game_dir}")
+        manager = GameManager(game_dir)
         manager.load_game()
         logger.info("Game loaded successfully")
     except FileNotFoundError as e:
@@ -245,8 +217,6 @@ def main() -> None:
 
         if victory_exists:
             logger.info("Game already completed, displaying victory summary")
-            # Game finished - display summary and exit without new turn
-            # (Don't log - that was done when victory first occurred)
             assert manager.game_state is not None
             victory_summary = game_loop._format_victory_summary(
                 winners=winners,
@@ -257,21 +227,13 @@ def main() -> None:
             )
             print(victory_summary)
             logger.info("Exiting: game already completed")
-            sys.exit(0)
+            return
     except Exception as e:
         logger.error(f"Error checking victory status: {e}", exc_info=True)
         sys.exit(1)
 
     # Validate startup configuration (API keys + personality files)
     validate_startup(players, judge, manager)
-
-    # Determine how many turns to run
-    if args.until_victory:
-        max_turns = None  # unlimited — run until victory
-    elif args.turns is not None:
-        max_turns = args.turns
-    else:
-        max_turns = 1  # default: one turn
 
     # Run turns
     turns_run = 0
@@ -300,6 +262,174 @@ def main() -> None:
         else:
             print(f"\n {turns_run} turns complete. State saved.")
         logger.info("Turn(s) completed successfully")
+
+
+def _print_game_list(games: list[GameInfo]) -> None:
+    """Print a numbered list of discovered games to stdout."""
+    for idx, game in enumerate(games, start=1):
+        status = "Complete" if game.is_complete else "In progress"
+        print(
+            f"  {idx}. {game.display_name}"
+            f"  [Turn {game.turn_number}"
+            f" | {game.current_player}"
+            f" | {status}]"
+        )
+
+
+def _menu_continue_game() -> str | None:
+    """
+    Handle the 'Continue a game' menu option.
+
+    Returns:
+        The selected game's directory path as a string, or None if the
+        operator declined to select a game (e.g. no games available).
+    """
+    games = discover_games()
+    if not games:
+        print("\nNo existing games found.")
+        return None
+
+    print("\nAvailable games:")
+    _print_game_list(games)
+
+    while True:
+        raw = input("\nSelect a game by number (or 0 to go back): ").strip()
+        try:
+            choice = int(raw)
+        except ValueError:
+            print("Please enter a number.")
+            continue
+        if choice == 0:
+            return None
+        if 1 <= choice <= len(games):
+            return str(games[choice - 1].path)
+        print(f"Please enter a number between 1 and {len(games)}, or 0.")
+
+
+def _menu_new_game() -> str | None:
+    """
+    Handle the 'New game' menu option.
+
+    Runs the interactive game-creation flow and returns the new game's
+    directory path. Returns None if creation fails unexpectedly.
+    """
+    try:
+        game_dir = run_creation_flow()
+        print(f"\nGame created at: {game_dir}")
+        return str(game_dir)
+    except KeyboardInterrupt:
+        print("\nGame creation cancelled.")
+        return None
+
+
+def run_interactive_menu(max_turns: int | None) -> None:
+    """
+    Display the top-level interactive console menu in a loop.
+
+    The operator is shown three options:
+    1. Continue a game
+    2. New game
+    3. Quit
+
+    After a game session ends (victory or operator stops), the menu is
+    shown again. The process does not exit between games.
+
+    Args:
+        max_turns: Forwarded to run_game(); None means unlimited turns.
+    """
+    while True:
+        print("\n" + "=" * 40)
+        print("  NOMIC — Main Menu")
+        print("=" * 40)
+        print("  1. Continue a game")
+        print("  2. New game")
+        print("  3. Quit")
+        print("=" * 40)
+
+        raw = input("Select an option: ").strip()
+
+        if raw == "1":
+            selected_dir = _menu_continue_game()
+            if selected_dir is None:
+                continue
+            setup_logging(selected_dir)
+            run_game(selected_dir, max_turns)
+
+        elif raw == "2":
+            new_dir = _menu_new_game()
+            if new_dir is None:
+                continue
+            play_now = input("\nStart playing now? [y/N]: ").strip().lower()
+            if play_now in ("y", "yes"):
+                setup_logging(new_dir)
+                run_game(new_dir, max_turns)
+
+        elif raw == "3":
+            print("Goodbye!")
+            sys.exit(0)
+
+        else:
+            print("Invalid option. Please enter 1, 2, or 3.")
+
+
+def main() -> None:
+    """
+    Main entrypoint for the Nomic game engine.
+
+    When invoked without --game_dir, displays an interactive console menu.
+    When invoked with --game_dir, loads and runs the specified game directly
+    (bypassing the menu).
+
+    Exit codes:
+        0: Success or user interrupt
+        1: Error occurred (file not found, validation error, game error)
+    """
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="Run one or more turns of a Nomic game."
+    )
+    parser.add_argument(
+        "--game_dir",
+        type=str,
+        default=None,
+        help="Path to the game instance directory",
+    )
+    turn_mode = parser.add_mutually_exclusive_group()
+    turn_mode.add_argument(
+        "--turns",
+        type=int,
+        metavar="N",
+        help=(
+            "Run up to N turns in a single invocation "
+            "(must be a positive integer)"
+        ),
+    )
+    turn_mode.add_argument(
+        "--until-victory",
+        action="store_true",
+        default=False,
+        help="Run turns continuously until the victory condition is reached",
+    )
+    args = parser.parse_args()
+
+    if args.turns is not None and args.turns < 1:
+        parser.error("--turns must be a positive integer")
+
+    # Determine max_turns for the turn loop
+    if args.until_victory:
+        max_turns: int | None = None  # unlimited
+    elif args.turns is not None:
+        max_turns = args.turns
+    else:
+        max_turns = 1  # default: one turn
+
+    if args.game_dir is not None:
+        # --game_dir provided: bypass menu, run directly
+        setup_logging(args.game_dir)
+        run_game(args.game_dir, max_turns)
+    else:
+        # No --game_dir: show interactive menu
+        run_interactive_menu(max_turns)
 
 
 if __name__ == "__main__":

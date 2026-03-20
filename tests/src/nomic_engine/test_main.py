@@ -1,6 +1,7 @@
 """Unit tests for main.py instantiate_players and instantiate_judge."""
 
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,6 +12,7 @@ from src.nomic_engine.data_models import (
     ModelDefinition,
     ModelLibrary,
 )
+from src.nomic_engine.game_discovery import GameInfo
 from src.nomic_engine.main import instantiate_judge, instantiate_players
 from src.nomic_engine.memory.memory_manager import MemoryManager
 
@@ -344,3 +346,211 @@ class TestMultiTurnFlags:
             self._stop_all(patchers)
         # Only 2 calls: first succeeded, second raised
         assert loop.run_turn.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Interactive menu tests
+# ---------------------------------------------------------------------------
+
+_MENU_PATCHES = [
+    "src.nomic_engine.main.load_model_library",
+    "src.nomic_engine.main.GameManager",
+    "src.nomic_engine.main.instantiate_players",
+    "src.nomic_engine.main.instantiate_judge",
+    "src.nomic_engine.main.validate_startup",
+    "src.nomic_engine.main.GameLoop",
+    "src.nomic_engine.main.setup_logging",
+]
+
+
+def _make_fake_game_info(name: str = "mygame") -> GameInfo:
+    return GameInfo(
+        display_name=name,
+        path=Path(f"/fake/games/{name}"),
+        turn_number=3,
+        current_player="Alice",
+        is_complete=False,
+    )
+
+
+class TestInteractiveMenu:
+    """Tests for the interactive console menu (no --game_dir)."""
+
+    def _start_patches(self) -> tuple[list, dict]:
+        patchers = []
+        mocks: dict = {}
+        for target in _MENU_PATCHES:
+            p = patch(target)
+            m = p.start()
+            patchers.append(p)
+            mocks[target] = m
+
+        loop_mock = MagicMock()
+        loop_mock.check_existing_victory.return_value = (False, [], 0)
+        loop_mock.run_turn.return_value = False
+        mocks["src.nomic_engine.main.GameLoop"].return_value = loop_mock
+
+        mocks["src.nomic_engine.main.load_model_library"].return_value = (
+            MagicMock()
+        )
+        gm = MagicMock()
+        gm.game_config.players = []
+        mocks["src.nomic_engine.main.GameManager"].return_value = gm
+        mocks["src.nomic_engine.main.instantiate_players"].return_value = [
+            MagicMock()
+        ]
+        mocks["src.nomic_engine.main.instantiate_judge"].return_value = (
+            MagicMock()
+        )
+        return patchers, mocks
+
+    def _stop_all(self, patchers: list) -> None:
+        for p in patchers:
+            p.stop()
+
+    def test_no_game_dir_shows_menu_then_quit(self, capsys) -> None:
+        """Without --game_dir, the menu is shown; option 3 exits cleanly."""
+        patchers, _ = self._start_patches()
+        try:
+            with patch("builtins.input", return_value="3"):
+                with pytest.raises(SystemExit) as exc_info:
+                    _run_main_with_argv([])
+                assert exc_info.value.code == 0
+        finally:
+            self._stop_all(patchers)
+        out = capsys.readouterr().out
+        assert "Main Menu" in out
+
+    def test_quit_exits_zero(self, capsys) -> None:
+        """Selecting 'Quit' exits with code 0."""
+        patchers, _ = self._start_patches()
+        try:
+            with patch("builtins.input", return_value="3"):
+                with pytest.raises(SystemExit) as exc_info:
+                    _run_main_with_argv([])
+                assert exc_info.value.code == 0
+        finally:
+            self._stop_all(patchers)
+
+    def test_continue_game_no_games_prints_message(self, capsys) -> None:
+        """Continue a game with no games prints a message, returns to menu."""
+        patchers, _ = self._start_patches()
+        # First input picks option 1, second picks option 3 (Quit)
+        inputs = iter(["1", "3"])
+        try:
+            with patch(
+                "src.nomic_engine.main.discover_games", return_value=[]
+            ):
+                with patch("builtins.input", side_effect=inputs):
+                    with pytest.raises(SystemExit) as exc_info:
+                        _run_main_with_argv([])
+                    assert exc_info.value.code == 0
+        finally:
+            self._stop_all(patchers)
+        out = capsys.readouterr().out
+        assert "No existing games found" in out
+
+    def test_continue_game_selects_and_runs(self) -> None:
+        """'Continue a game' with a game listed runs that game."""
+        patchers, mocks = self._start_patches()
+        game = _make_fake_game_info("mygame")
+        # inputs: pick option 1, select game 1, then quit
+        inputs = iter(["1", "1", "3"])
+        loop_mock = mocks["src.nomic_engine.main.GameLoop"].return_value
+        loop_mock.run_turn.return_value = False
+        try:
+            with patch(
+                "src.nomic_engine.main.discover_games", return_value=[game]
+            ):
+                with patch("builtins.input", side_effect=inputs):
+                    with pytest.raises(SystemExit) as exc_info:
+                        _run_main_with_argv(["--turns", "1"])
+                    assert exc_info.value.code == 0
+        finally:
+            self._stop_all(patchers)
+        assert loop_mock.run_turn.call_count == 1
+
+    def test_new_game_decline_to_play(self, capsys) -> None:
+        """'New game' flow: create game, decline to play, return to menu."""
+        patchers, _ = self._start_patches()
+        fake_dir = Path("/fake/games/newgame")
+        # inputs: option 2, then "n" for play now, then option 3 to quit
+        inputs = iter(["2", "n", "3"])
+        try:
+            with patch(
+                "src.nomic_engine.main.run_creation_flow",
+                return_value=fake_dir,
+            ):
+                with patch("builtins.input", side_effect=inputs):
+                    with pytest.raises(SystemExit) as exc_info:
+                        _run_main_with_argv([])
+                    assert exc_info.value.code == 0
+        finally:
+            self._stop_all(patchers)
+
+    def test_new_game_play_immediately(self) -> None:
+        """'New game' flow: create game, choose to play, game runs."""
+        patchers, mocks = self._start_patches()
+        fake_dir = Path("/fake/games/newgame")
+        loop_mock = mocks["src.nomic_engine.main.GameLoop"].return_value
+        loop_mock.run_turn.return_value = False
+        # inputs: option 2, "y" to play now, then option 3 to quit
+        inputs = iter(["2", "y", "3"])
+        try:
+            with patch(
+                "src.nomic_engine.main.run_creation_flow",
+                return_value=fake_dir,
+            ):
+                with patch("builtins.input", side_effect=inputs):
+                    with pytest.raises(SystemExit) as exc_info:
+                        _run_main_with_argv(["--turns", "1"])
+                    assert exc_info.value.code == 0
+        finally:
+            self._stop_all(patchers)
+        assert loop_mock.run_turn.call_count == 1
+
+    def test_game_dir_bypasses_menu(self) -> None:
+        """--game_dir bypasses the menu and runs the game directly."""
+        patchers, mocks = self._start_patches()
+        loop_mock = mocks["src.nomic_engine.main.GameLoop"].return_value
+        loop_mock.run_turn.return_value = False
+        try:
+            # No SystemExit expected — run_game returns normally
+            with patch("builtins.input") as mock_input:
+                _run_main_with_argv(["--game_dir", "/fake", "--turns", "1"])
+                mock_input.assert_not_called()
+        finally:
+            self._stop_all(patchers)
+        assert loop_mock.run_turn.call_count == 1
+
+    def test_invalid_menu_option_loops(self, capsys) -> None:
+        """Invalid menu input loops back to the menu prompt."""
+        patchers, _ = self._start_patches()
+        # Enter invalid option, then quit
+        inputs = iter(["9", "3"])
+        try:
+            with patch("builtins.input", side_effect=inputs):
+                with pytest.raises(SystemExit) as exc_info:
+                    _run_main_with_argv([])
+                assert exc_info.value.code == 0
+        finally:
+            self._stop_all(patchers)
+        out = capsys.readouterr().out
+        assert "Invalid option" in out
+
+    def test_continue_game_back_returns_to_menu(self, capsys) -> None:
+        """Entering 0 in game selection returns to the main menu."""
+        patchers, _ = self._start_patches()
+        game = _make_fake_game_info("mygame")
+        # inputs: option 1, then 0 (back), then quit
+        inputs = iter(["1", "0", "3"])
+        try:
+            with patch(
+                "src.nomic_engine.main.discover_games", return_value=[game]
+            ):
+                with patch("builtins.input", side_effect=inputs):
+                    with pytest.raises(SystemExit) as exc_info:
+                        _run_main_with_argv([])
+                    assert exc_info.value.code == 0
+        finally:
+            self._stop_all(patchers)

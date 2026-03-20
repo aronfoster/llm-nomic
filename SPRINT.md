@@ -107,7 +107,7 @@ function returns an empty list without raising an error.
 
 ---
 
-## Task 3 — Top-level interactive console menu
+## DONE ✅ Task 3 — Top-level interactive console menu
 
 **Priority:** High (unblocks Task 4)
 
