@@ -226,16 +226,27 @@ class TestMultiTurnFlags:
             p.stop()
 
     # ------------------------------------------------------------------
-    # Default: no flags → exactly one turn
+    # Default: no flags → continuous loop until victory
     # ------------------------------------------------------------------
 
-    def test_default_runs_one_turn(self) -> None:
-        patchers, loop = self._patch_all([False])
+    def test_default_runs_continuous_until_victory(self) -> None:
+        """Without flags, the loop runs continuously until victory."""
+        patchers, loop = self._patch_all([False, False, True])
         try:
             _run_main_with_argv(["--game_dir", "/fake"])
         finally:
             self._stop_all(patchers)
-        assert loop.run_turn.call_count == 1
+        assert loop.run_turn.call_count == 3
+
+    def test_default_does_not_stop_after_one_turn(self) -> None:
+        """Without flags, the loop does NOT stop after a single non-victory
+        turn."""
+        patchers, loop = self._patch_all([False, True])
+        try:
+            _run_main_with_argv(["--game_dir", "/fake"])
+        finally:
+            self._stop_all(patchers)
+        assert loop.run_turn.call_count == 2
 
     # ------------------------------------------------------------------
     # --turns N

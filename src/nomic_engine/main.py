@@ -421,7 +421,7 @@ def main() -> None:
     elif args.turns is not None:
         max_turns = args.turns
     else:
-        max_turns = 1  # default: one turn
+        max_turns = None  # default: continuous loop until victory
 
     if args.game_dir is not None:
         # --game_dir provided: bypass menu, run directly

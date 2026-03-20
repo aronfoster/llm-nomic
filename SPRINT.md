@@ -152,7 +152,7 @@ operator is not shown a menu.
 
 ---
 
-## Task 4 — Interactive turn loop
+## DONE ✅ Task 4 — Interactive turn loop
 
 **Priority:** High
 
