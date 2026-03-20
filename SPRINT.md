@@ -37,7 +37,7 @@ naturally with it.
 
 ---
 
-## Task 1 — Extract game-creation logic into an importable module
+## DONE ✅ Task 1 — Extract game-creation logic into an importable module
 
 **Priority:** High (unblocks Task 3)
 
