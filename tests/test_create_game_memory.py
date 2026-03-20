@@ -6,7 +6,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from create_game import create_game_files
 from src.nomic_engine.data_models import (
     JudgeType,
     ModelDefinition,
@@ -14,6 +13,7 @@ from src.nomic_engine.data_models import (
     Rule,
     RuleStatus,
 )
+from src.nomic_engine.game_creator import create_game_files
 
 # ---------------------------------------------------------------------------
 # Minimal rule list so create_game_files can write rules.jsonl
@@ -51,8 +51,11 @@ def _run_create(
 ) -> None:
     """Run create_game_files with flag-schema mocked out."""
     with (
-        patch("create_game.load_flag_schema"),
-        patch("create_game.get_flag_defaults", return_value=_FLAG_DEFAULTS),
+        patch("nomic_engine.game_creator.load_flag_schema"),
+        patch(
+            "nomic_engine.game_creator.get_flag_defaults",
+            return_value=_FLAG_DEFAULTS,
+        ),
     ):
         create_game_files(
             game_dir,
