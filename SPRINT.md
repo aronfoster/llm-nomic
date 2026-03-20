@@ -69,7 +69,7 @@ from an existing module — is left to the Developer. What matters is:
 
 ---
 
-## Task 2 — Game discovery utility
+## DONE ✅ Task 2 — Game discovery utility
 
 **Priority:** High (unblocks Task 3)
 
