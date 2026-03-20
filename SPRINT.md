@@ -158,35 +158,35 @@ operator is not shown a menu.
 
 **Description:**
 
-Replace the current automatic "run N turns then exit" behaviour with an
-interactive loop that prompts the operator between turns.
+Replace the current "run N turns then exit" behaviour with a continuous
+auto-advancing loop. Turns run back-to-back with no input required between
+them, until the game ends or the operator signals a stop via the soft-interrupt
+(Task 5).
 
 **Default interactive behaviour (no batch flags):**
 
-After each turn completes, print a prompt:
+Turns advance automatically, one after another, with no prompt between them.
+The operator does not need to press anything to continue. The loop ends when:
 
-```
-[Enter] next turn   [q] quit
-```
-
-- **Enter** runs the next turn.
-- **`q`** (or `quit`) exits the loop. If the operator reached this loop via
-  the top-level menu (Task 3), return to the menu. If they launched with
-  `--game_dir` directly, exit the process cleanly (exit code 0).
-- If the game reaches the victory condition, display the victory summary and
-  return to the menu (or exit if `--game_dir` was used) without prompting.
+- The game reaches the victory condition — display the victory summary, then
+  return to the top-level menu (or exit cleanly if launched with `--game_dir`).
+- The operator triggers the soft-interrupt (Task 5) — after the current turn
+  completes fully, return to the top-level menu (or exit cleanly if launched
+  with `--game_dir`).
+- The operator presses Ctrl+C — hard-terminate immediately (unchanged).
 
 **Default behaviour change:**
 
 Previously, omitting all flags ran exactly one turn. After this task, omitting
-all flags enters the interactive turn loop. This applies whether the game was
-reached via the menu or via `--game_dir`.
+all flags enters the continuous auto-advancing loop. This applies whether the
+game was reached via the menu or via `--game_dir`.
 
 **Batch flags (unchanged):**
 
-`--turns N` and `--until-victory` remain and bypass the interactive prompt
-entirely, running turns automatically as before. If used in combination with
-`--game_dir`, behaviour is identical to Sprint 39.
+`--turns N` and `--until-victory` continue to work as before. Their behaviour
+is now identical to the new default loop, except `--turns N` still stops after
+N turns. If used in combination with `--game_dir`, behaviour is identical to
+Sprint 39.
 
 **Already-complete games:**
 
@@ -194,14 +194,15 @@ If the selected game has already reached victory, display the victory summary
 immediately and return to the menu (or exit). No turns are run.
 
 **Acceptance Criteria:**
-- [ ] The interactive prompt appears after each completed turn when no batch
-  flags are given
-- [ ] Enter runs the next turn; `q`/`quit` exits the loop
+- [ ] Turns advance automatically with no input required between them
 - [ ] Victory ends the loop, shows the summary, and returns to the menu
 - [ ] A game already at victory shows the summary without running any turns
-- [ ] `--turns N` and `--until-victory` run turns automatically (no prompt)
-- [ ] Omitting all flags no longer runs exactly one turn; the interactive loop
+- [ ] `--turns N` still stops after N turns
+- [ ] `--until-victory` still runs until victory (behaviour now matches the
+  default)
+- [ ] Omitting all flags no longer runs exactly one turn; the continuous loop
   is entered instead
+- [ ] Ctrl+C hard-terminates immediately (unchanged)
 - [ ] `make ci` passes
 
 ---
@@ -226,20 +227,19 @@ loop stops.
   `"Stopping after this turn…"`.
 - The current turn runs to full completion: all LLM calls, voting, scoring, and
   state save proceed normally.
-- After the turn completes, the operator is returned to the between-turns
-  interactive prompt regardless of what execution mode is active (interactive
-  or batch). In interactive mode this is the normal prompt; in batch mode this
-  means the batch run is interrupted after the current turn.
-- Pressing the key when no turn is running (e.g. while waiting at the
-  between-turns prompt) has no effect.
+- After the turn completes, the turn loop exits and the operator is returned
+  to the top-level menu. If the process was launched with `--game_dir`
+  directly (no menu), the process exits cleanly (exit code 0).
+- Pressing the key when no turn is running has no visible effect.
 - **Ctrl+C continues to hard-terminate the process immediately at any point.**
   This is unchanged from current behaviour.
 
 **Acceptance Criteria:**
 - [ ] Pressing the designated key during turn execution sets the stop flag and
   prints an acknowledgement
-- [ ] The running turn always completes fully before the loop pauses
-- [ ] After the turn completes, the operator is at the between-turns prompt
+- [ ] The running turn always completes fully before the loop exits
+- [ ] After the turn completes, the operator is returned to the top-level menu
+  (or the process exits cleanly if launched with `--game_dir`)
 - [ ] The soft-interrupt works in both interactive mode and batch mode
   (`--turns`, `--until-victory`)
 - [ ] Pressing the key when no turn is running has no visible effect
