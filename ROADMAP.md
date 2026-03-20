@@ -71,15 +71,15 @@ This is the long-term backlog and TODO scratchpad.
 * **Game Loop: Looping**
   * ~~Explore running more than one turn on application execution~~ *(Sprint 39)*
   * ~~Improve console logging to only show game output, not INFO logging about engine steps~~ *(Sprint 39)*
-  * **Graceful soft-interrupt**: Detect a keypress (e.g., any non-Ctrl+C key) while a turn is running
+  * ~~**Graceful soft-interrupt**: Detect a keypress (e.g., any non-Ctrl+C key) while a turn is running
     and finish the current turn cleanly before pausing, rather than hard-terminating. Requires
-    background thread polling for input while the turn executes. Ctrl+C remains a hard interrupt.
-  * **Full interactive CLI app** *(long-term goal)*: Replace the current "one invocation =
+    background thread polling for input while the turn executes. Ctrl+C remains a hard interrupt.~~ *(Sprint 40)*
+  * ~~**Full interactive CLI app** *(long-term goal)*: Replace the current "one invocation =
     one turn" model with a single long-running process that is the primary way to play.
     The operator launches the CLI once and is presented with a menu to continue an existing
     game or create a new one. The selected game then runs turn-by-turn with no manual
     re-launch. When a game ends (or the operator quits), the menu returns. The CLI should
-    never require the operator to pass `--game_dir` flags or know about internal file paths.
+    never require the operator to pass `--game_dir` flags or know about internal file paths.~~ *(Sprint 40)*
 
 ### Visualization (Web app)
 

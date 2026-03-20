@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -167,6 +167,7 @@ _PATCHES = [
     "src.nomic_engine.main.validate_startup",
     "src.nomic_engine.main.GameLoop",
     "src.nomic_engine.main.setup_logging",
+    "src.nomic_engine.main.SoftInterruptListener",
 ]
 
 
@@ -190,7 +191,9 @@ class TestMultiTurnFlags:
     """Tests for --turns and --until-victory CLI flags."""
 
     def _patch_all(
-        self, run_turn_results: list[bool]
+        self,
+        run_turn_results: list[bool],
+        listener_stop_requested: list[bool] | None = None,
     ) -> tuple[list[MagicMock], MagicMock]:
         """Start all required patches and return (patchers, loop_mock)."""
         loop_mock = _make_game_loop_mock(run_turn_results)
@@ -218,6 +221,20 @@ class TestMultiTurnFlags:
         ]
         mocks["src.nomic_engine.main.instantiate_judge"].return_value = (
             MagicMock()
+        )
+        # Wire SoftInterruptListener() to a no-op mock; default: never
+        # triggers so existing tests are unaffected.
+        listener_mock = MagicMock()
+        if listener_stop_requested is not None:
+            type(listener_mock).stop_requested = PropertyMock(
+                side_effect=listener_stop_requested
+            )
+        else:
+            type(listener_mock).stop_requested = PropertyMock(
+                return_value=False
+            )
+        mocks["src.nomic_engine.main.SoftInterruptListener"].return_value = (
+            listener_mock
         )
         return patchers, loop_mock
 
@@ -371,6 +388,7 @@ _MENU_PATCHES = [
     "src.nomic_engine.main.validate_startup",
     "src.nomic_engine.main.GameLoop",
     "src.nomic_engine.main.setup_logging",
+    "src.nomic_engine.main.SoftInterruptListener",
 ]
 
 
@@ -412,6 +430,12 @@ class TestInteractiveMenu:
         ]
         mocks["src.nomic_engine.main.instantiate_judge"].return_value = (
             MagicMock()
+        )
+        # Wire SoftInterruptListener() to a no-op mock (never triggers).
+        listener_mock = MagicMock()
+        type(listener_mock).stop_requested = PropertyMock(return_value=False)
+        mocks["src.nomic_engine.main.SoftInterruptListener"].return_value = (
+            listener_mock
         )
         return patchers, mocks
 
@@ -565,3 +589,178 @@ class TestInteractiveMenu:
                     assert exc_info.value.code == 0
         finally:
             self._stop_all(patchers)
+
+
+# ---------------------------------------------------------------------------
+# Soft-interrupt integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestSoftInterrupt:
+    """Tests for the graceful soft-interrupt (Task 5)."""
+
+    def _patch_all(
+        self,
+        run_turn_results: list[bool],
+        listener_stop_requested: list[bool] | None = None,
+    ) -> tuple[list[MagicMock], MagicMock]:
+        """Start all required patches and return (patchers, loop_mock)."""
+        loop_mock = _make_game_loop_mock(run_turn_results)
+        patchers = []
+        mocks: dict = {}
+        for target in _PATCHES:
+            p = patch(target)
+            m = p.start()
+            patchers.append(p)
+            mocks[target] = m
+
+        mocks["src.nomic_engine.main.GameLoop"].return_value = loop_mock
+        mocks["src.nomic_engine.main.load_model_library"].return_value = (
+            MagicMock()
+        )
+        gm = MagicMock()
+        gm.game_config.players = []
+        mocks["src.nomic_engine.main.GameManager"].return_value = gm
+        mocks["src.nomic_engine.main.instantiate_players"].return_value = [
+            MagicMock()
+        ]
+        mocks["src.nomic_engine.main.instantiate_judge"].return_value = (
+            MagicMock()
+        )
+
+        listener_mock = MagicMock()
+        if listener_stop_requested is not None:
+            type(listener_mock).stop_requested = PropertyMock(
+                side_effect=listener_stop_requested
+            )
+        else:
+            type(listener_mock).stop_requested = PropertyMock(
+                return_value=False
+            )
+        mocks["src.nomic_engine.main.SoftInterruptListener"].return_value = (
+            listener_mock
+        )
+        return patchers, loop_mock
+
+    def _stop_all(self, patchers: list[MagicMock]) -> None:
+        for p in patchers:
+            p.stop()
+
+    def test_soft_interrupt_stops_loop_after_current_turn(self) -> None:
+        """Soft interrupt exits the loop after the turn that is running."""
+        # run_turn returns False (no victory) indefinitely.
+        # stop_requested returns False after turn 1 and True after turn 2
+        # so the loop should stop after 2 turns total.
+        patchers, loop = self._patch_all(
+            run_turn_results=[False, False, False],
+            listener_stop_requested=[False, True],
+        )
+        try:
+            _run_main_with_argv(["--game_dir", "/fake"])
+        finally:
+            self._stop_all(patchers)
+        assert loop.run_turn.call_count == 2
+
+    def test_soft_interrupt_stops_after_first_turn(self) -> None:
+        """stop_requested True after the first turn exits after one turn."""
+        patchers, loop = self._patch_all(
+            run_turn_results=[False, False],
+            listener_stop_requested=[True],
+        )
+        try:
+            _run_main_with_argv(["--game_dir", "/fake"])
+        finally:
+            self._stop_all(patchers)
+        assert loop.run_turn.call_count == 1
+
+    def test_soft_interrupt_works_with_turns_flag(self) -> None:
+        """Soft interrupt also works in --turns N batch mode."""
+        # --turns 5 requested, but soft interrupt fires after turn 2
+        patchers, loop = self._patch_all(
+            run_turn_results=[False, False, False, False, False],
+            listener_stop_requested=[False, True],
+        )
+        try:
+            _run_main_with_argv(["--game_dir", "/fake", "--turns", "5"])
+        finally:
+            self._stop_all(patchers)
+        assert loop.run_turn.call_count == 2
+
+    def test_soft_interrupt_works_with_until_victory(self) -> None:
+        """Soft interrupt also works in --until-victory mode."""
+        patchers, loop = self._patch_all(
+            run_turn_results=[False, False, False],
+            listener_stop_requested=[False, True],
+        )
+        try:
+            _run_main_with_argv(["--game_dir", "/fake", "--until-victory"])
+        finally:
+            self._stop_all(patchers)
+        assert loop.run_turn.call_count == 2
+
+    def test_soft_interrupt_not_checked_when_no_turns_run(self) -> None:
+        """If game is already complete, the soft interrupt is irrelevant."""
+        patchers, loop = self._patch_all(run_turn_results=[])
+        # Override check_existing_victory to simulate an already-won game
+        loop.check_existing_victory.return_value = (True, ["Alice"], 100)
+        loop._format_victory_summary = MagicMock(return_value="")
+        try:
+            _run_main_with_argv(["--game_dir", "/fake"])
+        finally:
+            self._stop_all(patchers)
+        loop.run_turn.assert_not_called()
+
+    def test_soft_interrupt_not_triggered_when_victory_comes_first(
+        self,
+    ) -> None:
+        """Victory takes precedence: loop ends without soft interrupt."""
+        # Victory on turn 1 — stop_requested is never needed
+        patchers, loop = self._patch_all(
+            run_turn_results=[True],
+            listener_stop_requested=[False],
+        )
+        try:
+            _run_main_with_argv(["--game_dir", "/fake"])
+        finally:
+            self._stop_all(patchers)
+        assert loop.run_turn.call_count == 1
+
+    def test_listener_start_and_stop_called(self) -> None:
+        """start() and stop() are both called once per run_game()."""
+        listener_mock = MagicMock()
+        type(listener_mock).stop_requested = PropertyMock(return_value=False)
+
+        loop_mock = _make_game_loop_mock([True])  # victory on turn 1
+        patchers = []
+        mocks: dict = {}
+        for target in _PATCHES:
+            p = patch(target)
+            m = p.start()
+            patchers.append(p)
+            mocks[target] = m
+
+        mocks["src.nomic_engine.main.GameLoop"].return_value = loop_mock
+        mocks["src.nomic_engine.main.load_model_library"].return_value = (
+            MagicMock()
+        )
+        gm = MagicMock()
+        gm.game_config.players = []
+        mocks["src.nomic_engine.main.GameManager"].return_value = gm
+        mocks["src.nomic_engine.main.instantiate_players"].return_value = [
+            MagicMock()
+        ]
+        mocks["src.nomic_engine.main.instantiate_judge"].return_value = (
+            MagicMock()
+        )
+        mocks["src.nomic_engine.main.SoftInterruptListener"].return_value = (
+            listener_mock
+        )
+
+        try:
+            _run_main_with_argv(["--game_dir", "/fake"])
+        finally:
+            for p in patchers:
+                p.stop()
+
+        listener_mock.start.assert_called_once()
+        listener_mock.stop.assert_called_once()

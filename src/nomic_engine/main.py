@@ -26,6 +26,7 @@ from .judge.llm_judge import LLMJudge
 from .players.base_player import BasePlayer
 from .players.human_player import HumanPlayer
 from .players.llm_player import LLMPlayer
+from .soft_interrupt import SoftInterruptListener
 from .startup_validation import validate_startup
 from .utils.loaders import load_model_library
 
@@ -238,6 +239,8 @@ def run_game(
     # Run turns
     turns_run = 0
     game_over = False
+    listener = SoftInterruptListener()
+    listener.start()
     try:
         logger.info("Starting turn execution")
         while True:
@@ -248,6 +251,9 @@ def run_game(
                 break
             if max_turns is not None and turns_run >= max_turns:
                 break
+            if listener.stop_requested:
+                logger.info("Soft interrupt: stopping after this turn")
+                break
     except KeyboardInterrupt:
         print("\n\nGame interrupted.")
         logger.info("Game interrupted by user")
@@ -255,6 +261,8 @@ def run_game(
     except Exception as e:
         logger.error(f"Error during game execution: {e}", exc_info=True)
         sys.exit(1)
+    finally:
+        listener.stop()
 
     if not game_over:
         if turns_run == 1:

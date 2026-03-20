@@ -207,7 +207,7 @@ immediately and return to the menu (or exit). No turns are run.
 
 ---
 
-## Task 5 — Graceful soft-interrupt
+## DONE ✅ Task 5 — Graceful soft-interrupt
 
 **Priority:** Medium
 
