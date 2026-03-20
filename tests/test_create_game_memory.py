@@ -51,9 +51,9 @@ def _run_create(
 ) -> None:
     """Run create_game_files with flag-schema mocked out."""
     with (
-        patch("nomic_engine.game_creator.load_flag_schema"),
+        patch("src.nomic_engine.game_creator.load_flag_schema"),
         patch(
-            "nomic_engine.game_creator.get_flag_defaults",
+            "src.nomic_engine.game_creator.get_flag_defaults",
             return_value=_FLAG_DEFAULTS,
         ),
     ):
