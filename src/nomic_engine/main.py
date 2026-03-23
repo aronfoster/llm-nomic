@@ -26,6 +26,7 @@ from .judge.llm_judge import LLMJudge
 from .players.base_player import BasePlayer
 from .players.human_player import HumanPlayer
 from .players.llm_player import LLMPlayer
+from .soft_interrupt import SoftInterrupt
 from .startup_validation import validate_startup
 from .utils.loaders import load_model_library
 
@@ -238,6 +239,8 @@ def run_game(
     # Run turns
     turns_run = 0
     game_over = False
+    soft_interrupt = SoftInterrupt()
+    soft_interrupt.start()
     try:
         logger.info("Starting turn execution")
         while True:
@@ -245,6 +248,9 @@ def run_game(
             turns_run += 1
             if game_over:
                 logger.info("Game ended due to target score.")
+                break
+            if soft_interrupt.is_requested:
+                logger.info("Game paused by soft interrupt.")
                 break
             if max_turns is not None and turns_run >= max_turns:
                 break
@@ -255,6 +261,8 @@ def run_game(
     except Exception as e:
         logger.error(f"Error during game execution: {e}", exc_info=True)
         sys.exit(1)
+    finally:
+        soft_interrupt.stop()
 
     if not game_over:
         if turns_run == 1:

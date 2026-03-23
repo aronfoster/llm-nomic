@@ -62,10 +62,10 @@ from an existing module — is left to the Developer. What matters is:
   output).
 
 **Acceptance Criteria:**
-- [ ] Game-creation logic is importable from within the `nomic_engine` package
-- [ ] `python create_game.py` produces identical behaviour to before this task
-- [ ] No behavioural change to the game-creation flow
-- [ ] `make ci` passes
+- [x] Game-creation logic is importable from within the `nomic_engine` package
+- [x] `python create_game.py` produces identical behaviour to before this task
+- [x] No behavioural change to the game-creation flow
+- [x] `make ci` passes
 
 ---
 
@@ -97,13 +97,13 @@ If `GAMES_DIR` does not exist or contains no valid game instances, the
 function returns an empty list without raising an error.
 
 **Acceptance Criteria:**
-- [ ] Function returns correct metadata for each valid game directory under
+- [x] Function returns correct metadata for each valid game directory under
   `GAMES_DIR`
-- [ ] Directories missing `config.yml` or `game_state.json` are silently skipped
-- [ ] `GAMES_DIR` not existing returns an empty list without error
-- [ ] Unit tests cover: empty `GAMES_DIR`, multiple valid games, mixed
+- [x] Directories missing `config.yml` or `game_state.json` are silently skipped
+- [x] `GAMES_DIR` not existing returns an empty list without error
+- [x] Unit tests cover: empty `GAMES_DIR`, multiple valid games, mixed
   valid/invalid directories, `GAMES_DIR` absent
-- [ ] `make ci` passes
+- [x] `make ci` passes
 
 ---
 
@@ -139,16 +139,16 @@ directly into the turn loop for that game (as it did before this sprint). The
 operator is not shown a menu.
 
 **Acceptance Criteria:**
-- [ ] Launching `main.py` without `--game_dir` shows the top-level menu
-- [ ] "Continue a game" lists discovered games; selecting one enters the turn
+- [x] Launching `main.py` without `--game_dir` shows the top-level menu
+- [x] "Continue a game" lists discovered games; selecting one enters the turn
   loop
-- [ ] "Continue a game" with no available games prints a message and returns to
+- [x] "Continue a game" with no available games prints a message and returns to
   the menu without error
-- [ ] "New game" runs the creation flow inline and offers to play immediately
-- [ ] "Quit" exits with code 0
-- [ ] After a game ends or the operator quits, the menu is shown again
-- [ ] Launching with `--game_dir` bypasses the menu (unchanged behaviour)
-- [ ] `make ci` passes
+- [x] "New game" runs the creation flow inline and offers to play immediately
+- [x] "Quit" exits with code 0
+- [x] After a game ends or the operator quits, the menu is shown again
+- [x] Launching with `--game_dir` bypasses the menu (unchanged behaviour)
+- [x] `make ci` passes
 
 ---
 
@@ -194,20 +194,20 @@ If the selected game has already reached victory, display the victory summary
 immediately and return to the menu (or exit). No turns are run.
 
 **Acceptance Criteria:**
-- [ ] Turns advance automatically with no input required between them
-- [ ] Victory ends the loop, shows the summary, and returns to the menu
-- [ ] A game already at victory shows the summary without running any turns
-- [ ] `--turns N` still stops after N turns
-- [ ] `--until-victory` still runs until victory (behaviour now matches the
+- [x] Turns advance automatically with no input required between them
+- [x] Victory ends the loop, shows the summary, and returns to the menu
+- [x] A game already at victory shows the summary without running any turns
+- [x] `--turns N` still stops after N turns
+- [x] `--until-victory` still runs until victory (behaviour now matches the
   default)
-- [ ] Omitting all flags no longer runs exactly one turn; the continuous loop
+- [x] Omitting all flags no longer runs exactly one turn; the continuous loop
   is entered instead
-- [ ] Ctrl+C hard-terminates immediately (unchanged)
-- [ ] `make ci` passes
+- [x] Ctrl+C hard-terminates immediately (unchanged)
+- [x] `make ci` passes
 
 ---
 
-## Task 5 — Graceful soft-interrupt
+## DONE ✅ Task 5 — Graceful soft-interrupt
 
 **Priority:** Medium
 
@@ -235,16 +235,16 @@ loop stops.
   This is unchanged from current behaviour.
 
 **Acceptance Criteria:**
-- [ ] Pressing the designated key during turn execution sets the stop flag and
+- [x] Pressing the designated key during turn execution sets the stop flag and
   prints an acknowledgement
-- [ ] The running turn always completes fully before the loop exits
-- [ ] After the turn completes, the operator is returned to the top-level menu
+- [x] The running turn always completes fully before the loop exits
+- [x] After the turn completes, the operator is returned to the top-level menu
   (or the process exits cleanly if launched with `--game_dir`)
-- [ ] The soft-interrupt works in both interactive mode and batch mode
+- [x] The soft-interrupt works in both interactive mode and batch mode
   (`--turns`, `--until-victory`)
-- [ ] Pressing the key when no turn is running has no visible effect
-- [ ] Ctrl+C still hard-terminates immediately
-- [ ] `make ci` passes
+- [x] Pressing the key when no turn is running has no visible effect
+- [x] Ctrl+C still hard-terminates immediately
+- [x] `make ci` passes
 
 ---
 
