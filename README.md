@@ -69,45 +69,67 @@ This project runs full games of Nomic with any mix of human and LLM players. The
 
 ### Creating a New Game
 
-To create and launch a new Nomic game:
+The easiest way to create a game is through the interactive console (see
+**Running the Game** below). Select **2. New game** from the main menu.
+
+Alternatively, run the standalone creation script directly:
 
 ```bash
 python3 create_game.py
 ```
 
-This interactive script will:
-1. Prompt you for a game name
-2. Ask for the number of players
-3. Allow you to configure each player (human or LLM)
-4. For LLM players, let you choose from available models
-5. Generate all required game files in `games/<game-name>/`
+Both paths prompt for the same information:
+1. Game name
+2. Number of players
+3. Each player's name, type (human or LLM), and — for LLM players — model choice
+4. Target score (default 100, or `none` to disable)
 
-**Example game creation session:**
-```
-Enter new game name: My First Game
-How many players? 2
-
---- Configuring Player 1 ---
-Player name: Alice
-Player type (human/llm): human
-
---- Configuring Player 2 ---
-Player name: Bob
-Player type (human/llm): llm
-
-Available LLM models:
-  1. gpt-4 (openai)
-  2. claude-3-opus (anthropic)
-  ...
-Choose a model by number: 2
-```
+Game files are written to `games/<game-name>/`.
 
 ### Running the Game
 
-After creating a game, run turns with:
+#### Interactive mode (recommended)
+
+Launch the engine without any flags to enter the interactive console:
 
 ```bash
-# Run exactly one turn (default)
+python -m src.nomic_engine.main
+```
+
+You will be presented with a menu:
+
+```
+========================================
+  NOMIC — Main Menu
+========================================
+  1. Continue a game
+  2. New game
+  3. Quit
+========================================
+```
+
+- **Continue a game** — lists all discovered games with their turn number,
+  current player, and status. Select one by number to resume it.
+- **New game** — runs the interactive game-creation flow inline, then offers
+  to start playing immediately.
+- **Quit** — exits with code 0.
+
+After a game ends (victory or soft-interrupt), the menu is shown again. The
+process never exits between games.
+
+#### Graceful soft-interrupt
+
+While turns are running, press any key followed by Enter to signal
+"finish this turn, then stop". The current turn — including all in-flight
+LLM API calls — completes normally before the loop exits, returning you to
+the main menu. Press **Ctrl+C** at any point to hard-terminate immediately.
+
+#### Batch / scripting mode
+
+Provide `--game_dir` to bypass the menu and run a game directly:
+
+```bash
+# Continuous loop until victory (default when --game_dir is given)
 python -m src.nomic_engine.main --game_dir games/<game-name>
 
 # Run a fixed number of turns
@@ -119,9 +141,8 @@ python -m src.nomic_engine.main --game_dir games/<game-name> --until-victory
 
 `--turns N` and `--until-victory` are mutually exclusive. If the game ends
 before N turns are completed, execution stops and the victory summary is shown.
-Press Ctrl+C at any point to hard-terminate the process.
 
-Each invocation will:
+Each run will:
 
 1. Load the specified game directory
 2. Instantiate each configured player
