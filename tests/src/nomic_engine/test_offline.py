@@ -33,6 +33,7 @@ from src.nomic_engine.startup_validation import (
 )
 from tests.offline_guard import (
     PROVIDER_CREDENTIAL_ENV_VARS,
+    OfflineNetworkBlocked,
     blocked_destinations,
     caused_by_offline_block,
     scrub_provider_credentials,
@@ -296,16 +297,21 @@ def test_isolated_nearer_package_dotenv_beats_checkout(
     assert token == _PROBE_OK
 
 
-def test_main_loads_env_when_the_game_starts(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The CLI loads ``.env`` at startup, before it parses arguments."""
+def _record_loader(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     calls: list[str] = []
 
     def _record() -> None:
         calls.append("loaded")
 
     monkeypatch.setattr("src.nomic_engine.main.load_env_vars", _record)
+    return calls
+
+
+def test_main_does_not_load_env_for_help(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``--help`` exits during parsing and does not read ``.env``."""
+    calls = _record_loader(monkeypatch)
     monkeypatch.setattr(sys, "argv", ["nomic", "--help"])
     from src.nomic_engine.main import main
 
@@ -313,7 +319,141 @@ def test_main_loads_env_when_the_game_starts(
         main()
 
     assert exc_info.value.code == 0
-    assert calls == ["loaded"]
+    assert calls == []
+
+
+def test_main_does_not_load_env_for_argument_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected ``--turns`` value exits before ``.env`` is read."""
+    calls = _record_loader(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["nomic", "--turns", "0"])
+    from src.nomic_engine.main import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 2
+    assert calls == []
+
+
+def test_main_loads_env_before_running_a_game(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A direct ``--game_dir`` run loads ``.env`` after parsing."""
+    calls = _record_loader(monkeypatch)
+    monkeypatch.setattr(
+        "src.nomic_engine.main.setup_logging", lambda _path: None
+    )
+    monkeypatch.setattr(
+        "src.nomic_engine.main.run_game",
+        lambda *_args: calls.append("game"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["nomic", "--game_dir", "games/example", "--turns", "1"],
+    )
+    from src.nomic_engine.main import main
+
+    main()
+    assert calls == ["loaded", "game"]
+
+
+def test_main_loads_env_before_the_interactive_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The menu runs only after arguments are accepted and ``.env`` loads."""
+    calls = _record_loader(monkeypatch)
+    monkeypatch.setattr(
+        "src.nomic_engine.main.run_interactive_menu",
+        lambda _max_turns: calls.append("menu"),
+    )
+    monkeypatch.setattr(sys, "argv", ["nomic"])
+    from src.nomic_engine.main import main
+
+    main()
+    assert calls == ["loaded", "menu"]
+
+
+def test_create_game_entry_point_does_not_load_env(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Game creation writes local files and does not read provider keys."""
+    import create_game
+
+    monkeypatch.setattr(
+        create_game,
+        "run_creation_flow",
+        lambda: Path("/tmp/offline-created-game"),
+    )
+
+    def _fail() -> None:
+        raise AssertionError("create_game does not read provider keys")
+
+    monkeypatch.setattr("src.nomic_engine.config.load_env_vars", _fail)
+    create_game.main()
+    captured = capsys.readouterr()
+    assert "offline-created-game" in captured.out
+
+
+def test_other_entry_points_do_not_load_env() -> None:
+    """Dependency updates and the Makefile do not run the game."""
+    root = Path(__file__).resolve().parents[3]
+    for rel in ("create_game.py", "scripts/update_deps.py"):
+        text = (root / rel).read_text(encoding="utf-8")
+        if "load_env_vars" in text:
+            raise AssertionError(f"{rel} now references load_env_vars")
+    project = (root / "pyproject.toml").read_text(encoding="utf-8")
+    if "[project.scripts]" in project:
+        raise AssertionError("a console script needs its own loader test")
+    makefile = (root / "Makefile").read_text(encoding="utf-8")
+    if "nomic_engine.main" in makefile:
+        raise AssertionError("Makefile runs the game without a loader test")
+
+
+def test_direct_credential_assignment_does_not_leak() -> None:
+    """A raw ``os.environ`` write must not be visible to the next test."""
+    os.environ["OPENAI_API_KEY"] = "offline-leak-sentinel"
+
+
+def test_direct_credential_assignment_was_scrubbed() -> None:
+    """The per-test scrub removes the sentinel set above."""
+    if os.environ.get("OPENAI_API_KEY") == "offline-leak-sentinel":
+        raise AssertionError("OPENAI_API_KEY leaked from an earlier test")
+
+
+@pytest.mark.attempts_network
+def test_non_loopback_dns_and_udp_are_blocked() -> None:
+    """Non-loopback lookups and UDP sends fail inside this process.
+
+    Loopback still works, so a local listener can be used. A subprocess
+    is a new process and is outside this guard.
+    """
+    with pytest.raises(OfflineNetworkBlocked):
+        socket.getaddrinfo("api.openai.com", 443)
+    with pytest.raises(OfflineNetworkBlocked):
+        socket.gethostbyname("example.com")
+
+    loopback = socket.getaddrinfo("127.0.0.1", 9)
+    assert loopback
+    assert socket.gethostbyname("localhost") == "127.0.0.1"
+
+    receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        receiver.bind(("127.0.0.1", 0))
+        receiver.settimeout(1.0)
+        port = receiver.getsockname()[1]
+        sender.sendto(b"loop", ("127.0.0.1", port))
+        data, _addr = receiver.recvfrom(16)
+        assert data == b"loop"
+        with pytest.raises(OfflineNetworkBlocked):
+            sender.sendto(b"ping", ("8.8.8.8", 53))
+    finally:
+        sender.close()
+        receiver.close()
 
 
 def test_provider_clients_construct_without_connecting(
@@ -431,9 +571,8 @@ def test_provider_call_and_startup_pings_stop_before_transmission(
         for dest in attempted
         if isinstance(dest, tuple) and len(dest) >= 1
     ]
-    # Real provider endpoints are rejected inside create_connection,
-    # before name resolution. The local listener stands in for Ollama
-    # and for a direct OpenAI completion, and it must see no bytes.
+    # create_connection is replaced before it would resolve the host.
+    # The listener stands in for the local completion and must see no bytes.
     assert "api.openai.com" in hosts
     assert "api.x.ai" in hosts
     assert "generativelanguage.googleapis.com" in hosts

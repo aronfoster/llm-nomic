@@ -16,9 +16,9 @@ def load_env_vars() -> None:
 
     ``python-dotenv`` walks upward from this file until it finds ``.env``,
     so a checkout or parent-directory file is used when a game is started.
-    Call this from the application entry point. Importing the module must
-    not load that file: tests and other importers would otherwise pick up
-    real provider credentials.
+    The CLI calls this after it accepts arguments. Importing the module
+    must not load that file: tests and other importers would otherwise
+    pick up real provider credentials.
     """
     load_dotenv()
     logger.info("Loaded environment variables from .env file (if found).")

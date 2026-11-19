@@ -393,10 +393,6 @@ def main() -> None:
         0: Success or user interrupt
         1: Error occurred (file not found, validation error, game error)
     """
-    # Credentials are read when a game starts, not when this module
-    # is imported.
-    load_env_vars()
-
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
         description="Run one or more turns of a Nomic game."
@@ -427,6 +423,10 @@ def main() -> None:
 
     if args.turns is not None and args.turns < 1:
         parser.error("--turns must be a positive integer")
+
+    # ``--help`` and parser errors exit above. Read ``.env`` only once
+    # the arguments have been accepted, then run the menu or the game.
+    load_env_vars()
 
     # Determine max_turns for the turn loop
     if args.until_victory:
