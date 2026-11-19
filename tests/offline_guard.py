@@ -52,6 +52,13 @@ blocked_destinations: list[object] = []
 
 _INSTALLED = False
 
+# Real libc calls used after a loopback check. Tests replace these to
+# simulate an interface that is down (ENETUNREACH) without depending on
+# the host network namespace.
+_passthrough_getaddrinfo = socket.getaddrinfo
+_passthrough_gethostbyname = socket.gethostbyname
+_passthrough_sendto = socket.socket.sendto
+
 
 class OfflineNetworkBlocked(OSError):
     """A test tried to open a real connection.
@@ -149,10 +156,16 @@ def _block_network() -> None:
     works, including a test that replaces ``socket.socket``.
 
     A subprocess is a new process. It does not inherit these patches.
+    Loopback calls are handed to the saved libc functions. If the
+    loopback interface is down, those functions raise an ordinary
+    ``OSError``; that is not this guard.
     """
-    original_getaddrinfo = socket.getaddrinfo
-    original_gethostbyname = socket.gethostbyname
-    original_sendto = socket.socket.sendto
+    global _passthrough_getaddrinfo
+    global _passthrough_gethostbyname
+    global _passthrough_sendto
+    _passthrough_getaddrinfo = socket.getaddrinfo
+    _passthrough_gethostbyname = socket.gethostbyname
+    _passthrough_sendto = socket.socket.sendto
 
     def _blocked_create_connection(
         address: object,
@@ -193,7 +206,7 @@ def _block_network() -> None:
         **kwargs: object,
     ) -> list[object]:
         if _is_loopback_host(host):
-            return original_getaddrinfo(host, port, *args, **kwargs)
+            return _passthrough_getaddrinfo(host, port, *args, **kwargs)
         blocked_destinations.append((host, port))
         raise OfflineNetworkBlocked(
             "offline tests blocked a name lookup for "
@@ -202,7 +215,7 @@ def _block_network() -> None:
 
     def _blocked_gethostbyname(host: object) -> str:
         if _is_loopback_host(host):
-            return original_gethostbyname(host)
+            return _passthrough_gethostbyname(host)
         blocked_destinations.append(host)
         raise OfflineNetworkBlocked(
             "offline tests blocked a name lookup for "
@@ -217,7 +230,7 @@ def _block_network() -> None:
         if isinstance(destination, tuple) and destination:
             host = destination[0]
         if _is_loopback_host(host):
-            return original_sendto(self, data, *args)
+            return _passthrough_sendto(self, data, *args)
         blocked_destinations.append(destination)
         raise OfflineNetworkBlocked(
             "offline tests blocked a UDP send to "

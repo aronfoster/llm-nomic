@@ -9,6 +9,7 @@ pytest process itself still refuses ``.env`` via the offline guard.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -190,6 +191,34 @@ def _run_isolated_loader(
     if _CWD_VALUE in completed.stdout or _CWD_VALUE in completed.stderr:
         raise AssertionError("probe output included the cwd dummy")
     return token
+
+
+_OS_REJECTED = object()
+
+
+def _loopback_result(action: object) -> object:
+    """Run a loopback OS call and report whether the OS accepted it.
+
+    The offline guard must not be the exception. ``ENETUNREACH``,
+    ``EADDRNOTAVAIL``, ``ECONNREFUSED``, and any other ``OSError`` mean
+    the guard let the call through and the kernel rejected it (for
+    example because ``lo`` is down). Delivery is asserted only when this
+    returns the call's own result instead of ``_OS_REJECTED``.
+    """
+    if not callable(action):
+        raise AssertionError("loopback check needs a callable")
+    try:
+        return action()
+    except OfflineNetworkBlocked as exc:
+        raise AssertionError(
+            "offline guard blocked a loopback socket call"
+        ) from exc
+    except OSError as exc:
+        if caused_by_offline_block(exc):
+            raise AssertionError(
+                "offline guard blocked a loopback socket call"
+            ) from exc
+        return _OS_REJECTED
 
 
 def _clear_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -428,32 +457,80 @@ def test_direct_credential_assignment_was_scrubbed() -> None:
 def test_non_loopback_dns_and_udp_are_blocked() -> None:
     """Non-loopback lookups and UDP sends fail inside this process.
 
-    Loopback still works, so a local listener can be used. A subprocess
-    is a new process and is outside this guard.
+    Loopback calls are not blocked by the guard. When ``lo`` is down the
+    kernel may reject them; that is not a guard failure. A datagram is
+    required only when the send itself succeeds.
     """
     with pytest.raises(OfflineNetworkBlocked):
         socket.getaddrinfo("api.openai.com", 443)
     with pytest.raises(OfflineNetworkBlocked):
         socket.gethostbyname("example.com")
 
-    loopback = socket.getaddrinfo("127.0.0.1", 9)
-    assert loopback
-    assert socket.gethostbyname("localhost") == "127.0.0.1"
+    info = _loopback_result(lambda: socket.getaddrinfo("127.0.0.1", 9))
+    if info is not _OS_REJECTED:
+        assert info
+    name = _loopback_result(lambda: socket.gethostbyname("localhost"))
+    if name is not _OS_REJECTED:
+        assert name == "127.0.0.1"
 
     receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        receiver.bind(("127.0.0.1", 0))
-        receiver.settimeout(1.0)
-        port = receiver.getsockname()[1]
-        sender.sendto(b"loop", ("127.0.0.1", port))
-        data, _addr = receiver.recvfrom(16)
-        assert data == b"loop"
+        bound = _loopback_result(lambda: receiver.bind(("127.0.0.1", 0)))
+        if bound is not _OS_REJECTED:
+            receiver.settimeout(1.0)
+            port = receiver.getsockname()[1]
+            sent = _loopback_result(
+                lambda: sender.sendto(b"loop", ("127.0.0.1", port))
+            )
+            if sent is not _OS_REJECTED:
+                data, _addr = receiver.recvfrom(16)
+                assert data == b"loop"
+        else:
+            _loopback_result(lambda: sender.sendto(b"loop", ("127.0.0.1", 9)))
         with pytest.raises(OfflineNetworkBlocked):
             sender.sendto(b"ping", ("8.8.8.8", 53))
     finally:
         sender.close()
         receiver.close()
+
+
+def test_loopback_udp_os_error_is_not_a_guard_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``ENETUNREACH`` from the kernel is not ``OfflineNetworkBlocked``.
+
+    A fresh network namespace leaves ``lo`` down. The guard must pass
+    that error through.
+    """
+
+    def _unreachable(_self: object, _data: object, *_args: object) -> int:
+        raise OSError(errno.ENETUNREACH, "Network is unreachable")
+
+    monkeypatch.setattr(
+        "tests.offline_guard._passthrough_sendto", _unreachable
+    )
+    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        result = _loopback_result(
+            lambda: sender.sendto(b"loop", ("127.0.0.1", 9))
+        )
+    finally:
+        sender.close()
+    assert result is _OS_REJECTED
+
+
+@pytest.mark.attempts_network
+def test_loopback_tcp_connect_is_blocked_before_the_os() -> None:
+    """TCP connect never reaches the kernel, even when ``lo`` is down."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        with pytest.raises(OfflineNetworkBlocked):
+            sock.connect(("127.0.0.1", 9))
+        with pytest.raises(OfflineNetworkBlocked):
+            sock.connect_ex(("127.0.0.1", 9))
+    finally:
+        sock.close()
 
 
 def test_provider_clients_construct_without_connecting(
@@ -514,14 +591,20 @@ def test_provider_call_and_startup_pings_stop_before_transmission(
     received: list[bytes] = []
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    listener.bind(("127.0.0.1", 0))
-    listener.listen(1)
-    listener.settimeout(0.3)
-    port = listener.getsockname()[1]
-    thread = threading.Thread(
-        target=_accept_one, args=(listener, received), daemon=True
-    )
-    thread.start()
+    # Port 9 is only a target for the blocked client call. A real
+    # listener is used when the kernel accepts a bind on 127.0.0.1.
+    port = 9
+    thread: threading.Thread | None = None
+    bound = _loopback_result(lambda: listener.bind(("127.0.0.1", 0)))
+    if bound is not _OS_REJECTED:
+        listened = _loopback_result(lambda: listener.listen(1))
+        if listened is not _OS_REJECTED:
+            listener.settimeout(0.3)
+            port = listener.getsockname()[1]
+            thread = threading.Thread(
+                target=_accept_one, args=(listener, received), daemon=True
+            )
+            thread.start()
     before = len(blocked_destinations)
     try:
         client = OpenAI(
@@ -563,7 +646,8 @@ def test_provider_call_and_startup_pings_stop_before_transmission(
         assert google_result is not None
     finally:
         listener.close()
-        thread.join(timeout=2)
+        if thread is not None:
+            thread.join(timeout=2)
 
     attempted = blocked_destinations[before:]
     hosts = [
