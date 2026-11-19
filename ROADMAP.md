@@ -93,4 +93,9 @@ This is the long-term backlog and TODO scratchpad.
 
 ### Development
 
+* ~~Offline unit tests: importing the engine does not load `.env`. The
+  suite drops provider credentials inherited from the process environment
+  and blocks outbound connections before any request is sent, including
+  the live provider and Ollama checks in startup validation. Running the
+  game still loads `.env` from the application entry point.~~ *(LN-7)*
 * Improve code documentation using markdown files for developers (especially Claude Code and Codex) to read

@@ -14,6 +14,7 @@ from pathlib import Path
 import pydantic
 from pythonjsonlogger.json import JsonFormatter
 
+from .config import load_env_vars
 from .constants import GAME_LOG_FILE
 from .core.game_loop import GameLoop
 from .core.game_manager import GameManager
@@ -392,6 +393,10 @@ def main() -> None:
         0: Success or user interrupt
         1: Error occurred (file not found, validation error, game error)
     """
+    # Credentials are read when a game starts, not when this module
+    # is imported.
+    load_env_vars()
+
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
         description="Run one or more turns of a Nomic game."
