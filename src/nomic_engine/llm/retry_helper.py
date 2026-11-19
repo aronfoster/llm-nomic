@@ -6,6 +6,11 @@ import logging
 from typing import TYPE_CHECKING, Callable, TypeVar
 
 from ..data_models import ChatMessage, CompletionResult
+from ..usage_budget import (
+    content_is_blank,
+    is_truncated_finish_reason,
+    observed_finish_reason,
+)
 
 if TYPE_CHECKING:
     from .api_clients import ApiClientProtocol
@@ -32,7 +37,9 @@ def llm_retry_loop(
     """Run a retry loop for an LLM action.
 
     Prints a status message before each API call, handles None responses,
-    and attempts to parse the response. On success, appends the assistant
+    and attempts to parse the response. A truncated finish reason with
+    empty content is logged as a partial output and retried; it is not
+    returned as success. On success, appends the assistant
     ChatMessage to history (and to secondary_append if provided) and returns
     the parsed result. On exhaustion, raises RuntimeError.
 
@@ -83,14 +90,52 @@ def llm_retry_loop(
         if log_usage is not None:
             log_usage(result)
         response_text = result.text
-
-        if response_text is None:
+        finish_reason = observed_finish_reason(result.raw_response)
+        # Reasoning models can spend the whole output cap on hidden
+        # tokens and return finish_reason=length with no visible text.
+        # That attempt already counted. It is not a successful action.
+        if is_truncated_finish_reason(finish_reason) and content_is_blank(
+            response_text
+        ):
             logger.error(
-                "%s: API error on attempt %d/%d",
+                "%s: partial output on attempt %d/%d "
+                "(finish_reason=%s, empty content). Counted against "
+                "the usage budget. Retrying within the configured "
+                "limit. Not treating this as success.",
                 actor_label,
                 attempt + 1,
                 max_retries,
+                finish_reason,
             )
+            continue
+
+        if response_text is None:
+            kind = result.error_kind or "api_error"
+            if kind == "quota":
+                logger.error(
+                    "%s: provider quota or rate limit on attempt %d/%d "
+                    "(counted against the usage budget; no fallback "
+                    "provider)",
+                    actor_label,
+                    attempt + 1,
+                    max_retries,
+                )
+            elif kind == "timeout":
+                logger.error(
+                    "%s: provider call timed out on attempt %d/%d "
+                    "(counted against the usage budget; no fallback "
+                    "provider)",
+                    actor_label,
+                    attempt + 1,
+                    max_retries,
+                )
+            else:
+                logger.error(
+                    "%s: API error on attempt %d/%d",
+                    actor_label,
+                    attempt + 1,
+                    max_retries,
+                )
             continue
 
         logger.info(

@@ -18,6 +18,7 @@ from ..llm import (
     create_api_client,
 )
 from ..llm import prompts as llm_prompts
+from ..llm.api_clients import BudgetedApiClient
 from ..llm.parsers import (
     parse_judge_maintain_state_response,
     parse_judge_score_response,
@@ -25,6 +26,7 @@ from ..llm.parsers import (
 )
 from ..llm.retry_helper import llm_retry_loop
 from ..memory.memory_manager import MemoryManager
+from ..usage_budget import LlmCallOptions, UsageBudgetGuard
 from .base_judge import BaseJudge
 
 if TYPE_CHECKING:
@@ -54,6 +56,9 @@ class LLMJudge(BaseJudge):
         tuning: EngineTuningConfig | None = None,
         memory_manager: MemoryManager | None = None,
         token_usage_logger: TokenUsageLogger | None = None,
+        *,
+        call_options: LlmCallOptions | None = None,
+        usage_guard: UsageBudgetGuard | None = None,
     ) -> None:
         """Initialize the LLMJudge.
 
@@ -69,11 +74,28 @@ class LLMJudge(BaseJudge):
                 injection. When None, no memory is injected.
             token_usage_logger: Optional TokenUsageLogger for recording token
                 usage after every API call. When None, no usage is recorded.
+            call_options: Per-call timeout and output cap used when this
+                judge constructs its own client.
+            usage_guard: Shared game budget checked before every provider
+                call, including a caller-supplied api_client.
         """
         self.model_config = model_config
         self.tuning = tuning or EngineTuningConfig()
         self.prompt_builder = prompt_builder or PromptBuilder()
-        self.api_client = api_client or create_api_client(model_config)
+        if api_client is None:
+            self.api_client = create_api_client(
+                model_config,
+                call_options=call_options,
+                usage_guard=usage_guard,
+            )
+        elif usage_guard is not None and not isinstance(
+            api_client, BudgetedApiClient
+        ):
+            self.api_client = BudgetedApiClient(
+                api_client, usage_guard, model_config.provider
+            )
+        else:
+            self.api_client = api_client
         self.memory_manager = memory_manager
         self.token_usage_logger = token_usage_logger
         # Accumulates the judge's assistant-role responses during a turn.

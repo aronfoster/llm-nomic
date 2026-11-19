@@ -34,6 +34,7 @@ from ..llm import (
 from ..llm.parsers import ProposalResponse, RevisionResponse, VoteResponse
 from ..llm.retry_helper import llm_retry_loop
 from ..memory.memory_manager import MemoryManager
+from ..usage_budget import LlmCallOptions, UsageBudgetGuard
 from ..utils.player_label import assemble_player_label
 from .base_player import BasePlayer
 
@@ -59,6 +60,9 @@ class LLMPlayer(BasePlayer):
         tuning: EngineTuningConfig | None = None,
         memory_manager: MemoryManager | None = None,
         token_usage_logger: TokenUsageLogger | None = None,
+        *,
+        call_options: LlmCallOptions | None = None,
+        usage_guard: UsageBudgetGuard | None = None,
     ) -> None:
         """
         Initialize an LLM player with a specific model configuration.
@@ -74,6 +78,10 @@ class LLMPlayer(BasePlayer):
                 injection. When None, no memory is injected.
             token_usage_logger: Optional TokenUsageLogger for recording token
                 usage after every API call. When None, no usage is recorded.
+            call_options: Per-call timeout and output cap. None keeps the
+                provider client's historical parameters.
+            usage_guard: Shared game budget. When set, it is checked before
+                every provider call from this player.
         """
         super().__init__(player_name)
         self.model_config = model_config
@@ -81,7 +89,11 @@ class LLMPlayer(BasePlayer):
         self.tuning = tuning or EngineTuningConfig()
         self.memory_manager = memory_manager
         self.token_usage_logger = token_usage_logger
-        self.api_client = create_api_client(self.model_config)
+        self.api_client = create_api_client(
+            self.model_config,
+            call_options=call_options,
+            usage_guard=usage_guard,
+        )
         self.prompt_builder = PromptBuilder()
         # Stateful conversation history for the current turn
         self.turn_history: list[ChatMessage] = []

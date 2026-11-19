@@ -29,6 +29,12 @@ from .players.human_player import HumanPlayer
 from .players.llm_player import LLMPlayer
 from .soft_interrupt import SoftInterrupt
 from .startup_validation import validate_startup
+from .usage_budget import (
+    UsageBudgetExceeded,
+    call_options_for,
+    format_usage_report,
+    real_usage_guard,
+)
 from .utils.loaders import load_model_library
 
 
@@ -88,6 +94,8 @@ def instantiate_players(
         raise ValueError("GameManager must have game_config loaded")
 
     players: list[BasePlayer] = []
+    call_options = call_options_for(game_manager.game_config.budget)
+    usage_guard = real_usage_guard(getattr(game_manager, "usage_guard", None))
 
     for player_config in game_manager.game_config.players:
         if player_config.model_id == "human":
@@ -115,6 +123,8 @@ def instantiate_players(
                     game_manager.game_config.tuning,
                     memory_manager=game_manager.memory_manager,
                     token_usage_logger=game_manager.token_usage_logger,
+                    call_options=call_options,
+                    usage_guard=usage_guard,
                 )
             )
 
@@ -140,6 +150,10 @@ def instantiate_judge(game_manager: GameManager) -> BaseJudge:
             tuning=game_manager.game_config.tuning,
             memory_manager=game_manager.memory_manager,
             token_usage_logger=game_manager.token_usage_logger,
+            call_options=call_options_for(game_manager.game_config.budget),
+            usage_guard=real_usage_guard(
+                getattr(game_manager, "usage_guard", None)
+            ),
         )
 
     return HumanJudge()
@@ -229,6 +243,7 @@ def run_game(
             )
             print(victory_summary)
             logger.info("Exiting: game already completed")
+            _emit_usage_report(manager)
             return
     except Exception as e:
         logger.error(f"Error checking victory status: {e}", exc_info=True)
@@ -258,9 +273,13 @@ def run_game(
     except KeyboardInterrupt:
         print("\n\nGame interrupted.")
         logger.info("Game interrupted by user")
+        _emit_usage_report(manager)
         sys.exit(0)
+    except UsageBudgetExceeded as exc:
+        _stop_for_usage_budget(manager, exc)
     except Exception as e:
         logger.error(f"Error during game execution: {e}", exc_info=True)
+        _emit_usage_report(manager)
         sys.exit(1)
     finally:
         soft_interrupt.stop()
@@ -271,6 +290,49 @@ def run_game(
         else:
             print(f"\n {turns_run} turns complete. State saved.")
         logger.info("Turn(s) completed successfully")
+    _emit_usage_report(manager)
+
+
+def _emit_usage_report(game_manager: GameManager) -> None:
+    """Print the per-turn and per-game usage summary."""
+    path = getattr(game_manager, "token_usage_path", None)
+    report_path = path if isinstance(path, Path) else None
+    print(format_usage_report(report_path))
+
+
+def _stop_for_usage_budget(
+    game_manager: GameManager, exc: UsageBudgetExceeded
+) -> None:
+    """Save partial state, print the usage report, and exit nonzero.
+
+    The provider call that would have exceeded the budget was not made.
+    """
+    logger = logging.getLogger(__name__)
+    # The exception text already starts with "Usage budget exceeded".
+    # Print that sentence once. Log it at INFO so the WARNING console
+    # handler does not repeat it on stderr; the file handler still
+    # records it.
+    message = str(exc)
+    logger.info("%s", message)
+    print(
+        f"\n{message}\n"
+        "The next provider call was not made. "
+        "Partial game state has been saved."
+    )
+    try:
+        if game_manager.game_state is not None:
+            game_manager.save_game_state()
+    except Exception:
+        logger.exception(
+            "Failed to save partial game state after usage budget stop"
+        )
+    try:
+        if game_manager.rules_manager is not None:
+            game_manager.save_rules()
+    except Exception:
+        logger.exception("Failed to save rules after usage budget stop")
+    _emit_usage_report(game_manager)
+    sys.exit(3)
 
 
 def _print_game_list(games: list[GameInfo]) -> None:
@@ -392,6 +454,8 @@ def main() -> None:
     Exit codes:
         0: Success or user interrupt
         1: Error occurred (file not found, validation error, game error)
+        2: argparse rejected the command line, before a game loads
+        3: A configured usage budget refused the next provider call
     """
     # Parse command-line arguments
     parser = argparse.ArgumentParser(

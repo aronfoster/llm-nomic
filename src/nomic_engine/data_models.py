@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .judge_contracts import (
     JudgeScoreResponse,
@@ -122,6 +122,71 @@ class LLMLevelConfig(BaseModel):
     )
 
 
+class UsageBudget(BaseModel):
+    """Optional hard bounds on provider calls for one game.
+
+    Unknown keys are rejected. A typo such as ``max_call_per_game`` is a
+    load error, not a silent unlimited budget. ``GameConfig`` itself still
+    ignores unknown keys so older game files keep loading.
+
+    Every field defaults to None, which means unlimited. That preserves
+    the historical behavior of games that do not set a budget. A value
+    that is set is enforced before the next provider call.
+
+    ``max_total_tokens_per_game`` is not a precise cap. The call that
+    crosses it can overshoot by up to ``max_output_tokens`` plus that
+    call's prompt. If a call's usage metadata is missing, the engine
+    counts it as unknown and refuses the next call instead of treating
+    the missing counts as zero.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_calls_per_game: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Maximum provider calls for the game, including retries, "
+            "timeouts, and quota errors. None means unlimited."
+        ),
+    )
+    max_total_tokens_per_game: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Stop before the next call once known input+output tokens "
+            "reach this value, or as soon as any call's usage is "
+            "unavailable. None means unlimited. This is not a precise cap."
+        ),
+    )
+    max_wall_seconds: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Stop before the next call once this many seconds have "
+            "elapsed in the current process. None means unlimited. "
+            "This does not accumulate across restarts."
+        ),
+    )
+    per_call_timeout_seconds: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Client-side timeout passed to each provider call. None "
+            "keeps the SDK's own default."
+        ),
+    )
+    max_output_tokens: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Maximum completion tokens requested from the provider. "
+            "None keeps the historical request: Anthropic stays at "
+            "8192, and OpenAI-compatible and Google send no output cap."
+        ),
+    )
+
+
 class EngineTuningConfig(BaseModel):
     """Engine retry tuning loaded from config.yml."""
 
@@ -219,6 +284,13 @@ class GameConfig(BaseModel):
     llm: LLMLevelConfig = Field(
         default_factory=LLMLevelConfig,
         description="LLM-specific configuration (memory, etc.).",
+    )
+    budget: UsageBudget = Field(
+        default_factory=UsageBudget,
+        description=(
+            "Optional call, token, time, and output bounds. Defaults "
+            "are unlimited and do not change existing games."
+        ),
     )
 
     @model_validator(mode="after")
@@ -465,6 +537,7 @@ class CompletionResult:
     raw_response: Any
     client_latency_ms: int
     raw_http: Any = None
+    error_kind: str | None = None
 
 
 class TokenUsageRecord(BaseModel):
@@ -472,6 +545,10 @@ class TokenUsageRecord(BaseModel):
 
     Written to token_usage.jsonl immediately after each completed call.
     Every field is always present; use null when a value is unavailable.
+
+    ``input_tokens`` and ``output_tokens`` are null when the provider did
+    not return usable counts. Null is unavailable, not zero.
+    ``usage_available`` is the explicit flag for that distinction.
     """
 
     timestamp: str = Field(
@@ -496,8 +573,32 @@ class TokenUsageRecord(BaseModel):
             "judge_score, judge_maintain_state, memory_update."
         )
     )
-    input_tokens: int = Field(description="Total billed input tokens.")
-    output_tokens: int = Field(description="Billed output tokens.")
+    input_tokens: Optional[int] = Field(
+        description=(
+            "Billed input tokens, or null when usage is unavailable. "
+            "Null is not zero."
+        )
+    )
+    output_tokens: Optional[int] = Field(
+        description=(
+            "Billed output tokens, or null when usage is unavailable. "
+            "Null is not zero."
+        )
+    )
+    usage_available: bool = Field(
+        default=True,
+        description=(
+            "False when input and output counts were missing. Those "
+            "calls are unknown, not zero."
+        ),
+    )
+    error_kind: Optional[str] = Field(
+        default=None,
+        description=(
+            "timeout, quota, or api_error when the call failed. "
+            "Null when the provider returned a completion."
+        ),
+    )
     cache_creation_tokens: Optional[int] = Field(
         description=(
             "Provider-specific cache creation tokens; null when not available."
@@ -549,3 +650,17 @@ class TokenUsageRecord(BaseModel):
             "x-ratelimit-remaining-tokens header value; null when absent."
         )
     )
+
+    @model_validator(mode="after")
+    def _usage_counts_match_availability(self) -> "TokenUsageRecord":
+        """Keep null token counts from being read as a real zero."""
+        if self.usage_available:
+            if self.input_tokens is None or self.output_tokens is None:
+                raise ValueError(
+                    "usage_available requires input_tokens and output_tokens"
+                )
+        elif self.input_tokens is not None or self.output_tokens is not None:
+            raise ValueError(
+                "unavailable usage must store null token counts, not zero"
+            )
+        return self

@@ -55,9 +55,10 @@ This is the long-term backlog and TODO scratchpad.
     * Need to add a note somewhere about minimum 16k tokens, recommend 32k tokens as a model context requirement
 
 * **Rate Limiting & Cost Tracking**
-  * Add per-turn and per-game token/cost tracking. Print token counts from API responses at the end of the turn.
-    * Would need to hard code cost/million tokens. Maybe prompt to update during game creation? Harcode defaults and put optional custom values per game?
-  * Rate limiting an option? Not sure that could work.
+  * Per-turn and per-game usage reports, optional call/token/wall bounds, per-call timeouts, and `max_output_tokens` landed with LN-5. Reports are built from `token_usage.jsonl`. Unavailable usage is listed separately from zero. A token cap is not precise: one call can overshoot by up to `max_output_tokens` plus its prompt, and missing usage stops the next call.
+  * Dollar cost per game is still open. It would need a price per million tokens, with optional per-game overrides.
+  * Startup API-key checks are outside the game usage budget.
+  * See README.md, "Inexpensive test games", for the cheap profile and `python -m src.nomic_engine.main --game_dir <dir> --turns 3`.
   
 * **Game State & Rules**
   * Flag for whether to assess points after a withdrawal

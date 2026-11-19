@@ -220,8 +220,8 @@ class TestTokenUsageLogger:
 
 
 class TestBuildTokenUsageRecordNullHandling:
-    def test_null_raw_response_yields_zero_tokens(self) -> None:
-        """When raw_response is None all token fields default to 0 or null."""
+    def test_null_raw_response_is_unavailable_not_zero(self) -> None:
+        """A missing response is unavailable usage, not zero tokens."""
         result = _make_result(text=None, raw_response=None)
         record = build_token_usage_record(
             result=result,
@@ -230,8 +230,9 @@ class TestBuildTokenUsageRecordNullHandling:
             move_number=3,
             player_name="Alice",
         )
-        assert record.input_tokens == 0
-        assert record.output_tokens == 0
+        assert record.usage_available is False
+        assert record.input_tokens is None
+        assert record.output_tokens is None
         assert record.cache_creation_tokens is None
         assert record.cache_read_tokens is None
         assert record.reasoning_tokens is None
@@ -255,7 +256,7 @@ class TestBuildTokenUsageRecordNullHandling:
         assert record.client_latency_ms == 999
 
     def test_unknown_provider_yields_null_meta(self) -> None:
-        """Unknown provider yields 0 tokens and null for optional fields."""
+        """Unknown provider usage is unavailable, not zero tokens."""
         result = _make_result(raw_response=MagicMock())
         record = build_token_usage_record(
             result=result,
@@ -264,7 +265,8 @@ class TestBuildTokenUsageRecordNullHandling:
             move_number=1,
             player_name="Alice",
         )
-        assert record.input_tokens == 0
+        assert record.usage_available is False
+        assert record.input_tokens is None
         assert record.finish_reason is None
 
     def test_context_fields_set_correctly(self) -> None:
@@ -403,7 +405,7 @@ class TestBuildTokenUsageRecordAnthropic:
         assert record.ratelimit_remaining_tokens is None
 
     def test_extraction_survives_missing_usage_attribute(self) -> None:
-        """If usage is missing entirely, tokens default to 0."""
+        """If usage is missing entirely, counts are unavailable, not zero."""
         raw = MagicMock()
         del raw.usage  # remove usage attribute
         raw.stop_reason = "end_turn"
@@ -415,8 +417,9 @@ class TestBuildTokenUsageRecordAnthropic:
             move_number=1,
             player_name="Alice",
         )
-        assert record.input_tokens == 0
-        assert record.output_tokens == 0
+        assert record.usage_available is False
+        assert record.input_tokens is None
+        assert record.output_tokens is None
 
 
 # ---------------------------------------------------------------------------
@@ -517,8 +520,9 @@ class TestBuildTokenUsageRecordOpenAI:
             move_number=1,
             player_name="Alice",
         )
-        assert record.input_tokens == 0
-        assert record.output_tokens == 0
+        assert record.usage_available is False
+        assert record.input_tokens is None
+        assert record.output_tokens is None
         assert record.finish_reason is None
 
 
@@ -595,7 +599,8 @@ class TestBuildTokenUsageRecordGoogle:
             move_number=2,
             player_name="Alice",
         )
-        assert record.input_tokens == 0
+        assert record.usage_available is False
+        assert record.input_tokens is None
         assert record.finish_reason is None
 
 
