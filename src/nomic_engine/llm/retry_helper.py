@@ -85,12 +85,32 @@ def llm_retry_loop(
         response_text = result.text
 
         if response_text is None:
-            logger.error(
-                "%s: API error on attempt %d/%d",
-                actor_label,
-                attempt + 1,
-                max_retries,
-            )
+            kind = result.error_kind or "api_error"
+            if kind == "quota":
+                logger.error(
+                    "%s: provider quota or rate limit on attempt %d/%d "
+                    "(counted against the usage budget; no fallback "
+                    "provider)",
+                    actor_label,
+                    attempt + 1,
+                    max_retries,
+                )
+            elif kind == "timeout":
+                logger.error(
+                    "%s: provider call timed out on attempt %d/%d "
+                    "(counted against the usage budget; no fallback "
+                    "provider)",
+                    actor_label,
+                    attempt + 1,
+                    max_retries,
+                )
+            else:
+                logger.error(
+                    "%s: API error on attempt %d/%d",
+                    actor_label,
+                    attempt + 1,
+                    max_retries,
+                )
             continue
 
         logger.info(

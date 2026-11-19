@@ -19,6 +19,9 @@ class TokenUsageLogger:
     - Never raise. All write failures log a WARNING and continue.
     - Does not interpret or extract data from raw API responses; that
       responsibility belongs to the call site (in each API client).
+    - Does not enforce a budget. UsageBudgetGuard reads this file and
+      stops before a later call. A missing count is stored as null
+      (usage_available false), not as zero.
     """
 
     def __init__(self, log_path: Path) -> None:

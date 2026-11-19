@@ -142,6 +142,56 @@ python -m src.nomic_engine.main --game_dir games/<game-name> --until-victory
 `--turns N` and `--until-victory` are mutually exclusive. If the game ends
 before N turns are completed, execution stops and the victory summary is shown.
 
+#### Inexpensive test games
+
+`docs/examples/cheap-test/config.yml` is a checked-in profile for a short,
+bounded game: two `gpt-5-mini` players, a `gpt-5-mini` LLM judge,
+`target_score` 100, `withdrawal_policy: forfeit`, `max_withdrawal_retries: 0`,
+two attempts per action, `max_calls_per_game: 60`, a 60-second per-call
+timeout, and `max_output_tokens: 1024`. For `gpt-5-mini` that output cap is
+sent as `max_completion_tokens`.
+
+The file is not a runnable game directory. `games/` is gitignored runtime
+state, and the engine also needs `game_state.json`, `rules.jsonl`, and the
+other files `create_game.py` writes. Create a game with those players and
+judge (menu option **2. New game**, or `python3 create_game.py`), then replace
+that game's `config.yml` with the example, or copy its `budget`, `tuning`,
+`withdrawal_policy`, and `max_withdrawal_retries` into the generated file.
+Then run:
+
+```bash
+python -m src.nomic_engine.main --game_dir games/<game-name> --turns 3
+```
+
+What that command bounds, and what it does not:
+
+- `--turns 3` stops after three turns. `max_calls_per_game: 60` stops before
+  the next provider call once 60 calls have been made, including retries,
+  timeouts, quota errors, and memory updates. Both limits apply.
+- Each call uses a 60-second client timeout and asks for at most 1024 output
+  tokens. Anthropic still sends `max_tokens` (8192 when a game does not set
+  `max_output_tokens`). Google receives `max_output_tokens` and, when a
+  timeout is set, `http_options.timeout` in milliseconds.
+- `max_total_tokens_per_game` and `max_wall_seconds` are unset in this
+  profile, so those two limits stay unlimited. Set them in `budget` when you
+  want them. `max_wall_seconds` is measured per process, from the time the
+  game is loaded, and does not accumulate across restarts.
+- A configured token cap is **not precise**. The call that crosses it can
+  overshoot by up to `max_output_tokens` plus that call's prompt. If a call
+  returns no usable usage metadata, that call is **unavailable, not zero**,
+  and the engine refuses the next provider call. It does not assume the
+  missing tokens were zero, and it does not switch to another provider.
+- Call and token totals are restored from `token_usage.jsonl` when a game is
+  loaded, so a restart does not forget calls that were logged. A failed
+  append can under-count only after a later restart; within the process the
+  guard still counts the call. The logger itself still never raises.
+- Startup API-key checks run outside this budget. The local (Ollama) check
+  can send one tiny completion before the first turn.
+- The end of a run prints a per-turn and per-game usage summary. Quota and
+  timeout failures are logged by name and count against the budget.
+- If a configured limit refuses the next call, the process saves partial
+  state, prints the summary, and exits with code 2.
+
 Each run will:
 
 1. Load the specified game directory

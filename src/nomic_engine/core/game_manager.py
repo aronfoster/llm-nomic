@@ -24,6 +24,7 @@ from ..memory.memory_manager import (
     MemoryManager,
     build_player_memory_template,
 )
+from ..usage_budget import UsageBudgetGuard
 from ..utils.token_usage_logger import TokenUsageLogger
 from .rules_manager import RulesManager
 
@@ -61,6 +62,7 @@ class GameManager:
         self.rules_manager: RulesManager | None = None
         self.memory_manager: MemoryManager | None = None
         self.token_usage_logger: TokenUsageLogger | None = None
+        self.usage_guard: UsageBudgetGuard | None = None
 
     def load_game(self) -> None:
         """
@@ -83,6 +85,10 @@ class GameManager:
             with self.config_path.open("r", encoding="utf-8") as f:
                 config_data = yaml.safe_load(f)
             self.game_config = GameConfig(**config_data)
+            self.usage_guard = UsageBudgetGuard(
+                self.game_config.budget,
+                log_path=self.token_usage_path,
+            )
             logger.info(
                 f"Loaded game config with "
                 f"{len(self.game_config.players)} players"

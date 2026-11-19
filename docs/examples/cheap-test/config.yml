@@ -1,0 +1,48 @@
+# Cheap bounded test profile (LN-5).
+#
+# This file is a config template, not a runnable game directory.
+# games/ is gitignored local state, and a game also needs game_state.json,
+# rules.jsonl, and the other files created by create_game.py.
+#
+# Manual step:
+#   1. Create a game with two gpt-5-mini players and a gpt-5-mini LLM judge.
+#   2. Replace that game's config.yml with this file, or copy budget,
+#      tuning, withdrawal_policy, and max_withdrawal_retries into it.
+#   3. python -m src.nomic_engine.main --game_dir games/<game-name> --turns 3
+#
+# Do not treat max_total_tokens_per_game as a precise cap if you add one.
+# It is left unset here. See README.md, "Inexpensive test games".
+
+players:
+  - name: "Ada"
+    model_id: "gpt-5-mini"
+    personality: "friendly"
+  - name: "Grace"
+    model_id: "gpt-5-mini"
+    personality: "friendly"
+target_score: 100
+judge_type: llm
+judge_model:
+  id: "gpt-5-mini"
+  provider: "openai"
+  api_model_id: "gpt-5-mini"
+  env_key_name: "OPENAI_API_KEY"
+tuning:
+  max_propose_retries: 2
+  max_discuss_retries: 2
+  max_revise_retries: 2
+  max_vote_retries: 2
+  max_judge_veto_retries: 2
+  max_judge_score_retries: 2
+  max_judge_maintain_state_retries: 2
+withdrawal_policy: forfeit
+max_withdrawal_retries: 0
+budget:
+  max_calls_per_game: 60
+  # Left unset on purpose. A token cap is not exact, and missing usage
+  # stops the next call instead of counting as zero.
+  max_total_tokens_per_game: null
+  # Per process, not cumulative across restarts.
+  max_wall_seconds: null
+  per_call_timeout_seconds: 60
+  max_output_tokens: 1024

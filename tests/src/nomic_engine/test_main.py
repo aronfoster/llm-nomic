@@ -1,5 +1,6 @@
 """Unit tests for main.py instantiate_players and instantiate_judge."""
 
+import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -357,6 +358,61 @@ class TestMultiTurnFlags:
             self._stop_all(patchers)
         # Only 2 calls: first succeeded, second raised
         assert loop.run_turn.call_count == 2
+
+    def test_budget_stop_exits_nonzero_and_saves_partial_state(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A budget stop saves state, prints the report, and exits 2."""
+        import src.nomic_engine.main as main_mod
+        from src.nomic_engine.usage_budget import UsageBudgetExceeded
+
+        patchers, loop = self._patch_all([])
+        loop.run_turn.side_effect = UsageBudgetExceeded(
+            "Usage budget exceeded: max_calls_per_game=1 already used. "
+            "Refusing the next provider call.",
+            limit_name="max_calls_per_game",
+        )
+        log_path = tmp_path / "token_usage.jsonl"
+        rows = [
+            {
+                "move_number": 1,
+                "usage_available": False,
+                "input_tokens": None,
+                "output_tokens": None,
+                "error_kind": "quota",
+            },
+            {
+                "move_number": 1,
+                "usage_available": True,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "finish_reason": "stop",
+            },
+        ]
+        log_path.write_text(
+            "\n".join(json.dumps(row) for row in rows) + "\n",
+            encoding="utf-8",
+        )
+        game_manager = main_mod.GameManager.return_value
+        game_manager.token_usage_path = log_path
+        try:
+            with pytest.raises(SystemExit) as exc_info:
+                _run_main_with_argv(["--game_dir", "/fake", "--turns", "3"])
+            assert exc_info.value.code == 2
+        finally:
+            self._stop_all(patchers)
+
+        assert loop.run_turn.call_count == 1
+        game_manager.save_game_state.assert_called_once()
+        game_manager.save_rules.assert_called_once()
+        output = capsys.readouterr().out
+        assert "Usage budget exceeded" in output
+        assert "The next provider call was not made" in output
+        assert "calls_with_unavailable_usage: 1" in output
+        assert "calls_with_zero_tokens: 1" in output
+        assert "not counted as zero" in output
 
 
 # ---------------------------------------------------------------------------

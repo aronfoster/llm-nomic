@@ -29,6 +29,7 @@ from ..judge_contracts import (
 from ..llm.parsers import ProposalResponse, RevisionResponse
 from ..players.base_player import BasePlayer
 from ..players.llm_player import LLMPlayer
+from ..usage_budget import UsageBudgetExceeded
 from ..utils.player_label import format_player_label
 from ..validation.validator import validate_proposal
 from .game_manager import GameManager
@@ -229,6 +230,8 @@ class GameLoop:
 
             return game_over
 
+        except UsageBudgetExceeded:
+            raise
         except Exception as e:
             logger.error(f"Error during turn execution: {e}", exc_info=True)
             raise
