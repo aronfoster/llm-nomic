@@ -1,5 +1,7 @@
 # LLM Nomic — Play Peter Suber’s Self-Amending Game with Humans + LLMs
 
+For isolated container setup and quality checks, see [Container readiness](docs/CONTAINERS.md).
+
 ## What is Nomic?
 
 **Nomic** is Peter Suber’s 1982 self-amending game: every turn a player proposes a rule change, everyone discusses and votes, and if it passes the ruleset itself evolves. The game is literally *about* changing the rules.
