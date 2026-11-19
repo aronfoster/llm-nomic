@@ -37,7 +37,9 @@ def test_openai_compatible_local_provider():
         api_client = OpenAICompatibleApiClient(mock_model_def)
 
         mock_openai.assert_called_once_with(
-            base_url="http://localhost:11434/v1", api_key="local"
+            base_url="http://localhost:11434/v1",
+            api_key="local",
+            max_retries=0,
         )
         assert api_client.model_config == mock_model_def
 
@@ -56,7 +58,9 @@ def test_openai_compatible_openai_provider(monkeypatch):
     with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
         api_client = OpenAICompatibleApiClient(mock_model_def)
 
-        mock_openai.assert_called_once_with(api_key="test-openai-key")
+        mock_openai.assert_called_once_with(
+            api_key="test-openai-key", max_retries=0
+        )
         assert api_client.model_id_for_api == "gpt-5.1"
         assert api_client.model_config == mock_model_def
 
@@ -76,7 +80,9 @@ def test_openai_compatible_xai_provider(monkeypatch):
         api_client = OpenAICompatibleApiClient(mock_model_def)
 
         mock_openai.assert_called_once_with(
-            base_url="https://api.x.ai/v1", api_key="secret-key"
+            base_url="https://api.x.ai/v1",
+            api_key="secret-key",
+            max_retries=0,
         )
         assert api_client.model_id_for_api == "grok-4-1-fast-reasoning"
         assert api_client.model_config == mock_model_def
@@ -122,7 +128,9 @@ def test_anthropic_api_client_provider(monkeypatch):
     ) as mock_anthropic:
         api_client = AnthropicApiClient(mock_model_def)
 
-        mock_anthropic.assert_called_once_with(api_key="test-anthropic-key")
+        mock_anthropic.assert_called_once_with(
+            api_key="test-anthropic-key", max_retries=0
+        )
         assert api_client.model_id_for_api == "claude-sonnet-4-5"
         assert api_client.model_config == mock_model_def
 
@@ -148,7 +156,14 @@ def test_google_api_client_provider(monkeypatch):
     ) as mock_client_class:
         api_client = GoogleApiClient(mock_model_def)
 
-        mock_client_class.assert_called_once_with(api_key="test-google-key")
+        mock_client_class.assert_called_once()
+        assert mock_client_class.call_args.kwargs["api_key"] == (
+            "test-google-key"
+        )
+        retry = mock_client_class.call_args.kwargs[
+            "http_options"
+        ].retry_options
+        assert retry.attempts == 1
         assert api_client.model_id_for_api == "gemini-2.5-pro"
         assert api_client.model_config == mock_model_def
 

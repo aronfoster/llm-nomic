@@ -364,7 +364,7 @@ class TestMultiTurnFlags:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """A budget stop saves state, prints the report, and exits 2."""
+        """A budget stop saves state, prints the report, and exits 3."""
         import src.nomic_engine.main as main_mod
         from src.nomic_engine.usage_budget import UsageBudgetExceeded
 

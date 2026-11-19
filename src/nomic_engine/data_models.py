@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .judge_contracts import (
     JudgeScoreResponse,
@@ -125,6 +125,10 @@ class LLMLevelConfig(BaseModel):
 class UsageBudget(BaseModel):
     """Optional hard bounds on provider calls for one game.
 
+    Unknown keys are rejected. A typo such as ``max_call_per_game`` is a
+    load error, not a silent unlimited budget. ``GameConfig`` itself still
+    ignores unknown keys so older game files keep loading.
+
     Every field defaults to None, which means unlimited. That preserves
     the historical behavior of games that do not set a budget. A value
     that is set is enforced before the next provider call.
@@ -135,6 +139,8 @@ class UsageBudget(BaseModel):
     counts it as unknown and refuses the next call instead of treating
     the missing counts as zero.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     max_calls_per_game: Optional[int] = Field(
         default=None,

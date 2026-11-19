@@ -190,10 +190,16 @@ What that command bounds, and what it does not:
   loaded, so a restart does not forget calls that were logged. A failed
   append can under-count only after a later restart; within the process the
   guard still counts the call. The logger itself still never raises.
+- Provider SDK retries are disabled. OpenAI, xAI, Ollama, and Anthropic
+  are constructed with `max_retries=0`. Google is constructed with
+  `HttpRetryOptions.attempts=1` (one HTTP attempt). A 500, 429, or timeout
+  is a single request. Further tries happen only in the engine retry loop,
+  and each one is checked against the budget.
 - Startup API-key checks run outside this budget. OpenAI, xAI, and Google
   only call `models.list()`, and Anthropic only checks that the key starts
   with `sk-ant-`. None of those four send a completion. The local (Ollama)
-  check can send one tiny completion before the first turn.
+  check can send one tiny completion for each local player and, when the
+  judge is also local, one more for the judge, before the first turn.
 - The end of a run prints a per-turn and per-game usage summary. Quota and
   timeout failures are logged by name and count against the budget.
 - If a configured limit refuses the next call, the process saves partial

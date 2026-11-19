@@ -9,6 +9,7 @@ from typing import Any, Iterable, Optional, Protocol, cast
 
 import anthropic
 import anthropic.types
+import httpx
 from google import genai
 from google.genai import types as google_types
 from openai import OpenAI
@@ -33,6 +34,29 @@ logger = logging.getLogger(__name__)
 # Anthropic requires max_tokens. 8192 is the historical request size
 # used when a game does not configure max_output_tokens.
 _DEFAULT_ANTHROPIC_MAX_TOKENS = 8192
+
+# The provider SDKs retry 429s, 5xxs, and timeouts on their own. Those
+# retries would not pass the usage guard, so every SDK client is built
+# with retries disabled. Further attempts happen only in llm_retry_loop.
+_SDK_MAX_RETRIES = 0
+
+
+def _text_or_none(value: Any) -> str | None:
+    """Return visible text. None stays None and is never the string 'None'."""
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _sdk_client_kwargs(
+    *,
+    http_client: httpx.Client | None,
+) -> dict[str, Any]:
+    """Shared SDK options: no internal retries, optional mock transport."""
+    kwargs: dict[str, Any] = {"max_retries": _SDK_MAX_RETRIES}
+    if http_client is not None:
+        kwargs["http_client"] = http_client
+    return kwargs
 
 
 def _empty_usage_meta() -> dict[str, Any]:
@@ -203,6 +227,8 @@ class OpenAICompatibleApiClient:
         self,
         model_config: ModelDefinition,
         call_options: LlmCallOptions | None = None,
+        *,
+        http_client: httpx.Client | None = None,
     ) -> None:
         """Initialize the OpenAI-compatible client.
 
@@ -210,6 +236,8 @@ class OpenAICompatibleApiClient:
             model_config: The ModelDefinition containing provider and API info.
             call_options: Optional per-call timeout and output cap. None
                 keeps the historical request (no timeout, no output cap).
+            http_client: Optional httpx client. Tests pass one backed by
+                ``httpx.MockTransport``. Production leaves it unset.
 
         Raises:
             ValueError: If env_key_name is missing for providers that
@@ -218,12 +246,14 @@ class OpenAICompatibleApiClient:
         self.model_config = model_config
         self._call_options = call_options or LlmCallOptions()
         self.model_id_for_api = model_config.id
+        sdk_kwargs = _sdk_client_kwargs(http_client=http_client)
 
         if model_config.provider == "local":
             # For local (Ollama) provider
             self._openai_client: OpenAI = OpenAI(
                 base_url=self.model_config.api_model_id,
                 api_key="local",  # Ollama doesn't check the API key
+                **sdk_kwargs,
             )
             self.model_id_for_api = self.model_config.id
         elif model_config.provider == "xai":
@@ -234,7 +264,9 @@ class OpenAICompatibleApiClient:
             api_key = get_api_key_from_env(api_key_name)
 
             self._openai_client = OpenAI(
-                base_url="https://api.x.ai/v1", api_key=api_key
+                base_url="https://api.x.ai/v1",
+                api_key=api_key,
+                **sdk_kwargs,
             )
             self.model_id_for_api = self.model_config.api_model_id
         elif model_config.provider == "openai":
@@ -246,7 +278,7 @@ class OpenAICompatibleApiClient:
 
             api_key = get_api_key_from_env(api_key_name)
 
-            self._openai_client = OpenAI(api_key=api_key)
+            self._openai_client = OpenAI(api_key=api_key, **sdk_kwargs)
             self.model_id_for_api = self.model_config.api_model_id
         else:
             raise ValueError(
@@ -292,8 +324,10 @@ class OpenAICompatibleApiClient:
             )
             openai_response = http_response.parse()
             client_latency_ms = int((time.monotonic() - start) * 1000)
+            choices = openai_response.choices or []
+            content = choices[0].message.content if choices else None
             return CompletionResult(
-                text=openai_response.choices[0].message.content,
+                text=_text_or_none(content),
                 raw_response=openai_response,
                 client_latency_ms=client_latency_ms,
                 raw_http=http_response,
@@ -317,6 +351,8 @@ class AnthropicApiClient:
         self,
         model_config: ModelDefinition,
         call_options: LlmCallOptions | None = None,
+        *,
+        http_client: httpx.Client | None = None,
     ) -> None:
         """Initialize the Anthropic client.
 
@@ -324,6 +360,8 @@ class AnthropicApiClient:
             model_config: The ModelDefinition containing provider and API info.
             call_options: Optional per-call timeout and output cap. When
                 the output cap is unset, max_tokens stays 8192.
+            http_client: Optional httpx client. Tests pass one backed by
+                ``httpx.MockTransport``. Production leaves it unset.
 
         Raises:
             ValueError: If env_key_name is missing.
@@ -338,7 +376,8 @@ class AnthropicApiClient:
         api_key = get_api_key_from_env(api_key_name)
 
         self._anthropic_client: anthropic.Anthropic = anthropic.Anthropic(
-            api_key=api_key
+            api_key=api_key,
+            **_sdk_client_kwargs(http_client=http_client),
         )
         self.model_id_for_api = self.model_config.api_model_id
 
@@ -415,12 +454,10 @@ class AnthropicApiClient:
             anthropic_response = http_response.parse()
 
             client_latency_ms = int((time.monotonic() - start) * 1000)
-            first_block = anthropic_response.content[0]
-            text: str | None = None
-            if hasattr(first_block, "text"):
-                text = str(first_block.text)
+            blocks = anthropic_response.content or []
+            block_text = getattr(blocks[0], "text", None) if blocks else None
             return CompletionResult(
-                text=text,
+                text=_text_or_none(block_text),
                 raw_response=anthropic_response,
                 client_latency_ms=client_latency_ms,
                 raw_http=http_response,
@@ -445,6 +482,8 @@ class GoogleApiClient:
         self,
         model_config: ModelDefinition,
         call_options: LlmCallOptions | None = None,
+        *,
+        http_client: httpx.Client | None = None,
     ) -> None:
         """Initialize the Google GenAI client.
 
@@ -452,7 +491,9 @@ class GoogleApiClient:
             model_config: The ModelDefinition containing provider and API info.
             call_options: Optional per-call timeout and output cap. The
                 Google SDK takes ``HttpOptions.timeout`` in milliseconds.
-                When the timeout is unset, no http_options are sent.
+                When the timeout is unset, no per-request timeout is sent.
+            http_client: Optional httpx client. Tests pass one backed by
+                ``httpx.MockTransport``. Production leaves it unset.
 
         Raises:
             ValueError: If env_key_name is missing.
@@ -466,7 +507,18 @@ class GoogleApiClient:
 
         api_key = get_api_key_from_env(api_key_name)
 
-        self._google_client = genai.Client(api_key=api_key)
+        # attempts=1 means the original request only. Leaving retry
+        # options unset is also one attempt today, but the field docs
+        # say an omitted attempts value can mean five. Set it explicitly.
+        http_options_kwargs: dict[str, Any] = {
+            "retry_options": google_types.HttpRetryOptions(attempts=1),
+        }
+        if http_client is not None:
+            http_options_kwargs["httpx_client"] = http_client
+        self._google_client = genai.Client(
+            api_key=api_key,
+            http_options=google_types.HttpOptions(**http_options_kwargs),
+        )
         self.model_id_for_api = self.model_config.api_model_id
 
     def get_completion(
@@ -536,7 +588,7 @@ class GoogleApiClient:
             )
             client_latency_ms = int((time.monotonic() - start) * 1000)
             return CompletionResult(
-                text=str(google_response.text),
+                text=_text_or_none(google_response.text),
                 raw_response=google_response,
                 client_latency_ms=client_latency_ms,
             )
@@ -568,7 +620,12 @@ class GoogleApiClient:
         timeout = self._call_options.per_call_timeout_seconds
         if timeout is not None:
             # HttpOptions.timeout is an integer number of milliseconds.
-            config["http_options"] = {"timeout": max(1, int(timeout * 1000))}
+            # attempts=1 keeps this per-request override from enabling
+            # the SDK's multi-attempt retry path.
+            config["http_options"] = {
+                "timeout": max(1, int(timeout * 1000)),
+                "retry_options": {"attempts": 1},
+            }
         if not config:
             return None
         return config

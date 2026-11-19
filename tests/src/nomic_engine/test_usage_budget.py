@@ -120,6 +120,28 @@ def test_default_budget_is_unlimited() -> None:
     assert guard.calls == 5
 
 
+def test_budget_typo_fails_to_load() -> None:
+    """A misspelled budget key is an error, not an unlimited game."""
+    with pytest.raises(ValidationError) as direct:
+        UsageBudget(max_call_per_game=5)  # type: ignore[call-arg]
+    assert "max_call_per_game" in str(direct.value)
+    assert "Extra inputs are not permitted" in str(direct.value)
+
+    with pytest.raises(ValidationError) as loaded:
+        GameConfig(
+            players=[PlayerConfig(name="Ada", model_id="human")],
+            budget={"max_tokens_per_game": 100},
+        )
+    assert "max_tokens_per_game" in str(loaded.value)
+
+    # GameConfig itself still ignores unknown keys.
+    config = GameConfig(
+        players=[PlayerConfig(name="Ada", model_id="human")],
+        not_a_real_field=True,  # type: ignore[call-arg]
+    )
+    assert config.budget.max_calls_per_game is None
+
+
 def test_budget_rejects_non_positive_limits() -> None:
     with pytest.raises(ValidationError):
         UsageBudget(max_calls_per_game=0)
@@ -516,6 +538,147 @@ def test_openai_length_with_empty_content_retries_and_is_not_success(
     assert "Not treating this as success" in caplog.text
 
 
+def test_google_empty_max_tokens_is_partial_not_the_string_none(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Gemini MAX_TOKENS with no parts must not become the text 'None'."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    empty = MagicMock()
+    empty.text = None
+    empty.candidates = [MagicMock(finish_reason="MAX_TOKENS")]
+    visible = MagicMock()
+    visible.text = '{"ok": true}'
+    visible.candidates = [MagicMock(finish_reason="STOP")]
+    parsed: list[str] = []
+
+    def parse_fn(text: str) -> dict[str, bool]:
+        parsed.append(text)
+        if text == '{"ok": true}':
+            return {"ok": True}
+        raise ValueError(text)
+
+    model = ModelDefinition(
+        id="gemini",
+        provider="google",
+        api_model_id="gemini-2.5-flash",
+        env_key_name="GOOGLE_API_KEY",
+    )
+    with patch("src.nomic_engine.llm.api_clients.genai.Client") as mock_cls:
+        sdk = MagicMock()
+        sdk.models.generate_content.side_effect = [empty, visible]
+        mock_cls.return_value = sdk
+        inner = GoogleApiClient(model)
+        direct = inner.get_completion(_message())
+        assert direct.text is None
+        sdk.models.generate_content.side_effect = [empty, visible]
+        guard = UsageBudgetGuard(UsageBudget(max_calls_per_game=5))
+        client = BudgetedApiClient(inner, guard, "google")
+        with caplog.at_level("WARNING"):
+            result = llm_retry_loop(
+                history=_message(),
+                api_client=client,
+                parse_fn=parse_fn,
+                max_retries=2,
+                retry_template="retry {validation_error}",
+                actor_label="Judge",
+                action_description="judging",
+                log_usage=lambda completion: build_token_usage_record(
+                    result=completion,
+                    model_config=model,
+                    call_type="judge_veto",
+                    move_number=1,
+                    player_name="Judge",
+                ),
+            )
+
+    assert result == {"ok": True}
+    assert parsed == ['{"ok": true}']
+    assert "None" not in parsed
+    assert guard.calls == 2
+    assert "partial output" in caplog.text.lower()
+    assert "empty content" in caplog.text
+
+
+def test_provider_none_text_is_not_stringified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """None completion text stays None for every provider client."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("XAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    openai_response = MagicMock()
+    openai_response.choices = [MagicMock()]
+    openai_response.choices[0].message.content = None
+    openai_http = MagicMock()
+    openai_http.parse.return_value = openai_response
+    for model in (
+        _openai_model("gpt-5-mini"),
+        ModelDefinition(
+            id="grok",
+            provider="xai",
+            api_model_id="grok-4",
+            env_key_name="XAI_API_KEY",
+        ),
+        ModelDefinition(
+            id="llama",
+            provider="local",
+            api_model_id="http://localhost:11434/v1",
+            env_key_name=None,
+        ),
+    ):
+        with patch("src.nomic_engine.llm.api_clients.OpenAI") as mock_openai:
+            sdk = MagicMock()
+            sdk.chat.completions.with_raw_response.create.return_value = (
+                openai_http
+            )
+            mock_openai.return_value = sdk
+            result = OpenAICompatibleApiClient(model).get_completion(
+                _message()
+            )
+        assert result.text is None
+
+    block = MagicMock()
+    block.text = None
+    anthropic_response = MagicMock()
+    anthropic_response.content = [block]
+    anthropic_http = MagicMock()
+    anthropic_http.parse.return_value = anthropic_response
+    with patch(
+        "src.nomic_engine.llm.api_clients.anthropic.Anthropic"
+    ) as mock_anthropic:
+        sdk = MagicMock()
+        sdk.messages.with_raw_response.create.return_value = anthropic_http
+        mock_anthropic.return_value = sdk
+        result = AnthropicApiClient(
+            ModelDefinition(
+                id="claude",
+                provider="anthropic",
+                api_model_id="claude",
+                env_key_name="ANTHROPIC_API_KEY",
+            )
+        ).get_completion(_message())
+    assert result.text is None
+
+    google_response = MagicMock()
+    google_response.text = None
+    with patch("src.nomic_engine.llm.api_clients.genai.Client") as mock_google:
+        sdk = MagicMock()
+        sdk.models.generate_content.return_value = google_response
+        mock_google.return_value = sdk
+        result = GoogleApiClient(
+            ModelDefinition(
+                id="gemini",
+                provider="google",
+                api_model_id="gemini-2.5-flash",
+                env_key_name="GOOGLE_API_KEY",
+            )
+        ).get_completion(_message())
+    assert result.text is None
+
+
 def test_quota_error_is_named_and_counts_without_fallback(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -730,6 +893,8 @@ def test_google_receives_max_output_tokens_and_timeout_ms(
     assert parsed.max_output_tokens == 1024
     assert parsed.http_options is not None
     assert parsed.http_options.timeout == 60_000
+    assert parsed.http_options.retry_options is not None
+    assert parsed.http_options.retry_options.attempts == 1
     assert parsed.system_instruction == "Be brief."
 
 
