@@ -2,8 +2,8 @@
 
 The Makefile runs pytest with ``PYTHONPATH=.:src`` and does not load a
 sitecustomize audit hook. This file is the hook pytest itself loads
-before collection, so a future test cannot see real provider
-credentials or open a connection unless it deliberately opts in.
+before collection. It hides provider credentials and ``.env`` files,
+and it blocks the synchronous TCP connect path unless a test opts in.
 """
 
 from __future__ import annotations

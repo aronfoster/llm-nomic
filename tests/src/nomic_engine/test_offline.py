@@ -1,23 +1,21 @@
 """Prove pytest cannot use live credentials or send a provider request.
 
-``python-dotenv`` walks upward from ``config.py``. A ``.env`` in the
-checkout, or in a parent directory when the checkout has none, used to
-be applied at import. These tests place fake files on that walk and
-fake provider variables in the process environment. The suite must not
-observe them. A real game run still loads the nearest file, which a
-fresh interpreter (without the pytest guard) checks.
+``python-dotenv`` walks upward from the file that calls ``load_dotenv``.
+These tests copy ``config.py`` into a disposable tree and put dummy
+``.env`` files only there. The probe prints a fixed token, never the
+loaded values, and its environment contains only those dummies. The
+pytest process itself still refuses ``.env`` via the offline guard.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
 import threading
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -41,6 +39,7 @@ from tests.offline_guard import (
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+_CONFIG_SOURCE = _REPO_ROOT / "src" / "nomic_engine" / "config.py"
 _PROVIDER_KEYS = (
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -59,12 +58,22 @@ _PARENT_VALUES = {
     "GOOGLE_API_KEY": "offline-parent-google",
     "XAI_API_KEY": "offline-parent-xai",
 }
+_NEAR_VALUES = {
+    "OPENAI_API_KEY": "offline-near-openai",
+    "ANTHROPIC_API_KEY": "offline-near-anthropic",
+    "GOOGLE_API_KEY": "offline-near-google",
+    "XAI_API_KEY": "offline-near-xai",
+}
 _CWD_VALUE = "offline-cwd-should-not-load"
+_PROBE_OK = "ok"
+_PROBE_TOKENS = frozenset({_PROBE_OK, "IMPORT_LOADED", "LOAD_MISMATCH"})
 
+# Fixed tokens only. Loaded key material is compared inside the probe
+# and is never written to stdout or stderr.
 _PROBE = """\
 import json
 import os
-import src.nomic_engine.config as config
+import sys
 
 KEYS = [
     "OPENAI_API_KEY",
@@ -72,10 +81,19 @@ KEYS = [
     "GOOGLE_API_KEY",
     "XAI_API_KEY",
 ]
+import nomic_engine.config as config
+
 before = {key: os.environ.get(key) for key in KEYS}
 config.load_env_vars()
 after = {key: os.environ.get(key) for key in KEYS}
-print(json.dumps({"before": before, "after": after}))
+expected = json.loads(os.environ["OFFLINE_EXPECTED_JSON"])
+if any(value is not None for value in before.values()):
+    sys.stdout.write("IMPORT_LOADED\\n")
+    sys.exit(4)
+if after != expected:
+    sys.stdout.write("LOAD_MISMATCH\\n")
+    sys.exit(5)
+sys.stdout.write("ok\\n")
 """
 
 
@@ -83,79 +101,94 @@ def _env_text(values: dict[str, str]) -> str:
     return "".join(f"{name}={value}\n" for name, value in values.items())
 
 
-def _dotenv_pair() -> tuple[Path, Path]:
-    """Return ``(closer, higher)`` paths the dotenv walk will see.
-
-    Prefer the checkout root and its parent: that is where a real
-    ``.env`` sits when the game runs. If either file already exists,
-    use directories under ``src/`` instead so a developer's secrets
-    are never overwritten. Both pairs are on the walk that starts at
-    ``config.py``.
-    """
-    checkout = _REPO_ROOT / ".env"
-    parent = _REPO_ROOT.parent / ".env"
-    if not checkout.exists() and not parent.exists():
-        return checkout, parent
-    closer = _REPO_ROOT / "src" / "nomic_engine" / ".env"
-    higher = _REPO_ROOT / "src" / ".env"
-    if closer.exists() or higher.exists():
-        raise AssertionError(
-            "offline dotenv test cannot find a free .env path"
-        )
-    return closer, higher
-
-
 def _assert_provider_keys_absent() -> None:
+    """Fail without echoing a credential that is still set."""
     for name in _PROVIDER_KEYS:
-        assert os.environ.get(name) is None
+        if os.environ.get(name) is not None:
+            raise AssertionError(f"{name} is visible in the test process")
 
 
-@contextmanager
-def _temporary_files(files: dict[Path, str]) -> Iterator[None]:
-    for path in files:
-        if path.exists():
-            raise AssertionError(f"refusing to overwrite {path}")
-    try:
-        for path, contents in files.items():
-            path.write_text(contents)
-        yield
-    finally:
-        for path in files:
-            path.unlink(missing_ok=True)
+def _isolated_package(
+    tmp_path: Path,
+    *,
+    near: dict[str, str] | None = None,
+    checkout: dict[str, str] | None = None,
+    parent: dict[str, str] | None = None,
+) -> tuple[Path, Path]:
+    """Copy ``config.py`` into a tree that contains only dummy ``.env`` files.
+
+    Layout, from the copied module upward:
+
+    * ``checkout/app/nomic_engine/.env`` when ``near`` is set
+    * ``checkout/.env`` when ``checkout`` is set
+    * ``isolated/.env`` when ``parent`` is set
+
+    The working directory is a sibling of that tree and has its own
+    ``.env``. python-dotenv must not use it when the probe is a real
+    file, matching ``python -m src.nomic_engine.main``.
+    """
+    if not _CONFIG_SOURCE.is_file():
+        raise AssertionError("config.py source is missing")
+    root = tmp_path / "isolated"
+    package = root / "checkout" / "app" / "nomic_engine"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    shutil.copyfile(_CONFIG_SOURCE, package / "config.py")
+    if near is not None:
+        (package / ".env").write_text(_env_text(near))
+    if checkout is not None:
+        (root / "checkout" / ".env").write_text(_env_text(checkout))
+    if parent is not None:
+        (root / ".env").write_text(_env_text(parent))
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / ".env").write_text(f"OPENAI_API_KEY={_CWD_VALUE}\n")
+    return package.parent, cwd
 
 
-def _run_real_loader(cwd: Path) -> dict[str, dict[str, str | None]]:
-    """Import config and call ``load_env_vars`` outside the pytest guard.
+def _probe_env(app_dir: Path, expected: dict[str, str]) -> dict[str, str]:
+    """Environment for the probe: dummies plus process basics, no secrets."""
+    env: dict[str, str] = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONPATH": str(app_dir),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "OFFLINE_EXPECTED_JSON": json.dumps(expected),
+    }
+    for name in ("HOME", "LANG", "LC_ALL", "TZ"):
+        value = os.environ.get(name)
+        if value is not None:
+            env[name] = value
+    return env
 
-    The probe is a real file. ``python -c`` has no ``__main__.__file__``,
-    and python-dotenv then searches the working directory instead of
-    walking from ``config.py`` the way ``python -m src.nomic_engine.main``
-    does.
+
+def _run_isolated_loader(
+    app_dir: Path, cwd: Path, expected: dict[str, str]
+) -> str:
+    """Run the copied config outside the pytest dotenv guard.
+
+    Returns the probe token. stdout is that token only.
     """
     probe = cwd / "_offline_probe.py"
     probe.write_text(_PROBE)
-    env = os.environ.copy()
-    env.pop("PYTHON_DOTENV_DISABLED", None)
-    for name in PROVIDER_CREDENTIAL_ENV_VARS:
-        env.pop(name, None)
-    env["PYTHONPATH"] = os.pathsep.join(
-        [str(_REPO_ROOT), str(_REPO_ROOT / "src")]
-    )
     completed = subprocess.run(
         [sys.executable, str(probe)],
         cwd=cwd,
-        env=env,
+        env=_probe_env(app_dir, expected),
         capture_output=True,
         text=True,
         check=False,
     )
-    assert completed.returncode == 0, completed.stderr + completed.stdout
-    payload = json.loads(completed.stdout)
-    before = payload["before"]
-    after = payload["after"]
-    assert isinstance(before, dict)
-    assert isinstance(after, dict)
-    return {"before": before, "after": after}
+    token = completed.stdout.strip()
+    if token not in _PROBE_TOKENS:
+        token = "UNRECOGNIZED_OUTPUT"
+    if completed.returncode != 0 or token != _PROBE_OK:
+        raise AssertionError(
+            "isolated loader probe failed with status "
+            f"{completed.returncode} ({token})"
+        )
+    if _CWD_VALUE in completed.stdout or _CWD_VALUE in completed.stderr:
+        raise AssertionError("probe output included the cwd dummy")
+    return token
 
 
 def _clear_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -210,51 +243,57 @@ def test_scrub_provider_credentials_leaves_other_variables() -> None:
 def test_inherited_provider_credentials_are_absent() -> None:
     """Credentials that were in the environment are gone before tests run."""
     for name in PROVIDER_CREDENTIAL_ENV_VARS:
-        assert os.environ.get(name) is None
+        if os.environ.get(name) is not None:
+            raise AssertionError(f"{name} is visible in the test process")
     assert os.environ.get("PYTHON_DOTENV_DISABLED") == "1"
 
 
-def test_checkout_dotenv_is_hidden_from_tests_and_loaded_for_a_game(
+def test_pytest_guard_hides_dotenv_without_printing_values() -> None:
+    """Calling the real loader inside pytest does not reveal a key."""
+    load_env_vars()
+    _assert_provider_keys_absent()
+    try:
+        get_api_key_from_env("OPENAI_API_KEY")
+    except ValueError as exc:
+        if "OPENAI_API_KEY" not in str(exc):
+            raise AssertionError(
+                "missing-key error did not name the variable"
+            ) from None
+        return
+    raise AssertionError("get_api_key_from_env returned a key")
+
+
+def test_isolated_checkout_dotenv_loads_for_a_game_run(
     tmp_path: Path,
 ) -> None:
-    """A checkout ``.env`` beats a parent file, and tests see neither."""
-    closer, higher = _dotenv_pair()
-    assert (_REPO_ROOT / "src" / "nomic_engine" / "config.py").is_file()
-    files = {
-        closer: _env_text(_CHECKOUT_VALUES),
-        higher: _env_text(_PARENT_VALUES),
-        tmp_path / ".env": f"OPENAI_API_KEY={_CWD_VALUE}\n",
-    }
-    with _temporary_files(files):
-        load_env_vars()
-        _assert_provider_keys_absent()
-        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
-            get_api_key_from_env("OPENAI_API_KEY")
-
-        loaded = _run_real_loader(tmp_path)
-
-    assert list(loaded["before"].values()) == [None, None, None, None]
-    assert loaded["after"] == _CHECKOUT_VALUES
+    """In a disposable tree, the checkout file beats the parent file."""
+    app_dir, cwd = _isolated_package(
+        tmp_path, checkout=_CHECKOUT_VALUES, parent=_PARENT_VALUES
+    )
+    token = _run_isolated_loader(app_dir, cwd, _CHECKOUT_VALUES)
+    assert token == _PROBE_OK
     _assert_provider_keys_absent()
 
 
-def test_parent_dotenv_is_hidden_from_tests_and_loaded_for_a_game(
+def test_isolated_parent_dotenv_loads_when_nothing_is_nearer(
     tmp_path: Path,
 ) -> None:
-    """With no closer file, a parent ``.env`` loads only for a game run."""
-    _closer, higher = _dotenv_pair()
-    files = {
-        higher: _env_text(_PARENT_VALUES),
-        tmp_path / ".env": f"OPENAI_API_KEY={_CWD_VALUE}\n",
-    }
-    with _temporary_files(files):
-        load_env_vars()
-        _assert_provider_keys_absent()
-        loaded = _run_real_loader(tmp_path)
-
-    assert list(loaded["before"].values()) == [None, None, None, None]
-    assert loaded["after"] == _PARENT_VALUES
+    """In a disposable tree, a parent ``.env`` loads when it is nearest."""
+    app_dir, cwd = _isolated_package(tmp_path, parent=_PARENT_VALUES)
+    token = _run_isolated_loader(app_dir, cwd, _PARENT_VALUES)
+    assert token == _PROBE_OK
     _assert_provider_keys_absent()
+
+
+def test_isolated_nearer_package_dotenv_beats_checkout(
+    tmp_path: Path,
+) -> None:
+    """A ``.env`` beside the copied module beats one further up the walk."""
+    app_dir, cwd = _isolated_package(
+        tmp_path, near=_NEAR_VALUES, checkout=_CHECKOUT_VALUES
+    )
+    token = _run_isolated_loader(app_dir, cwd, _NEAR_VALUES)
+    assert token == _PROBE_OK
 
 
 def test_main_loads_env_when_the_game_starts(

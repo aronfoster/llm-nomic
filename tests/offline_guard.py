@@ -112,12 +112,14 @@ def _block_dotenv_loader() -> None:
 
 
 def _block_network() -> None:
-    """Fail ``connect`` and ``create_connection`` before any bytes are sent.
+    """Fail the synchronous TCP connect path before any bytes are sent.
 
-    ``socket.socket`` itself is left in place. Provider and httpx client
-    construction does not connect, and a test can still replace
-    ``socket.socket`` (the SOCKS proxy setup does this) without fighting
-    a wrapper class.
+    ``create_connection``, ``connect``, and ``connect_ex`` raise before
+    the operating system connects. That is the path httpx and the
+    provider SDKs use for a normal request. Subprocesses, UDP, and a
+    raw ``getaddrinfo`` call are outside this guard. ``socket.socket``
+    itself stays in place so client construction still works, including
+    the SOCKS test that replaces ``socket.socket``.
     """
 
     def _blocked_create_connection(
