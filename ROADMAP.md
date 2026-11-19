@@ -7,10 +7,10 @@ This document tracks the high-level plan for the `llm-nomic` project.
 
 ## LN-1 container readiness
 
-Local implementation prepared for independent review: isolated Python 3.12
-bootstrap and quality checks are documented in [Container readiness](docs/CONTAINERS.md).
-SOCKS proxy support is included without changing the container proxy settings.
-Subscription sign-in, capped live games and milestone acceptance remain open in
+Container bootstrap and quality checks: done
+([Container readiness](docs/CONTAINERS.md)). SOCKS proxy support is included
+without changing the container proxy settings. Subscription sign-in, capped
+live games and milestone acceptance remain open in
 [LN-1](https://foster.youtrack.cloud/issue/LN-1). This does not replace the
 coordinator/planner roles or close the milestone.
 
