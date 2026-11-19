@@ -1,0 +1,664 @@
+"""Prove pytest cannot use live credentials or send a provider request.
+
+``python-dotenv`` walks upward from the file that calls ``load_dotenv``.
+These tests copy ``config.py`` into a disposable tree and put dummy
+``.env`` files only there. The probe prints a fixed token, never the
+loaded values, and its environment contains only those dummies. The
+pytest process itself still refuses ``.env`` via the offline guard.
+"""
+
+from __future__ import annotations
+
+import errno
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import threading
+from pathlib import Path
+
+import httpx
+import pytest
+from anthropic import Anthropic
+from openai import OpenAI
+
+from src.nomic_engine.config import get_api_key_from_env, load_env_vars
+from src.nomic_engine.data_models import ModelDefinition
+from src.nomic_engine.startup_validation import (
+    _validate_google,
+    _validate_local,
+    _validate_openai,
+    _validate_xai,
+)
+from tests.offline_guard import (
+    PROVIDER_CREDENTIAL_ENV_VARS,
+    OfflineNetworkBlocked,
+    blocked_destinations,
+    caused_by_offline_block,
+    scrub_provider_credentials,
+)
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_CONFIG_SOURCE = _REPO_ROOT / "src" / "nomic_engine" / "config.py"
+_PROVIDER_KEYS = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GOOGLE_API_KEY",
+    "XAI_API_KEY",
+)
+_CHECKOUT_VALUES = {
+    "OPENAI_API_KEY": "offline-checkout-openai",
+    "ANTHROPIC_API_KEY": "offline-checkout-anthropic",
+    "GOOGLE_API_KEY": "offline-checkout-google",
+    "XAI_API_KEY": "offline-checkout-xai",
+}
+_PARENT_VALUES = {
+    "OPENAI_API_KEY": "offline-parent-openai",
+    "ANTHROPIC_API_KEY": "offline-parent-anthropic",
+    "GOOGLE_API_KEY": "offline-parent-google",
+    "XAI_API_KEY": "offline-parent-xai",
+}
+_NEAR_VALUES = {
+    "OPENAI_API_KEY": "offline-near-openai",
+    "ANTHROPIC_API_KEY": "offline-near-anthropic",
+    "GOOGLE_API_KEY": "offline-near-google",
+    "XAI_API_KEY": "offline-near-xai",
+}
+_CWD_VALUE = "offline-cwd-should-not-load"
+_PROBE_OK = "ok"
+_PROBE_TOKENS = frozenset({_PROBE_OK, "IMPORT_LOADED", "LOAD_MISMATCH"})
+
+# Fixed tokens only. Loaded key material is compared inside the probe
+# and is never written to stdout or stderr.
+_PROBE = """\
+import json
+import os
+import sys
+
+KEYS = [
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GOOGLE_API_KEY",
+    "XAI_API_KEY",
+]
+import nomic_engine.config as config
+
+before = {key: os.environ.get(key) for key in KEYS}
+config.load_env_vars()
+after = {key: os.environ.get(key) for key in KEYS}
+expected = json.loads(os.environ["OFFLINE_EXPECTED_JSON"])
+if any(value is not None for value in before.values()):
+    sys.stdout.write("IMPORT_LOADED\\n")
+    sys.exit(4)
+if after != expected:
+    sys.stdout.write("LOAD_MISMATCH\\n")
+    sys.exit(5)
+sys.stdout.write("ok\\n")
+"""
+
+
+def _env_text(values: dict[str, str]) -> str:
+    return "".join(f"{name}={value}\n" for name, value in values.items())
+
+
+def _assert_provider_keys_absent() -> None:
+    """Fail without echoing a credential that is still set."""
+    for name in _PROVIDER_KEYS:
+        if os.environ.get(name) is not None:
+            raise AssertionError(f"{name} is visible in the test process")
+
+
+def _isolated_package(
+    tmp_path: Path,
+    *,
+    near: dict[str, str] | None = None,
+    checkout: dict[str, str] | None = None,
+    parent: dict[str, str] | None = None,
+) -> tuple[Path, Path]:
+    """Copy ``config.py`` into a tree that contains only dummy ``.env`` files.
+
+    Layout, from the copied module upward:
+
+    * ``checkout/app/nomic_engine/.env`` when ``near`` is set
+    * ``checkout/.env`` when ``checkout`` is set
+    * ``isolated/.env`` when ``parent`` is set
+
+    The working directory is a sibling of that tree and has its own
+    ``.env``. python-dotenv must not use it when the probe is a real
+    file, matching ``python -m src.nomic_engine.main``.
+    """
+    if not _CONFIG_SOURCE.is_file():
+        raise AssertionError("config.py source is missing")
+    root = tmp_path / "isolated"
+    package = root / "checkout" / "app" / "nomic_engine"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    shutil.copyfile(_CONFIG_SOURCE, package / "config.py")
+    if near is not None:
+        (package / ".env").write_text(_env_text(near))
+    if checkout is not None:
+        (root / "checkout" / ".env").write_text(_env_text(checkout))
+    if parent is not None:
+        (root / ".env").write_text(_env_text(parent))
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / ".env").write_text(f"OPENAI_API_KEY={_CWD_VALUE}\n")
+    return package.parent, cwd
+
+
+def _probe_env(app_dir: Path, expected: dict[str, str]) -> dict[str, str]:
+    """Environment for the probe: dummies plus process basics, no secrets."""
+    env: dict[str, str] = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONPATH": str(app_dir),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "OFFLINE_EXPECTED_JSON": json.dumps(expected),
+    }
+    for name in ("HOME", "LANG", "LC_ALL", "TZ"):
+        value = os.environ.get(name)
+        if value is not None:
+            env[name] = value
+    return env
+
+
+def _run_isolated_loader(
+    app_dir: Path, cwd: Path, expected: dict[str, str]
+) -> str:
+    """Run the copied config outside the pytest dotenv guard.
+
+    Returns the probe token. stdout is that token only.
+    """
+    probe = cwd / "_offline_probe.py"
+    probe.write_text(_PROBE)
+    completed = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=cwd,
+        env=_probe_env(app_dir, expected),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    token = completed.stdout.strip()
+    if token not in _PROBE_TOKENS:
+        token = "UNRECOGNIZED_OUTPUT"
+    if completed.returncode != 0 or token != _PROBE_OK:
+        raise AssertionError(
+            "isolated loader probe failed with status "
+            f"{completed.returncode} ({token})"
+        )
+    if _CWD_VALUE in completed.stdout or _CWD_VALUE in completed.stderr:
+        raise AssertionError("probe output included the cwd dummy")
+    return token
+
+
+_OS_REJECTED = object()
+
+
+def _loopback_result(action: object) -> object:
+    """Run a loopback OS call and report whether the OS accepted it.
+
+    The offline guard must not be the exception. ``ENETUNREACH``,
+    ``EADDRNOTAVAIL``, ``ECONNREFUSED``, and any other ``OSError`` mean
+    the guard let the call through and the kernel rejected it (for
+    example because ``lo`` is down). Delivery is asserted only when this
+    returns the call's own result instead of ``_OS_REJECTED``.
+    """
+    if not callable(action):
+        raise AssertionError("loopback check needs a callable")
+    try:
+        return action()
+    except OfflineNetworkBlocked as exc:
+        raise AssertionError(
+            "offline guard blocked a loopback socket call"
+        ) from exc
+    except OSError as exc:
+        if caused_by_offline_block(exc):
+            raise AssertionError(
+                "offline guard blocked a loopback socket call"
+            ) from exc
+        return _OS_REJECTED
+
+
+def _clear_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop inherited proxy settings so client construction stays direct.
+
+    A SOCKS proxy would import socksio while the client is built. This
+    suite does not require that dependency. The proxy-setup test sets
+    the variables itself.
+    """
+    for name in list(os.environ):
+        if name.lower().endswith("_proxy"):
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("REQUEST_METHOD", raising=False)
+
+
+def _accept_one(listener: socket.socket, received: list[bytes]) -> None:
+    try:
+        conn, _addr = listener.accept()
+    except (TimeoutError, OSError):
+        return
+    with conn:
+        conn.settimeout(0.2)
+        try:
+            received.append(conn.recv(65536))
+        except (TimeoutError, OSError):
+            received.append(b"")
+
+
+def test_scrub_provider_credentials_leaves_other_variables() -> None:
+    """The scrubber removes provider secrets and nothing else."""
+    environ = {
+        "OPENAI_API_KEY": "offline-env-openai",
+        "ANTHROPIC_API_KEY": "offline-env-anthropic",
+        "GOOGLE_API_KEY": "offline-env-google",
+        "GEMINI_API_KEY": "offline-env-gemini",
+        "XAI_API_KEY": "offline-env-xai",
+        "PATH": "/usr/bin",
+        "HOME": "/tmp/offline-home",
+    }
+    removed = scrub_provider_credentials(environ)
+    assert "OPENAI_API_KEY" not in environ
+    assert "ANTHROPIC_API_KEY" not in environ
+    assert "GOOGLE_API_KEY" not in environ
+    assert "GEMINI_API_KEY" not in environ
+    assert "XAI_API_KEY" not in environ
+    assert environ["PATH"] == "/usr/bin"
+    assert environ["HOME"] == "/tmp/offline-home"
+    assert "PATH" not in removed
+    assert "HOME" not in removed
+
+
+def test_inherited_provider_credentials_are_absent() -> None:
+    """Credentials that were in the environment are gone before tests run."""
+    for name in PROVIDER_CREDENTIAL_ENV_VARS:
+        if os.environ.get(name) is not None:
+            raise AssertionError(f"{name} is visible in the test process")
+    assert os.environ.get("PYTHON_DOTENV_DISABLED") == "1"
+
+
+def test_pytest_guard_hides_dotenv_without_printing_values() -> None:
+    """Calling the real loader inside pytest does not reveal a key."""
+    load_env_vars()
+    _assert_provider_keys_absent()
+    try:
+        get_api_key_from_env("OPENAI_API_KEY")
+    except ValueError as exc:
+        if "OPENAI_API_KEY" not in str(exc):
+            raise AssertionError(
+                "missing-key error did not name the variable"
+            ) from None
+        return
+    raise AssertionError("get_api_key_from_env returned a key")
+
+
+def test_isolated_checkout_dotenv_loads_for_a_game_run(
+    tmp_path: Path,
+) -> None:
+    """In a disposable tree, the checkout file beats the parent file."""
+    app_dir, cwd = _isolated_package(
+        tmp_path, checkout=_CHECKOUT_VALUES, parent=_PARENT_VALUES
+    )
+    token = _run_isolated_loader(app_dir, cwd, _CHECKOUT_VALUES)
+    assert token == _PROBE_OK
+    _assert_provider_keys_absent()
+
+
+def test_isolated_parent_dotenv_loads_when_nothing_is_nearer(
+    tmp_path: Path,
+) -> None:
+    """In a disposable tree, a parent ``.env`` loads when it is nearest."""
+    app_dir, cwd = _isolated_package(tmp_path, parent=_PARENT_VALUES)
+    token = _run_isolated_loader(app_dir, cwd, _PARENT_VALUES)
+    assert token == _PROBE_OK
+    _assert_provider_keys_absent()
+
+
+def test_isolated_nearer_package_dotenv_beats_checkout(
+    tmp_path: Path,
+) -> None:
+    """A ``.env`` beside the copied module beats one further up the walk."""
+    app_dir, cwd = _isolated_package(
+        tmp_path, near=_NEAR_VALUES, checkout=_CHECKOUT_VALUES
+    )
+    token = _run_isolated_loader(app_dir, cwd, _NEAR_VALUES)
+    assert token == _PROBE_OK
+
+
+def _record_loader(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    calls: list[str] = []
+
+    def _record() -> None:
+        calls.append("loaded")
+
+    monkeypatch.setattr("src.nomic_engine.main.load_env_vars", _record)
+    return calls
+
+
+def test_main_does_not_load_env_for_help(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``--help`` exits during parsing and does not read ``.env``."""
+    calls = _record_loader(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["nomic", "--help"])
+    from src.nomic_engine.main import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 0
+    assert calls == []
+
+
+def test_main_does_not_load_env_for_argument_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected ``--turns`` value exits before ``.env`` is read."""
+    calls = _record_loader(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["nomic", "--turns", "0"])
+    from src.nomic_engine.main import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 2
+    assert calls == []
+
+
+def test_main_loads_env_before_running_a_game(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A direct ``--game_dir`` run loads ``.env`` after parsing."""
+    calls = _record_loader(monkeypatch)
+    monkeypatch.setattr(
+        "src.nomic_engine.main.setup_logging", lambda _path: None
+    )
+    monkeypatch.setattr(
+        "src.nomic_engine.main.run_game",
+        lambda *_args: calls.append("game"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["nomic", "--game_dir", "games/example", "--turns", "1"],
+    )
+    from src.nomic_engine.main import main
+
+    main()
+    assert calls == ["loaded", "game"]
+
+
+def test_main_loads_env_before_the_interactive_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The menu runs only after arguments are accepted and ``.env`` loads."""
+    calls = _record_loader(monkeypatch)
+    monkeypatch.setattr(
+        "src.nomic_engine.main.run_interactive_menu",
+        lambda _max_turns: calls.append("menu"),
+    )
+    monkeypatch.setattr(sys, "argv", ["nomic"])
+    from src.nomic_engine.main import main
+
+    main()
+    assert calls == ["loaded", "menu"]
+
+
+def test_create_game_entry_point_does_not_load_env(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Game creation writes local files and does not read provider keys."""
+    import create_game
+
+    monkeypatch.setattr(
+        create_game,
+        "run_creation_flow",
+        lambda: Path("/tmp/offline-created-game"),
+    )
+
+    def _fail() -> None:
+        raise AssertionError("create_game does not read provider keys")
+
+    monkeypatch.setattr("src.nomic_engine.config.load_env_vars", _fail)
+    create_game.main()
+    captured = capsys.readouterr()
+    assert "offline-created-game" in captured.out
+
+
+def test_other_entry_points_do_not_load_env() -> None:
+    """Dependency updates and the Makefile do not run the game."""
+    root = Path(__file__).resolve().parents[3]
+    for rel in ("create_game.py", "scripts/update_deps.py"):
+        text = (root / rel).read_text(encoding="utf-8")
+        if "load_env_vars" in text:
+            raise AssertionError(f"{rel} now references load_env_vars")
+    project = (root / "pyproject.toml").read_text(encoding="utf-8")
+    if "[project.scripts]" in project:
+        raise AssertionError("a console script needs its own loader test")
+    makefile = (root / "Makefile").read_text(encoding="utf-8")
+    if "nomic_engine.main" in makefile:
+        raise AssertionError("Makefile runs the game without a loader test")
+
+
+def test_direct_credential_assignment_does_not_leak() -> None:
+    """A raw ``os.environ`` write must not be visible to the next test."""
+    os.environ["OPENAI_API_KEY"] = "offline-leak-sentinel"
+
+
+def test_direct_credential_assignment_was_scrubbed() -> None:
+    """The per-test scrub removes the sentinel set above."""
+    if os.environ.get("OPENAI_API_KEY") == "offline-leak-sentinel":
+        raise AssertionError("OPENAI_API_KEY leaked from an earlier test")
+
+
+@pytest.mark.attempts_network
+def test_non_loopback_dns_and_udp_are_blocked() -> None:
+    """Non-loopback lookups and UDP sends fail inside this process.
+
+    Loopback calls are not blocked by the guard. When ``lo`` is down the
+    kernel may reject them; that is not a guard failure. A datagram is
+    required only when the send itself succeeds.
+    """
+    with pytest.raises(OfflineNetworkBlocked):
+        socket.getaddrinfo("api.openai.com", 443)
+    with pytest.raises(OfflineNetworkBlocked):
+        socket.gethostbyname("example.com")
+
+    info = _loopback_result(lambda: socket.getaddrinfo("127.0.0.1", 9))
+    if info is not _OS_REJECTED:
+        assert info
+    name = _loopback_result(lambda: socket.gethostbyname("localhost"))
+    if name is not _OS_REJECTED:
+        assert name == "127.0.0.1"
+
+    receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        bound = _loopback_result(lambda: receiver.bind(("127.0.0.1", 0)))
+        if bound is not _OS_REJECTED:
+            receiver.settimeout(1.0)
+            port = receiver.getsockname()[1]
+            sent = _loopback_result(
+                lambda: sender.sendto(b"loop", ("127.0.0.1", port))
+            )
+            if sent is not _OS_REJECTED:
+                data, _addr = receiver.recvfrom(16)
+                assert data == b"loop"
+        else:
+            _loopback_result(lambda: sender.sendto(b"loop", ("127.0.0.1", 9)))
+        with pytest.raises(OfflineNetworkBlocked):
+            sender.sendto(b"ping", ("8.8.8.8", 53))
+    finally:
+        sender.close()
+        receiver.close()
+
+
+def test_loopback_udp_os_error_is_not_a_guard_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``ENETUNREACH`` from the kernel is not ``OfflineNetworkBlocked``.
+
+    A fresh network namespace leaves ``lo`` down. The guard must pass
+    that error through.
+    """
+
+    def _unreachable(_self: object, _data: object, *_args: object) -> int:
+        raise OSError(errno.ENETUNREACH, "Network is unreachable")
+
+    monkeypatch.setattr(
+        "tests.offline_guard._passthrough_sendto", _unreachable
+    )
+    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        result = _loopback_result(
+            lambda: sender.sendto(b"loop", ("127.0.0.1", 9))
+        )
+    finally:
+        sender.close()
+    assert result is _OS_REJECTED
+
+
+@pytest.mark.attempts_network
+def test_loopback_tcp_connect_is_blocked_before_the_os() -> None:
+    """TCP connect never reaches the kernel, even when ``lo`` is down."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        with pytest.raises(OfflineNetworkBlocked):
+            sock.connect(("127.0.0.1", 9))
+        with pytest.raises(OfflineNetworkBlocked):
+            sock.connect_ex(("127.0.0.1", 9))
+    finally:
+        sock.close()
+
+
+def test_provider_clients_construct_without_connecting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Building httpx, OpenAI, and Anthropic clients does not connect.
+
+    The SOCKS proxy setup constructs the same clients with ``socket``
+    patched to fail. This guard must keep that possible: it blocks
+    ``connect``, not construction.
+    """
+    _clear_proxy_env(monkeypatch)
+    before = len(blocked_destinations)
+    with httpx.Client() as http_client:
+        assert http_client is not None
+    with OpenAI(api_key="offline-test-key") as openai_client:
+        assert openai_client.api_key == "offline-test-key"
+    with Anthropic(api_key="offline-test-key") as anthropic_client:
+        assert anthropic_client.api_key == "offline-test-key"
+    assert blocked_destinations[before:] == []
+
+
+def test_socket_patch_still_allows_client_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replacing ``socket.socket`` must not be required for construction.
+
+    PR 142's SOCKS test points ``socket.socket`` and
+    ``socket.create_connection`` at a function that raises, then builds
+    the clients. Construction has to succeed under that patch.
+    """
+    _clear_proxy_env(monkeypatch)
+
+    def _fail(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("client construction opened a socket")
+
+    monkeypatch.setattr(socket, "socket", _fail)
+    monkeypatch.setattr(socket, "create_connection", _fail)
+    with httpx.Client() as http_client:
+        assert http_client is not None
+    with OpenAI(api_key="offline-test-key") as openai_client:
+        assert openai_client.api_key == "offline-test-key"
+    with Anthropic(api_key="offline-test-key") as anthropic_client:
+        assert anthropic_client.api_key == "offline-test-key"
+
+
+@pytest.mark.attempts_network
+def test_provider_call_and_startup_pings_stop_before_transmission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A provider call and the startup pings fail before any bytes leave.
+
+    ``startup_validation`` really calls OpenAI, xAI, Google, and Ollama.
+    Those calls must not succeed, and the local listener that stands in
+    for the provider must receive nothing.
+    """
+    _clear_proxy_env(monkeypatch)
+    received: list[bytes] = []
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # Port 9 is only a target for the blocked client call. A real
+    # listener is used when the kernel accepts a bind on 127.0.0.1.
+    port = 9
+    thread: threading.Thread | None = None
+    bound = _loopback_result(lambda: listener.bind(("127.0.0.1", 0)))
+    if bound is not _OS_REJECTED:
+        listened = _loopback_result(lambda: listener.listen(1))
+        if listened is not _OS_REJECTED:
+            listener.settimeout(0.3)
+            port = listener.getsockname()[1]
+            thread = threading.Thread(
+                target=_accept_one, args=(listener, received), daemon=True
+            )
+            thread.start()
+    before = len(blocked_destinations)
+    try:
+        client = OpenAI(
+            api_key="offline-not-a-real-key",
+            base_url=f"http://127.0.0.1:{port}/v1",
+            max_retries=0,
+            timeout=1.0,
+        )
+        with pytest.raises(Exception) as exc_info:
+            client.chat.completions.create(
+                model="offline-test-model",
+                messages=[{"role": "user", "content": "ping"}],
+            )
+        assert caused_by_offline_block(exc_info.value)
+
+        local_result = _validate_local(
+            ModelDefinition(
+                id="offline-test",
+                provider="local",
+                api_model_id=f"http://127.0.0.1:{port}/v1",
+                env_key_name=None,
+            ),
+            'Player "Local"',
+        )
+        assert local_result is not None
+        assert "Ollama unreachable" in local_result
+
+        monkeypatch.setenv("OPENAI_API_KEY", "offline-not-a-real-openai-key")
+        openai_result = _validate_openai("OPENAI_API_KEY", 'Player "OpenAI"')
+        assert openai_result is not None
+        assert openai_result != ""
+
+        monkeypatch.setenv("XAI_API_KEY", "offline-not-a-real-xai-key")
+        xai_result = _validate_xai("XAI_API_KEY", 'Player "xAI"')
+        assert xai_result is not None
+
+        monkeypatch.setenv("GOOGLE_API_KEY", "offline-not-a-real-google-key")
+        google_result = _validate_google("GOOGLE_API_KEY", "Judge")
+        assert google_result is not None
+    finally:
+        listener.close()
+        if thread is not None:
+            thread.join(timeout=2)
+
+    attempted = blocked_destinations[before:]
+    hosts = [
+        dest[0]
+        for dest in attempted
+        if isinstance(dest, tuple) and len(dest) >= 1
+    ]
+    # create_connection is replaced before it would resolve the host.
+    # The listener stands in for the local completion and must see no bytes.
+    assert "api.openai.com" in hosts
+    assert "api.x.ai" in hosts
+    assert "generativelanguage.googleapis.com" in hosts
+    assert ("127.0.0.1", port) in attempted
+    assert received == []

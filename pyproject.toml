@@ -9,6 +9,9 @@ files = ["src"]
 minversion = "6.0"
 addopts = "-ra -q"
 testpaths = ["tests"]
+markers = [
+    "attempts_network: deliberately attempts a provider call; the offline guard must stop it before transmission",
+]
 
 [tool.black]
 line-length = 79

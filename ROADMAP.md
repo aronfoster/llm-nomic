@@ -102,4 +102,10 @@ This is the long-term backlog and TODO scratchpad.
 
 ### Development
 
+* ~~Offline unit tests: importing the engine does not load `.env`. The
+  suite drops provider credentials and, inside the pytest process,
+  blocks synchronous TCP connects, non-loopback DNS lookups
+  (`getaddrinfo` / `gethostbyname`), and non-loopback UDP `sendto`.
+  A subprocess can still open its own sockets. `main()` loads `.env`
+  after arguments are accepted; `--help` does not.~~ *(LN-7)*
 * Improve code documentation using markdown files for developers (especially Claude Code and Codex) to read

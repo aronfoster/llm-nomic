@@ -14,6 +14,7 @@ from pathlib import Path
 import pydantic
 from pythonjsonlogger.json import JsonFormatter
 
+from .config import load_env_vars
 from .constants import GAME_LOG_FILE
 from .core.game_loop import GameLoop
 from .core.game_manager import GameManager
@@ -422,6 +423,10 @@ def main() -> None:
 
     if args.turns is not None and args.turns < 1:
         parser.error("--turns must be a positive integer")
+
+    # ``--help`` and parser errors exit above. Read ``.env`` only once
+    # the arguments have been accepted, then run the menu or the game.
+    load_env_vars()
 
     # Determine max_turns for the turn loop
     if args.until_victory:

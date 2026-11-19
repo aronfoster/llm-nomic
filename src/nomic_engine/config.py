@@ -12,8 +12,14 @@ logger = logging.getLogger(__name__)
 
 
 def load_env_vars() -> None:
-    """Load environment variables from a .env file."""
-    # This will search for a .env file in the current dir or parent dirs
+    """Load environment variables from a .env file.
+
+    ``python-dotenv`` walks upward from this file until it finds ``.env``,
+    so a checkout or parent-directory file is used when a game is started.
+    The CLI calls this after it accepts arguments. Importing the module
+    must not load that file: tests and other importers would otherwise
+    pick up real provider credentials.
+    """
     load_dotenv()
     logger.info("Loaded environment variables from .env file (if found).")
 
@@ -33,7 +39,3 @@ def get_api_key_from_env(env_key_name: str) -> str:
         )
 
     return api_key
-
-
-# Load environment variables once on module import
-load_env_vars()
