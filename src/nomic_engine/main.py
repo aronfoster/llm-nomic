@@ -307,10 +307,14 @@ def _stop_for_usage_budget(
     The provider call that would have exceeded the budget was not made.
     """
     logger = logging.getLogger(__name__)
-    logger.error("Usage budget exceeded: %s", exc)
+    # The exception text already starts with "Usage budget exceeded".
+    # Print that sentence once. Log it at INFO so the WARNING console
+    # handler does not repeat it on stderr; the file handler still
+    # records it.
+    message = str(exc)
+    logger.info("%s", message)
     print(
-        "\nUsage budget exceeded. "
-        f"{exc}\n"
+        f"\n{message}\n"
         "The next provider call was not made. "
         "Partial game state has been saved."
     )

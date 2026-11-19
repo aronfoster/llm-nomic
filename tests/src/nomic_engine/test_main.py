@@ -364,7 +364,7 @@ class TestMultiTurnFlags:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """A budget stop saves state, prints the report, and exits 3."""
+        """A budget stop saves state, prints the report once, and exits 3."""
         import src.nomic_engine.main as main_mod
         from src.nomic_engine.usage_budget import UsageBudgetExceeded
 
@@ -407,12 +407,13 @@ class TestMultiTurnFlags:
         assert loop.run_turn.call_count == 1
         game_manager.save_game_state.assert_called_once()
         game_manager.save_rules.assert_called_once()
-        output = capsys.readouterr().out
-        assert "Usage budget exceeded" in output
-        assert "The next provider call was not made" in output
-        assert "calls_with_unavailable_usage: 1" in output
-        assert "calls_with_zero_tokens: 1" in output
-        assert "not counted as zero" in output
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        assert combined.count("Usage budget exceeded") == 1
+        assert "The next provider call was not made" in captured.out
+        assert "calls_with_unavailable_usage: 1" in captured.out
+        assert "calls_with_zero_tokens: 1" in captured.out
+        assert "not counted as zero" in captured.out
 
 
 # ---------------------------------------------------------------------------
