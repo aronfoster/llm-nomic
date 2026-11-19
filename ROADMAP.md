@@ -14,6 +14,19 @@ live games and milestone acceptance remain open in
 [LN-1](https://foster.youtrack.cloud/issue/LN-1). This does not replace the
 coordinator/planner roles or close the milestone.
 
+## LN-4 grok CLI contract
+
+An offline process adapter for `grok -p --output-format json` is in
+`src/nomic_engine/llm/providers/grok_cli_adapter.py`. The game factory
+refuses `provider="grok_cli"`. Nothing in the default game path selects
+it. Zero-tool isolation is not established for Grok CLI 1.0.89
+(`28be5bb1bf65`): `--tools`, a denylist, and read-only mode do not prove
+that tools, MCP, hooks, plugins, and project instructions are off. The
+adapter stays behind `acknowledge_unverified_tool_isolation`.
+`--max-turns` is not an LN-5 bound on internal model requests or retries,
+and this adapter does not claim that enforcement. See
+[the contract note](docs/evidence/ln4-grok-cli-contract.md).
+
 ## Core Principles
 
 Our architecture is built on these principles:
