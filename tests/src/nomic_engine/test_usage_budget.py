@@ -441,6 +441,81 @@ def test_partial_output_is_logged(caplog: pytest.LogCaptureFixture) -> None:
     assert "Partial output" in caplog.text
 
 
+def test_openai_length_with_empty_content_retries_and_is_not_success(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Empty finish_reason=length is a counted retry, not a success.
+
+    gpt-5-mini can spend max_completion_tokens on hidden reasoning and
+    return no visible text. That attempt must be logged and retried
+    inside the normal retry bound.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    def _http(
+        content: str, finish_reason: str, output_tokens: int
+    ) -> MagicMock:
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = content
+        response.choices[0].finish_reason = finish_reason
+        response.usage.prompt_tokens = 30
+        response.usage.completion_tokens = output_tokens
+        response.id = "req-test"
+        http = MagicMock()
+        http.parse.return_value = response
+        http.headers = {}
+        return http
+
+    mock_sdk = MagicMock()
+    mock_sdk.chat.completions.with_raw_response.create.side_effect = [
+        _http("", "length", 1024),
+        _http('{"ok": true}', "stop", 12),
+    ]
+    parsed: list[str] = []
+
+    def parse_fn(text: str) -> dict[str, bool]:
+        parsed.append(text)
+        if text == '{"ok": true}':
+            return {"ok": True}
+        raise ValueError(text)
+
+    model = _openai_model("gpt-5-mini")
+    with patch(
+        "src.nomic_engine.llm.api_clients.OpenAI", return_value=mock_sdk
+    ):
+        inner = OpenAICompatibleApiClient(model)
+        guard = UsageBudgetGuard(UsageBudget(max_calls_per_game=5))
+        client = BudgetedApiClient(inner, guard, "openai")
+        with caplog.at_level("WARNING"):
+            result = llm_retry_loop(
+                history=_message(),
+                api_client=client,
+                parse_fn=parse_fn,
+                max_retries=2,
+                retry_template="retry {validation_error}",
+                actor_label="Ada",
+                action_description="thinking",
+                log_usage=lambda completion: build_token_usage_record(
+                    result=completion,
+                    model_config=model,
+                    call_type="propose",
+                    move_number=1,
+                    player_name="Ada",
+                ),
+            )
+
+    assert result == {"ok": True}
+    assert parsed == ['{"ok": true}']
+    create = mock_sdk.chat.completions.with_raw_response.create
+    assert create.call_count == 2
+    assert guard.calls == 2
+    assert "Partial output" in caplog.text
+    assert "empty content" in caplog.text
+    assert "Not treating this as success" in caplog.text
+
+
 def test_quota_error_is_named_and_counts_without_fallback(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -676,9 +751,9 @@ def test_cheap_example_config_loads() -> None:
     assert config.tuning.max_judge_score_retries == 2
     assert config.budget.max_calls_per_game == 60
     assert config.budget.per_call_timeout_seconds == 60
-    assert config.budget.max_output_tokens == 1024
-    assert config.budget.max_total_tokens_per_game is None
-    assert config.budget.max_wall_seconds is None
+    assert config.budget.max_output_tokens == 2048
+    assert config.budget.max_total_tokens_per_game == 150000
+    assert config.budget.max_wall_seconds == 1200
 
 
 @patch("src.nomic_engine.judge.llm_judge.create_api_client")

@@ -10,8 +10,9 @@
 #      tuning, withdrawal_policy, and max_withdrawal_retries into it.
 #   3. python -m src.nomic_engine.main --game_dir games/<game-name> --turns 3
 #
-# Do not treat max_total_tokens_per_game as a precise cap if you add one.
-# It is left unset here. See README.md, "Inexpensive test games".
+# max_total_tokens_per_game is set below and is still not a precise cap:
+# one call can overshoot by up to max_output_tokens plus its prompt.
+# See README.md, "Inexpensive test games".
 
 players:
   - name: "Ada"
@@ -39,10 +40,14 @@ withdrawal_policy: forfeit
 max_withdrawal_retries: 0
 budget:
   max_calls_per_game: 60
-  # Left unset on purpose. A token cap is not exact, and missing usage
-  # stops the next call instead of counting as zero.
-  max_total_tokens_per_game: null
+  # Not a precise cap. Missing usage stops the next call instead of
+  # counting as zero, and one call can overshoot by up to
+  # max_output_tokens plus its prompt.
+  max_total_tokens_per_game: 150000
   # Per process, not cumulative across restarts.
-  max_wall_seconds: null
+  max_wall_seconds: 1200
   per_call_timeout_seconds: 60
-  max_output_tokens: 1024
+  # 2048 because gpt-5-mini charges hidden reasoning tokens against
+  # max_completion_tokens; 1024 can return empty text at finish_reason
+  # length before any visible answer.
+  max_output_tokens: 2048

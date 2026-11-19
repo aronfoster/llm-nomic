@@ -400,7 +400,7 @@ class TestMultiTurnFlags:
         try:
             with pytest.raises(SystemExit) as exc_info:
                 _run_main_with_argv(["--game_dir", "/fake", "--turns", "3"])
-            assert exc_info.value.code == 2
+            assert exc_info.value.code == 3
         finally:
             self._stop_all(patchers)
 

@@ -99,6 +99,41 @@ def is_truncated_finish_reason(finish_reason: str | None) -> bool:
     return normalized in _TRUNCATED_FINISH_REASONS
 
 
+def observed_finish_reason(raw_response: object) -> str | None:
+    """Read a finish reason from an OpenAI, Anthropic, or Google response.
+
+    Returns None when the response has no usable reason. MagicMock
+    placeholders are ignored so an unconfigured test double is not
+    treated as a truncated completion.
+    """
+    if raw_response is None:
+        return None
+    stop_reason = getattr(raw_response, "stop_reason", None)
+    if isinstance(stop_reason, str) and stop_reason:
+        return stop_reason
+    for collection_name in ("choices", "candidates"):
+        collection = getattr(raw_response, collection_name, None)
+        if not collection:
+            continue
+        try:
+            finish = getattr(collection[0], "finish_reason", None)
+        except (IndexError, TypeError):
+            continue
+        if isinstance(finish, str) and finish:
+            return finish
+        if finish is None or type(finish).__name__ == "MagicMock":
+            continue
+        rendered = str(finish)
+        if rendered:
+            return rendered
+    return None
+
+
+def content_is_blank(text: str | None) -> bool:
+    """True when the provider returned no visible completion text."""
+    return text is None or not text.strip()
+
+
 def _known_tokens(row: dict[str, Any]) -> tuple[bool, int, int]:
     """Return whether a log row has usable input and output counts.
 

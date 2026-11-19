@@ -147,9 +147,10 @@ before N turns are completed, execution stops and the victory summary is shown.
 `docs/examples/cheap-test/config.yml` is a checked-in profile for a short,
 bounded game: two `gpt-5-mini` players, a `gpt-5-mini` LLM judge,
 `target_score` 100, `withdrawal_policy: forfeit`, `max_withdrawal_retries: 0`,
-two attempts per action, `max_calls_per_game: 60`, a 60-second per-call
-timeout, and `max_output_tokens: 1024`. For `gpt-5-mini` that output cap is
-sent as `max_completion_tokens`.
+two attempts per action, `max_calls_per_game: 60`,
+`max_total_tokens_per_game: 150000`, `max_wall_seconds: 1200`, a 60-second
+per-call timeout, and `max_output_tokens: 2048`. For `gpt-5-mini` that output
+cap is sent as `max_completion_tokens`.
 
 The file is not a runnable game directory. `games/` is gitignored runtime
 state, and the engine also needs `game_state.json`, `rules.jsonl`, and the
@@ -168,14 +169,18 @@ What that command bounds, and what it does not:
 - `--turns 3` stops after three turns. `max_calls_per_game: 60` stops before
   the next provider call once 60 calls have been made, including retries,
   timeouts, quota errors, and memory updates. Both limits apply.
-- Each call uses a 60-second client timeout and asks for at most 1024 output
-  tokens. Anthropic still sends `max_tokens` (8192 when a game does not set
-  `max_output_tokens`). Google receives `max_output_tokens` and, when a
-  timeout is set, `http_options.timeout` in milliseconds.
-- `max_total_tokens_per_game` and `max_wall_seconds` are unset in this
-  profile, so those two limits stay unlimited. Set them in `budget` when you
-  want them. `max_wall_seconds` is measured per process, from the time the
-  game is loaded, and does not accumulate across restarts.
+- Each call uses a 60-second client timeout and asks for at most 2048 output
+  tokens. `gpt-5-mini` counts hidden reasoning tokens against
+  `max_completion_tokens`, so 1024 can be exhausted before any visible text
+  and return empty content with `finish_reason=length`; 2048 leaves room for
+  a short visible answer, and an empty truncated response is logged and
+  retried within the budget rather than treated as success. Anthropic still
+  sends `max_tokens` (8192 when a game does not set `max_output_tokens`).
+  Google receives `max_output_tokens` and, when a timeout is set,
+  `http_options.timeout` in milliseconds.
+- `max_total_tokens_per_game: 150000` and `max_wall_seconds: 1200` are set.
+  `max_wall_seconds` is measured per process, from the time the game is
+  loaded, and does not accumulate across restarts.
 - A configured token cap is **not precise**. The call that crosses it can
   overshoot by up to `max_output_tokens` plus that call's prompt. If a call
   returns no usable usage metadata, that call is **unavailable, not zero**,
@@ -185,12 +190,14 @@ What that command bounds, and what it does not:
   loaded, so a restart does not forget calls that were logged. A failed
   append can under-count only after a later restart; within the process the
   guard still counts the call. The logger itself still never raises.
-- Startup API-key checks run outside this budget. The local (Ollama) check
-  can send one tiny completion before the first turn.
+- Startup API-key checks run outside this budget. OpenAI, xAI, and Google
+  only call `models.list()`, and Anthropic only checks that the key starts
+  with `sk-ant-`. None of those four send a completion. The local (Ollama)
+  check can send one tiny completion before the first turn.
 - The end of a run prints a per-turn and per-game usage summary. Quota and
   timeout failures are logged by name and count against the budget.
 - If a configured limit refuses the next call, the process saves partial
-  state, prints the summary, and exits with code 2.
+  state, prints the summary, and exits with code 3.
 
 Each run will:
 

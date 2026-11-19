@@ -327,7 +327,7 @@ def _stop_for_usage_budget(
     except Exception:
         logger.exception("Failed to save rules after usage budget stop")
     _emit_usage_report(game_manager)
-    sys.exit(2)
+    sys.exit(3)
 
 
 def _print_game_list(games: list[GameInfo]) -> None:
@@ -449,8 +449,8 @@ def main() -> None:
     Exit codes:
         0: Success or user interrupt
         1: Error occurred (file not found, validation error, game error)
-        2: A configured usage budget refused the next provider call.
-           argparse also uses 2 for invalid flags, before a game loads.
+        2: argparse rejected the command line, before a game loads
+        3: A configured usage budget refused the next provider call
     """
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
