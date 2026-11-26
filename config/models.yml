@@ -67,3 +67,11 @@ models:
     provider: "local"
     api_model_id: "http://localhost:11434/v1" # Ollama
     env_key_name: null
+
+  # ChatGPT plan usage via Sign in with ChatGPT (no API key). Opt-in:
+  # only `python -m src.nomic_engine.live_run openai-chatgpt-plan` enables
+  # it. Change api_model_id to a slug from `... openai-chatgpt-plan models`.
+  - id: "chatgpt-plan"
+    provider: "openai_chatgpt_plan"
+    api_model_id: "gpt-5.2"
+    env_key_name: null
