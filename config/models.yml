@@ -67,3 +67,11 @@ models:
     provider: "local"
     api_model_id: "http://localhost:11434/v1" # Ollama
     env_key_name: null
+
+  # Subscription sign-in through the grok CLI. Not an API key. The factory
+  # refuses this provider unless `python -m src.nomic_engine.live_run
+  # grok-cli` has opted in. See docs/LIVE_RUN.md.
+  - id: "grok-cli"
+    provider: "grok_cli"
+    api_model_id: "default"
+    env_key_name: null

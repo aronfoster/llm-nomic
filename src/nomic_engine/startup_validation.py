@@ -100,6 +100,10 @@ def _validate_api_key(
         return _validate_google(env_key_name, entity_label)
     elif provider == "local":
         return _validate_local(model_config, entity_label)
+    elif provider == "grok_cli":
+        # No network ping. The live entry point checks the sign-in home,
+        # and a missing sign-in surfaces as a typed GrokCliAuthError.
+        return None
     else:
         return f"{entity_label}: Unknown provider '{provider}'."
 
