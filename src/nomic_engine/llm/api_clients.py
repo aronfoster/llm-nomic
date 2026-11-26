@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import logging
 import time
-from typing import Any, Iterable, Optional, Protocol, cast
+from typing import Any, Callable, Iterable, Optional, Protocol, cast
 
 import anthropic
 import anthropic.types
@@ -631,6 +631,29 @@ class GoogleApiClient:
         return config
 
 
+_GrokCliBuilder = Callable[
+    [ModelDefinition, LlmCallOptions], ApiClientProtocol
+]
+_GROK_CLI_BUILDER: _GrokCliBuilder | None = None
+
+
+def register_grok_cli_client_builder(builder: _GrokCliBuilder) -> None:
+    """Opt in to ``provider="grok_cli"`` for this process.
+
+    Only an entry point that has already checked the isolation
+    acknowledgement and sign-in home should call this. The default
+    stays refused, and nothing here reads a key or spawns a process.
+    """
+    global _GROK_CLI_BUILDER
+    _GROK_CLI_BUILDER = builder
+
+
+def clear_grok_cli_client_builder() -> None:
+    """Return to the default: ``grok_cli`` refused by the factory."""
+    global _GROK_CLI_BUILDER
+    _GROK_CLI_BUILDER = None
+
+
 def create_api_client(
     model_config: ModelDefinition,
     *,
@@ -654,6 +677,13 @@ def create_api_client(
             or required config is missing. grok_cli is never selected
             here. There is no paid API fallback from that refusal.
     """
+    if model_config.provider == "grok_cli" and _GROK_CLI_BUILDER is not None:
+        cli_client = _GROK_CLI_BUILDER(
+            model_config, call_options or LlmCallOptions()
+        )
+        if usage_guard is None:
+            return cli_client
+        return BudgetedApiClient(cli_client, usage_guard, "grok_cli")
     if model_config.provider == "grok_cli":
         raise ValueError(
             "provider grok_cli is disabled in the game factory. "
@@ -829,6 +859,23 @@ def _extract_google_metadata(raw_response: Any) -> dict[str, Any]:
     return result
 
 
+def _extract_grok_cli_metadata(raw_response: Any) -> dict[str, Any]:
+    """Read usage from a ``GrokCliResponse``; unknown stays unavailable."""
+    meta = _empty_usage_meta()
+    available = getattr(raw_response, "usage_available", False)
+    input_tokens = getattr(raw_response, "input_tokens", None)
+    output_tokens = getattr(raw_response, "output_tokens", None)
+    stop_reason = getattr(raw_response, "stop_reason", None)
+    if isinstance(stop_reason, str):
+        meta["finish_reason"] = stop_reason
+    if available is True and isinstance(input_tokens, int):
+        if isinstance(output_tokens, int):
+            meta["usage_available"] = True
+            meta["input_tokens"] = input_tokens
+            meta["output_tokens"] = output_tokens
+    return meta
+
+
 def build_token_usage_record(
     result: CompletionResult,
     model_config: ModelDefinition,
@@ -907,6 +954,8 @@ def _metadata_for_result(
         )
     if provider == "google":
         return _extract_google_metadata(result.raw_response)
+    if provider == "grok_cli":
+        return _extract_grok_cli_metadata(result.raw_response)
     return _empty_usage_meta()
 
 
