@@ -650,8 +650,17 @@ def create_api_client(
         An API client instance implementing ApiClientProtocol.
 
     Raises:
-        ValueError: If the provider is unknown or required config is missing.
+        ValueError: If the provider is unknown, grok_cli is requested,
+            or required config is missing. grok_cli is never selected
+            here. There is no paid API fallback from that refusal.
     """
+    if model_config.provider == "grok_cli":
+        raise ValueError(
+            "provider grok_cli is disabled in the game factory. "
+            "select_grok_cli_adapter accepts it only when enabled is "
+            "True and acknowledge_unverified_tool_isolation is True. "
+            "There is no paid API fallback."
+        )
     options = call_options or LlmCallOptions()
     if model_config.provider in ("local", "openai", "xai"):
         client: ApiClientProtocol = OpenAICompatibleApiClient(
