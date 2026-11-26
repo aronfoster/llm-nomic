@@ -11,19 +11,34 @@ switched on.
 All commands run from the repository root, in the project's virtualenv
 (`pip install -r requirements.txt`).
 
-## 1. Sign in (once per computer, on a computer with a browser)
+## 1. Sign in (once per VM, on the machine that will run the game)
+
+The first live sign-in and game are virtual-first: start on the Grok Bot
+VM, not on a personal desktop. Run `login` on that VM so the VM's own
+browser opens the consent page. The credential file stays on that VM.
 
 ```sh
 python -m src.nomic_engine.live_run openai-chatgpt-plan login
 ```
 
-- This opens your browser at `auth.openai.com`. Choose the ChatGPT account
-  or workspace, keep the agent name **llm-nomic**, and approve **ChatGPT
-  plan usage**.
-- The browser returns to `http://127.0.0.1:1455/auth/callback`, a
-  listener started by the command that only accepts loopback connections.
-  If port 1455 is busy, a free port is used. To pick one yourself, pass
-  `--port N`.
+- This opens the VM browser at `auth.openai.com`. Choose the ChatGPT
+  account or workspace, keep the agent name **llm-nomic**, and approve
+  **ChatGPT plan usage**.
+- The browser returns to `http://127.0.0.1:1455/auth/callback` on the VM,
+  a listener started by the command that only accepts loopback
+  connections. If port 1455 is busy, a free port is used. To pick one
+  yourself, pass `--port N`.
+- If the VM has no display (headless), forward the callback port and
+  open the printed URL in a browser that can reach it:
+
+  ```sh
+  ssh -L 1455:127.0.0.1:1455 the-vm
+  # on the VM:
+  python -m src.nomic_engine.live_run openai-chatgpt-plan login
+  # open the printed URL in a browser on the machine that holds the
+  # forwarded port
+  ```
+
 - The first sign-in registers a per-user client. Its issued `client_id`
   is saved and reused, so later logins skip the consent screen.
 - If the plan-usage scope isn't granted, login fails and saves nothing.
@@ -93,17 +108,14 @@ The game directory is `games/live-<timestamp>/`. Per-call usage is in
 
 ## 4. Using the sign-in on another machine
 
-The recommended way: run `login` on that machine too. If it has no
-browser, forward the callback port first:
+The first game's credentials stay on the VM that signed in. The
+recommended way to use another host (for example a later ChatGPT Dot
+VM) is a fresh `login` on that machine, so its browser completes the
+loopback and its own credential file is created. If that VM is
+headless, forward port 1455 as in section 1.
 
-```sh
-ssh -L 1455:127.0.0.1:1455 other-host
-# on other-host:
-python -m src.nomic_engine.live_run openai-chatgpt-plan login
-# open the printed URL in the browser on your own computer
-```
-
-The fallback is to copy the credential file:
+The fallback is to copy the credential file. Do not treat a copy as
+the default:
 
 ```sh
 ssh other-host 'mkdir -p ~/.config/llm-nomic && chmod 700 ~/.config/llm-nomic'
