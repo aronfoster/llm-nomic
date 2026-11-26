@@ -7,10 +7,11 @@ This document tracks the high-level plan for the `llm-nomic` project.
 
 ## Near-term delivery roadmap: real games and correctness
 
-The immediate objective is a repeatable development loop: run inexpensive
-subscription-backed games in GrokBot and ChatGPT Dot virtual computers,
-save them to Google Drive, review correctness, and fix demonstrated engine
-and prompt defects. No new competitive features are needed for this loop.
+The immediate objective is a repeatable, virtual-first development loop:
+run inexpensive subscription-backed games starting on the Grok Bot
+virtual machine, later on a ChatGPT Dot VM (P0e), save them to Google
+Drive, review correctness, and fix demonstrated engine and prompt
+defects. No new competitive features are needed for this loop.
 
 ### How the daily team should use this roadmap
 
@@ -37,12 +38,15 @@ and prompt defects. No new competitive features are needed for this loop.
 
 Container setup, bounded API game support (LN-5), and offline test
 isolation (LN-7) are implemented. Live subscription acceptance is
-not established. Follow the owner decision recorded in the
-[updated PR #152 review](https://github.com/aronfoster/llm-nomic/pull/152#issuecomment-7203821808).
+not established. Follow the owner decisions recorded in the
+[updated PR #152 review](https://github.com/aronfoster/llm-nomic/pull/152#issuecomment-7203821808)
+and the later virtual-first correction: the first live sign-in and
+game run on a VM, starting with the Grok Bot box, not on a personal
+desktop.
 Keep existing LN tickets and reconcile their scope and dependencies
 rather than opening duplicates.
 
-**P0a — First ChatGPT Business game on the owner's computer.**
+**P0a — First ChatGPT Business game on the Grok Bot VM.**
 The Sign in with ChatGPT open-source application route is implemented
 in three PRs awaiting independent review and integration:
 
@@ -64,13 +68,20 @@ distinct game directories, logging, usage accounting, and clean refusal
 on auth/quota/network failures. Preserve existing API-key modes without
 silent paid fallback. Verify exact-head CI and independent review.
 
-After merge, Aron performs the loopback browser login on his own
-computer, then runs the documented dry-run and first bounded game
-using docs/LIVE_RUN.md. The target is the enabled ChatGPT Business
-plan without an API key. Record actual billing mode, model, completed
-turns, stop reason and sanitized usage in LN-3/LN-1. A dry-run or
-models-list response is not acceptance. The first live game does not
-depend on cloud-host readiness or Drive integration.
+After merge, start ``login`` on the Grok Bot VM so that VM's browser
+opens the consent page. The SIWC loopback is
+``http://127.0.0.1:1455/auth/callback`` on the VM. Aron approves the
+sign-in in that browser (the coordinator hands him the box desktop for
+this step). The credential file stays on the VM
+(``~/.config/llm-nomic/``). Then run the documented dry-run and first
+bounded game on that same VM, following docs/LIVE_RUN.md. The target is
+the enabled ChatGPT Business plan without an API key. For a headless
+VM, forward port 1455 over SSH and open the printed URL in a browser
+that can reach the forwarded loopback. Record actual billing mode,
+model, completed turns, stop reason and sanitized usage in LN-3/LN-1.
+A dry-run or models-list response is not acceptance. The first live
+game does not depend on a ChatGPT Dot, Drive integration, or a sign-in
+on a personal desktop.
 
 **P0b — CLI context-isolation contract and offline harness.**
 Independent offline planning and fixture work can proceed without
@@ -120,24 +131,27 @@ not implement unsupported subscription sign-in or undocumented routes.
 Exclude any provider that cannot meet the contract unless an approved
 API path is available. Separately billed inference requires owner approval.
 
-**P0e — Cloud host acceptance.** Preserve
+**P0e — Later ChatGPT Dot VM and other host acceptance.** Preserve
 [LN-2](https://foster.youtrack.cloud/issue/LN-2) and
 [LN-6](https://foster.youtrack.cloud/issue/LN-6) as the readiness and
-later host-matrix goals. After P0a, pursue supported subscription-backed
-operation on GrokBot and at least one ChatGPT Dot independently of the
-CLI trial where possible. Verify actual supported host/provider
-combinations, restart behavior, tool isolation, usage and session
-persistence; record unsupported combinations without quietly weakening
-the matrix. Prefer supported per-host login. If an owner-authorized
-credential migration is supported, follow the security instructions in
-docs/LIVE_RUN.md: rotating refresh credentials must not be used
-concurrently on different machines; use one machine at a time or
-independent supported sign-ins. Never put credentials in game archives,
-Drive, tickets, logs or Git. Do not copy another application's credentials.
+later host-matrix goals. After P0a succeeds on the Grok Bot VM, pursue
+the same supported subscription-backed path on at least one ChatGPT
+Dot VM, independently of the CLI trial where possible. Verify actual
+supported host/provider combinations, restart behavior, tool isolation,
+usage and session persistence; record unsupported combinations without
+quietly weakening the matrix. Prefer a fresh supported ``login`` on
+each host so the credential file stays on that VM. If an
+owner-authorized credential migration is used, follow the security
+instructions in docs/LIVE_RUN.md: rotating refresh credentials must not
+be used concurrently on different machines; use one machine at a time
+or independent supported sign-ins. Never put credentials in game
+archives, Drive, tickets, logs or Git. Do not copy another
+application's credentials.
 
-Acceptance: a genuine bounded game on each required cloud host using
-an eligible subscription, with sanitized evidence and restart behavior.
-Do not conflate this later milestone with the first desktop game.
+Acceptance: a genuine bounded game on a ChatGPT Dot VM (and any other
+required host) using an eligible subscription, with sanitized evidence
+and restart behavior. Do not conflate this later milestone with the
+first Grok Bot VM game.
 
 ### P1 — Portable game records (start offline in parallel with P0)
 
@@ -293,7 +307,7 @@ for disputed rulings; avoid duplicate tickets.
 P0a is the first delivery priority; P1a, P3 planning/fixtures and
 P0b contract planning are independent offline packets. Hold existing
 Grok CLI implementation until P0a succeeds. P1b access discovery can proceed without
-credentials being copied or new permissions being granted. The first P0a desktop acceptance game need not wait for P1a; P2
+credentials being copied or new permissions being granted. The first P0a Grok Bot VM acceptance game need not wait for P1a; P2
 sample runs begin as soon as an eligible route and local capture are ready. P3/P4 repeat
 after each run. The PM should keep enough small, non-overlapping tickets
 ready for daily work and use actual gameplay evidence to select further
@@ -304,8 +318,8 @@ other long-term features unless a review finding justifies them.
 
 Container bootstrap and quality checks: done
 ([Container readiness](docs/CONTAINERS.md)). SOCKS proxy support is included
-without changing the container proxy settings. First desktop subscription sign-in, capped live games and later cloud
-host milestone acceptance remain open in
+without changing the container proxy settings. First Grok Bot VM subscription sign-in, capped live games and later ChatGPT
+Dot host milestone acceptance remain open in
 [LN-1](https://foster.youtrack.cloud/issue/LN-1). This does not replace the
 coordinator/planner roles or close the milestone.
 
