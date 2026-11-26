@@ -441,3 +441,94 @@ def test_timeout_kills_descendant_process_group(tmp_path: Path) -> None:
     assert parent_pid != child_pid
     _wait_until_gone(parent_pid)
     _wait_until_gone(child_pid)
+
+
+def test_slow_exit_after_output_is_still_a_success(tmp_path: Path) -> None:
+    """A CLI that closes stdout then exits late is not 'cancelled'."""
+    adapter = _adapter(tmp_path, "slow-exit", tmp_path / "p")
+    response = adapter.run("hello")
+    assert response.text == "hello from the fake cli"
+    assert response.exit_code == 0
+
+
+def test_descendants_are_killed_after_a_successful_run(
+    tmp_path: Path,
+) -> None:
+    payload = tmp_path / "payload"
+    payload.mkdir()
+    adapter = _adapter(tmp_path, "descendant-ok", payload)
+    response = adapter.run("hello")
+    assert response.text == "hello from the fake cli"
+    _wait_until_gone(int((payload / "child.pid").read_text()))
+
+
+def test_cancel_is_permanent_and_later_runs_do_not_spawn(
+    tmp_path: Path,
+) -> None:
+    dump = tmp_path / "dump.json"
+    adapter = _adapter(tmp_path, "valid", dump)
+    adapter.cancel()
+    with pytest.raises(GrokCliCancelledError, match="no process"):
+        adapter.run("hello")
+    assert not dump.exists()
+
+
+def test_forbidden_flags_are_refused_in_equals_form(tmp_path: Path) -> None:
+    dump = tmp_path / "dump.json"
+    for flag in ("--permission-mode=bypassPermissions", "--plugin-dir=/x"):
+        adapter = _adapter(tmp_path, "valid", dump, extra_executable=(flag,))
+        with pytest.raises(GrokCliAdapterDisabled, match="forbidden"):
+            adapter.run("hello")
+    assert not dump.exists()
+
+
+def test_executable_must_be_an_absolute_path(tmp_path: Path) -> None:
+    with pytest.raises(GrokCliAdapterDisabled, match="absolute path"):
+        select_grok_cli_adapter(
+            enabled=True,
+            acknowledge_unverified_tool_isolation=True,
+            executable=("grok",),
+            home_dir=tmp_path / "home",
+            work_dir=tmp_path / "work",
+            wall_timeout_seconds=1.0,
+            stdout_byte_cap=1024,
+            stderr_byte_cap=1024,
+        )
+
+
+def test_dedicated_home_with_sign_in_needs_the_explicit_opt_in(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    cache = home / ".grok"
+    cache.mkdir(parents=True)
+    (cache / "auth.json").write_text("{}", encoding="utf-8")
+    adapter = select_grok_cli_adapter(
+        enabled=True,
+        acknowledge_unverified_tool_isolation=True,
+        executable=(sys.executable, str(_FAKE), "valid", str(tmp_path / "d")),
+        home_dir=home,
+        work_dir=tmp_path / "work",
+        wall_timeout_seconds=2.0,
+        stdout_byte_cap=65536,
+        stderr_byte_cap=65536,
+        allow_auth_cache=True,
+    )
+    assert adapter.run("hello").text == "hello from the fake cli"
+
+
+def test_the_real_home_is_refused_even_with_the_auth_opt_in(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(GrokCliAdapterDisabled, match="synthetic home_dir"):
+        select_grok_cli_adapter(
+            enabled=True,
+            acknowledge_unverified_tool_isolation=True,
+            executable=(sys.executable, str(_FAKE), "valid"),
+            home_dir=Path.home(),
+            work_dir=tmp_path / "work",
+            wall_timeout_seconds=1.0,
+            stdout_byte_cap=1024,
+            stderr_byte_cap=1024,
+            allow_auth_cache=True,
+        )

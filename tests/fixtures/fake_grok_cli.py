@@ -92,6 +92,15 @@ def main(argv: list[str]) -> int:
             (Path(payload) / "ready").write_text("ready\n")
         _sleep_until_killed()
         return 0
+    if mode == "slow-exit":
+        _emit(_success(3, 1))
+        os.close(1)
+        os.close(2)
+        time.sleep(1.0)
+        return 0
+    if mode == "descendant-ok":
+        _descendant_then_succeed(payload)
+        return 0
     if mode == "timeout-descendant":
         _timeout_descendant(payload)
         return 0
@@ -172,6 +181,26 @@ def _timeout_descendant(payload: str | None) -> None:
         finally:
             os._exit(0)
     _sleep_until_killed()
+
+
+def _descendant_then_succeed(payload: str | None) -> None:
+    if payload is None:
+        sys.stderr.write("descendant-ok requires a payload directory\n")
+        sys.exit(2)
+    root = Path(payload)
+    pid = os.fork()
+    if pid == 0:
+        try:
+            os.close(1)
+            os.close(2)
+            (root / "child.pid").write_text(str(os.getpid()), encoding="utf-8")
+            _sleep_until_killed()
+        finally:
+            os._exit(0)
+    deadline = time.monotonic() + 5
+    while not (root / "child.pid").exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    _emit(_success(3, 1))
 
 
 def _record_term(path: Path) -> None:

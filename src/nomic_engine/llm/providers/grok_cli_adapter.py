@@ -267,6 +267,7 @@ class GrokCliAdapterConfig:
     work_dir: Path | None = None
     model: str | None = None
     terminate_grace_seconds: float = 0.25
+    allow_auth_cache: bool = False
 
 
 @dataclass(frozen=True)
@@ -303,10 +304,16 @@ class GrokCliProcessAdapter:
     def __init__(self, config: GrokCliAdapterConfig) -> None:
         self._config = config
         self._cancel = threading.Event()
+        self._run_lock = threading.Lock()
         self._work_dir = _prepare_directories(config)
 
     def cancel(self) -> None:
-        """Ask the in-flight run to kill its process group."""
+        """Ask the in-flight run to kill its process group.
+
+        Cancel is permanent for this adapter. Later ``run`` calls raise
+        ``GrokCliCancelledError`` without spawning. Build a new adapter
+        to continue.
+        """
         self._cancel.set()
 
     def run(self, prompt: str) -> GrokCliResponse:
@@ -317,24 +324,37 @@ class GrokCliProcessAdapter:
         """
         if not isinstance(prompt, str):
             raise GrokCliAdapterDisabled("prompt must be a string")
-        argv = build_grok_cli_argv(
-            self._config.executable,
-            prompt,
-            work_dir=self._work_dir,
-            model=self._config.model,
-        )
-        env = build_child_env(self._config.home_dir)
-        captured = _run_process(
-            argv,
-            cwd=self._work_dir,
-            env=env,
-            wall_timeout_seconds=self._config.wall_timeout_seconds,
-            stdout_byte_cap=self._config.stdout_byte_cap,
-            stderr_byte_cap=self._config.stderr_byte_cap,
-            terminate_grace_seconds=self._config.terminate_grace_seconds,
-            cancel_event=self._cancel,
-        )
-        return _interpret(captured)
+        if not self._run_lock.acquire(blocking=False):
+            raise GrokCliAdapterDisabled(
+                "this adapter is already running a prompt; use one "
+                "adapter per concurrent caller"
+            )
+        try:
+            if self._cancel.is_set():
+                raise GrokCliCancelledError(
+                    "this adapter was cancelled earlier; no process was "
+                    "spawned. Create a new adapter. No paid API fallback."
+                )
+            argv = build_grok_cli_argv(
+                self._config.executable,
+                prompt,
+                work_dir=self._work_dir,
+                model=self._config.model,
+            )
+            env = build_child_env(self._config.home_dir)
+            captured = _run_process(
+                argv,
+                cwd=self._work_dir,
+                env=env,
+                wall_timeout_seconds=self._config.wall_timeout_seconds,
+                stdout_byte_cap=self._config.stdout_byte_cap,
+                stderr_byte_cap=self._config.stderr_byte_cap,
+                terminate_grace_seconds=self._config.terminate_grace_seconds,
+                cancel_event=self._cancel,
+            )
+            return _interpret(captured)
+        finally:
+            self._run_lock.release()
 
 
 def select_grok_cli_adapter(
@@ -349,6 +369,7 @@ def select_grok_cli_adapter(
     work_dir: Path | None = None,
     model: str | None = None,
     terminate_grace_seconds: float = 0.25,
+    allow_auth_cache: bool = False,
 ) -> GrokCliProcessAdapter:
     """Return an adapter only when both opt-in flags are exactly True.
 
@@ -383,6 +404,7 @@ def select_grok_cli_adapter(
         work_dir=work_dir,
         model=model,
         terminate_grace_seconds=terminate_grace_seconds,
+        allow_auth_cache=allow_auth_cache,
     )
     _validate_limits(config)
     return GrokCliProcessAdapter(config)
@@ -465,6 +487,11 @@ def _command_tuple(executable: Sequence[str]) -> tuple[str, ...]:
         raise GrokCliAdapterDisabled(
             "executable must be a non-empty argument vector"
         )
+    if not Path(command[0]).is_absolute():
+        raise GrokCliAdapterDisabled(
+            "executable[0] must be an absolute path. The child PATH is "
+            "fixed, so a bare name would not resolve."
+        )
     return command
 
 
@@ -484,7 +511,8 @@ def _validate_limits(config: GrokCliAdapterConfig) -> None:
 def _prepare_directories(config: GrokCliAdapterConfig) -> Path:
     home = config.home_dir.expanduser().resolve()
     _reject_real_home(home)
-    _reject_auth_cache(home)
+    if not config.allow_auth_cache:
+        _reject_auth_cache(home)
     home.mkdir(parents=True, exist_ok=True)
     (home / ".grok").mkdir(parents=True, exist_ok=True)
     (home / "tmp").mkdir(parents=True, exist_ok=True)
@@ -510,6 +538,12 @@ def _reject_real_home(home: Path) -> None:
 
 
 def _reject_auth_cache(home: Path) -> None:
+    """Refuse a home that already holds a sign-in unless opted in.
+
+    ``allow_auth_cache=True`` is the separately gated way to run on a
+    subscription sign-in. The home must be a dedicated directory that
+    only this adapter uses, never the real ``~`` or ``~/.grok``.
+    """
     candidates = (
         home / "auth.json",
         home / ".grok" / "auth.json",
@@ -518,7 +552,9 @@ def _reject_auth_cache(home: Path) -> None:
         if path.is_file():
             raise GrokCliAdapterDisabled(
                 "refusing to start with a grok auth cache present at "
-                f"{path}"
+                f"{path}. Pass allow_auth_cache=True only for a "
+                "dedicated, adapter-only home after a deliberate "
+                "sign-in."
             )
 
 
@@ -536,7 +572,10 @@ def _reject_repository(work_dir: Path) -> None:
 
 def _reject_forbidden(argv: Sequence[str]) -> None:
     for argument in argv:
-        if argument in _FORBIDDEN_ARGUMENTS:
+        if (
+            argument in _FORBIDDEN_ARGUMENTS
+            or argument.split("=", 1)[0] in _FORBIDDEN_ARGUMENTS
+        ):
             raise GrokCliAdapterDisabled(
                 f"refusing forbidden grok CLI argument {argument!r}. "
                 "always-approve, bypassPermissions, tool allowlists, "
@@ -633,23 +672,24 @@ def _run_process(
                 buf.extend(chunk)
             if truncated:
                 break
+        if not (timed_out or cancelled or truncated):
+            # Both pipes closed. Give the CLI the rest of the wall-clock
+            # budget to exit on its own, not just the kill grace period.
+            try:
+                proc.wait(timeout=max(deadline - time.monotonic(), 0.0))
+            except subprocess.TimeoutExpired:
+                timed_out = True
     finally:
         try:
-            if timed_out or cancelled or truncated:
+            if timed_out or cancelled or truncated or proc.poll() is None:
                 _terminate_then_kill(
                     proc,
                     grace=terminate_grace_seconds,
                     pgid=pgid,
                 )
-            else:
-                try:
-                    proc.wait(timeout=terminate_grace_seconds)
-                except subprocess.TimeoutExpired:
-                    _terminate_then_kill(
-                        proc,
-                        grace=terminate_grace_seconds,
-                        pgid=pgid,
-                    )
+            elif pgid is not None:
+                # The leader exited. Sweep helpers it left in the group.
+                _killpg(pgid, signal.SIGKILL)
         finally:
             stdout_pipe.close()
             stderr_pipe.close()
@@ -796,7 +836,13 @@ def _interpret(captured: _Captured) -> GrokCliResponse:
             stdout=stdout_text,
             stderr=stderr_text,
         )
-    assert payload is not None
+    if payload is None:
+        raise GrokCliMalformedOutputError(
+            "grok CLI produced no JSON object",
+            exit_code=captured.exit_code,
+            stdout=stdout_text,
+            stderr=stderr_text,
+        )
     stop_reason = payload.get("stopReason")
     if not isinstance(stop_reason, str):
         stop_reason = None

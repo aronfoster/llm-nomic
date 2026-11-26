@@ -28,7 +28,6 @@ from ..usage_budget import (
     UsageBudgetGuard,
     is_truncated_finish_reason,
 )
-from .providers.grok_cli_adapter import TOOL_ISOLATION_GATE
 
 logger = logging.getLogger(__name__)
 
@@ -659,7 +658,7 @@ def create_api_client(
         raise ValueError(
             "provider grok_cli is disabled in the game factory. "
             "select_grok_cli_adapter accepts it only when enabled is "
-            f"True and {TOOL_ISOLATION_GATE} is True. "
+            "True and acknowledge_unverified_tool_isolation is True. "
             "There is no paid API fallback."
         )
     options = call_options or LlmCallOptions()
