@@ -33,44 +33,111 @@ and prompt defects. No new competitive features are needed for this loop.
 - Code changes require offline regression tests, make ci, independent
   review and the existing merge gates. Never run live inference in CI.
 
-### P0 — Finish subscription-backed execution (existing LN-1)
+### P0 — Subscription-backed execution, OpenAI first (existing LN-1)
 
-**Status:** container setup, bounded API game support (LN-5), and offline
-test isolation (LN-7) are implemented. Live subscription acceptance is
-not established. Existing work takes precedence over new provider work.
+Container setup, bounded API game support (LN-5), and offline test
+isolation (LN-7) are implemented. Live subscription acceptance is
+not established. Follow the owner decision recorded in the
+[updated PR #152 review](https://github.com/aronfoster/llm-nomic/pull/152#issuecomment-7203821808).
+Keep existing LN tickets and reconcile their scope and dependencies
+rather than opening duplicates.
 
-- [LN-2](https://foster.youtrack.cloud/issue/LN-2): prove supported provider
-  and host readiness; identify official authentication/invocation,
-  subscription eligibility, available inexpensive models, tool isolation,
-  usage reporting and host/session persistence. Do not assume an OAuth
-  token is an API key or that a consumer login authorizes arbitrary
-  endpoints.
-- [LN-4](https://foster.youtrack.cloud/issue/LN-4) and
-  [LN-14](https://foster.youtrack.cloud/issue/LN-14): finish xAI CLI adapter
-  and bounded live-run preparation; resolve existing review findings
-  including LN-10/11. [LN-3](https://foster.youtrack.cloud/issue/LN-3):
-  finish OpenAI subscription provider preparation. Coordinate the shared
-  live-run entry point across these workstreams; do not duplicate it.
-- [LN-6](https://foster.youtrack.cloud/issue/LN-6): verify the existing
-  host/provider acceptance matrix, recording actual supported combinations
-  and blockers. Both GrokBot and at least one ChatGPT Dot must be able to
-  operate independently using an eligible existing subscription; preserve
-  the wider matrix in LN-6 and escalate unsupported combinations rather
-  than quietly weakening acceptance.
-- Before any live run, demonstrate an offline fake-provider full game
-  through the real adapter, clean dry-run, bounded retries and timeouts,
-  isolated credentials and tools, distinct game directories, logging,
-  usage accounting, and clean refusal on auth/quota/network failures.
-  Preserve existing API-key modes without silently falling back to them.
-- Obtain owner authorization for live sign-in and any separately billed
-  inference. Prefer one-time official login with supported refresh;
-  never extract another application's credentials or use undocumented
-  endpoints. Record reauthentication requirements honestly.
-- Acceptance: a bounded real game on each required host, restart behavior,
-  actual model and provider, subscription billing mode, completed turns,
-  stop reason and sanitized per-turn/per-game usage evidence in LN.
-  Missing usage is unavailable, not zero; retain existing fail-closed
-  behavior. A fake run or models-list response is not live acceptance.
+**P0a — First ChatGPT Business game on the owner's computer.**
+The Sign in with ChatGPT open-source application route is implemented
+in three PRs awaiting independent review and integration:
+
+1. [#149](https://github.com/aronfoster/llm-nomic/pull/149): OAuth2
+   sign-in core; establish the credential lifecycle and redaction.
+2. [#150](https://github.com/aronfoster/llm-nomic/pull/150): ChatGPT-plan
+   Responses client; establish completion, error, usage and timeout
+   contracts against the accepted authentication core.
+3. [#151](https://github.com/aronfoster/llm-nomic/pull/151):
+   live_run openai-chatgpt-plan and docs/LIVE_RUN.md; establish the
+   integrated bounded game path. Review and merge in this order,
+   carrying upstream fixes forward. All three are High-tier changes
+   under LN-A-1; no self-merge. Do not make integration depend on the
+   Grok CLI workstream.
+
+Before live execution, require offline fake-provider full-game and
+dry-run evidence, bounded retries and timeouts, isolated credentials,
+distinct game directories, logging, usage accounting, and clean refusal
+on auth/quota/network failures. Preserve existing API-key modes without
+silent paid fallback. Verify exact-head CI and independent review.
+
+After merge, Aron performs the loopback browser login on his own
+computer, then runs the documented dry-run and first bounded game
+using docs/LIVE_RUN.md. The target is the enabled ChatGPT Business
+plan without an API key. Record actual billing mode, model, completed
+turns, stop reason and sanitized usage in LN-3/LN-1. A dry-run or
+models-list response is not acceptance. The first live game does not
+depend on cloud-host readiness or Drive integration.
+
+**P0b — CLI context-isolation contract and offline harness.**
+Independent offline planning and fixture work can proceed without
+resuming the held Grok PRs. Before any live CLI trial, establish a
+shared adapter contract against the engine's API input path:
+
+- One fresh stateless invocation per call: no session continuation,
+  CLI memory, or resume. Engine-owned game memory remains authoritative.
+- Isolated working directory and HOME; no automatic project or context
+  files (AGENTS.md, CLAUDE.md, GEMINI.md, rules directories or equivalent).
+- Disable tools, MCP servers, hooks and web access. No arbitrary
+  commands or host tools exposed to players or judges.
+- The engine supplies the full prompt and system instructions. The
+  CLI must not inject undisclosed agent context or change the intended
+  participant information. Compare effective input against API-path
+  fixtures; a fake executable alone cannot establish real CLI behavior.
+- Usage must meet the budget guard's contract; missing usage is
+  unavailable, not zero, and stops further calls. Preserve call,
+  timeout, cancellation, output and process-cleanup safeguards.
+- Share the adapter contract and lifecycle; provider-specific differences
+  should be limited to flags and output parsing wherever practical.
+
+Acceptance: offline tests with synthetic context/memory/tool canaries,
+success/failure and repeated calls demonstrate the engine-side contract;
+document evidence from supported CLI configuration and distinguish it
+from unverified provider-side behavior. If context isolation cannot be
+established, refuse live trial and retain only an eligible API path or
+omit that provider.
+
+**P0c — Grok CLI trial after P0a and P0b.** The existing LN-4/LN-14
+work and [#145](https://github.com/aronfoster/llm-nomic/pull/145) /
+[#147](https://github.com/aronfoster/llm-nomic/pull/147) are on hold,
+not abandoned. Leave the PRs open and untouched until the first OpenAI
+game succeeds. Then reconcile the adapter and bounded runner against
+P0b, including existing LN-10/11 and review findings. Do not assume
+earlier offline tests prove the real CLI contract. Require independent
+review, supported subscription eligibility and owner-authorized live
+trial by Aron. No silent paid fallback or credential extraction.
+
+**P0d — Additional CLI providers, conditional on a successful Grok
+trial.** Investigate Claude Code and Google's Antigravity CLI in
+separate small packets using the same contract, only through supported
+and eligible invocation/authentication mechanisms. Prove isolation,
+prompt fidelity, output/usage and budget compatibility independently
+for each. No assumption that subscriptions permit automated use; do
+not implement unsupported subscription sign-in or undocumented routes.
+Exclude any provider that cannot meet the contract unless an approved
+API path is available. Separately billed inference requires owner approval.
+
+**P0e — Cloud host acceptance.** Preserve
+[LN-2](https://foster.youtrack.cloud/issue/LN-2) and
+[LN-6](https://foster.youtrack.cloud/issue/LN-6) as the readiness and
+later host-matrix goals. After P0a, pursue supported subscription-backed
+operation on GrokBot and at least one ChatGPT Dot independently of the
+CLI trial where possible. Verify actual supported host/provider
+combinations, restart behavior, tool isolation, usage and session
+persistence; record unsupported combinations without quietly weakening
+the matrix. Prefer supported per-host login. If an owner-authorized
+credential migration is supported, follow the security instructions in
+docs/LIVE_RUN.md: rotating refresh credentials must not be used
+concurrently on different machines; use one machine at a time or
+independent supported sign-ins. Never put credentials in game archives,
+Drive, tickets, logs or Git. Do not copy another application's credentials.
+
+Acceptance: a genuine bounded game on each required cloud host using
+an eligible subscription, with sanitized evidence and restart behavior.
+Do not conflate this later milestone with the first desktop game.
 
 ### P1 — Portable game records (start offline in parallel with P0)
 
@@ -130,8 +197,11 @@ archivable authorized smoke game solely because Drive upload is pending.
   process, 60-second call timeout, 2048 output tokens). Select an
   actually supported inexpensive subscription model, adjusting the profile
   only as needed for its contract. Record exact limits and any differences.
-  The token cap is approximate; preserve documented overshoot and
-  restart semantics. No uncapped or separately billed runs without
+  The ChatGPT-plan Responses route cannot send max_output_tokens;
+  do not claim a 2048-token output cap for that route. Call, total-token,
+  wall-time and per-call-timeout caps still apply. The token cap is
+  approximate and can overshoot by a call (including its input and
+  output); preserve documented restart semantics. No uncapped or separately billed runs without
   authorization.
 - Run one short game per ready host, archive every outcome, and review
   before escalating length. Then run a small set of roughly 5–10-turn
@@ -220,10 +290,11 @@ for disputed rulings; avoid duplicate tickets.
 
 ### Scheduling and completion
 
-P0 is already staffed; P1a and P3 planning/fixtures are the next
-independent offline packets. P1b access discovery can proceed without
-credentials being copied or new permissions being granted. P2 begins
-as soon as an eligible route and local capture are ready. P3/P4 repeat
+P0a is the first delivery priority; P1a, P3 planning/fixtures and
+P0b contract planning are independent offline packets. Hold existing
+Grok CLI implementation until P0a succeeds. P1b access discovery can proceed without
+credentials being copied or new permissions being granted. The first P0a desktop acceptance game need not wait for P1a; P2
+sample runs begin as soon as an eligible route and local capture are ready. P3/P4 repeat
 after each run. The PM should keep enough small, non-overlapping tickets
 ready for daily work and use actual gameplay evidence to select further
 engine improvements. Defer speculative UI, dynamic game structure and
@@ -233,8 +304,8 @@ other long-term features unless a review finding justifies them.
 
 Container bootstrap and quality checks: done
 ([Container readiness](docs/CONTAINERS.md)). SOCKS proxy support is included
-without changing the container proxy settings. Subscription sign-in, capped
-live games and milestone acceptance remain open in
+without changing the container proxy settings. First desktop subscription sign-in, capped live games and later cloud
+host milestone acceptance remain open in
 [LN-1](https://foster.youtrack.cloud/issue/LN-1). This does not replace the
 coordinator/planner roles or close the milestone.
 
