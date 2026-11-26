@@ -100,6 +100,10 @@ def _validate_api_key(
         return _validate_google(env_key_name, entity_label)
     elif provider == "local":
         return _validate_local(model_config, entity_label)
+    elif provider == "openai_chatgpt_plan":
+        # No network ping and no key. The live entry point checks the
+        # ChatGPT sign-in, and create_api_client refuses without it.
+        return None
     else:
         return f"{entity_label}: Unknown provider '{provider}'."
 
