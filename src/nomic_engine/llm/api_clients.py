@@ -151,6 +151,7 @@ def classify_provider_error(exc: BaseException) -> str:
         "insufficient_quota",
         "rate_limit_exceeded",
         "billing_hard_limit_reached",
+        "subscription_sharing_usage_limit_exceeded",
     }:
         return "quota"
     name = type(exc).__name__.lower()
@@ -631,6 +632,22 @@ class GoogleApiClient:
         return config
 
 
+# Opt-in token source for provider "openai_chatgpt_plan". Unset means the
+# provider is refused, so no game can reach a ChatGPT plan by accident.
+_CHATGPT_PLAN_TOKENS: Any = None
+
+
+def register_chatgpt_plan_token_provider(provider: Any) -> None:
+    """Enable ``openai_chatgpt_plan`` with this ``AccessTokenProvider``."""
+    global _CHATGPT_PLAN_TOKENS
+    _CHATGPT_PLAN_TOKENS = provider
+
+
+def clear_chatgpt_plan_token_provider() -> None:
+    global _CHATGPT_PLAN_TOKENS
+    _CHATGPT_PLAN_TOKENS = None
+
+
 def create_api_client(
     model_config: ModelDefinition,
     *,
@@ -661,6 +678,17 @@ def create_api_client(
         client = AnthropicApiClient(model_config, call_options=options)
     elif model_config.provider == "google":
         client = GoogleApiClient(model_config, call_options=options)
+    elif model_config.provider == "openai_chatgpt_plan":
+        if _CHATGPT_PLAN_TOKENS is None:
+            raise ValueError(
+                "Provider openai_chatgpt_plan needs a ChatGPT sign-in; "
+                "start it through the live-run entry point."
+            )
+        from .chatgpt_plan_client import OpenAIChatGptPlanApiClient
+
+        client = OpenAIChatGptPlanApiClient(
+            model_config, _CHATGPT_PLAN_TOKENS, call_options=options
+        )
     else:
         raise ValueError(f"Unknown provider: {model_config.provider}")
     if usage_guard is None:
@@ -898,6 +926,10 @@ def _metadata_for_result(
         )
     if provider == "google":
         return _extract_google_metadata(result.raw_response)
+    if provider == "openai_chatgpt_plan":
+        from .chatgpt_plan_client import extract_metadata
+
+        return extract_metadata(result.raw_response, _empty_usage_meta())
     return _empty_usage_meta()
 
 
