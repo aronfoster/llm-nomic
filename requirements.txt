@@ -8,9 +8,15 @@ cffi==2.0.0
 # API Clients
 # HTTPX needs this optional dependency in SOCKS-proxied containers.
 socksio==1.0.0
+# Sign in with ChatGPT imports httpx directly. openai also depends on
+# it, but only as a range; pin the version this repo is tested with so
+# an openai bump cannot drop or change it.
+httpx==0.29.0
 openai==2.24.0
 anthropic==0.84.0
 google-genai==1.64.0
+# Sign in with ChatGPT: ID-token signature checks against the published JWKS.
+PyJWT[crypto]==2.10.1
 
 # Testing & Code Quality
 pytest==9.0.2
