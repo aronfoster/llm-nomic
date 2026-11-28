@@ -5,12 +5,321 @@
 
 This document tracks the high-level plan for the `llm-nomic` project.
 
+## Near-term delivery roadmap: real games and correctness
+
+The immediate objective is a repeatable, virtual-first development loop:
+run inexpensive subscription-backed games starting on the Grok Bot
+virtual machine, later on a ChatGPT Dot VM (P0e), save them to Google
+Drive, review correctness, and fix demonstrated engine and prompt
+defects. No new competitive features are needed for this loop.
+
+### How the daily team should use this roadmap
+
+- Chief of Staff coordinates and maintains the existing YouTrack queue;
+  PM/planner turns the next ready packet below into small LN issues with
+  acceptance criteria; engineer implements; independent reviewer checks
+  and merges under the current [team decisions](https://foster.youtrack.cloud/articles/LN-A-1).
+  Preserve the existing roles and review gates.
+- Each pass: read current LN issues, active claims and exact GitHub PR
+  metadata; reconcile completed work and outstanding review findings.
+  Do not create duplicate tickets or repeat already accepted work.
+- Keep at least one independent offline packet ready when live sign-in,
+  provider access, or another PR blocks progress. Continue ready work in
+  dependency order; do not wait for the entire milestone to finish.
+- Put active specifications in YouTrack and use SPRINT.md for sprint
+  tracking. Keep this roadmap current as packets are accepted. Record
+  blockers, next actor, evidence and the next actionable packet in the
+  existing coordination process. Escalate genuine owner decisions only;
+  no new scheduling service or coordination mechanism is required.
+- Code changes require offline regression tests, make ci, independent
+  review and the existing merge gates. Never run live inference in CI.
+
+### P0 — Subscription-backed execution, OpenAI first (existing LN-1)
+
+Container setup, bounded API game support (LN-5), and offline test
+isolation (LN-7) are implemented. Live subscription acceptance is
+not established. Follow the owner decisions recorded in the
+[updated PR #152 review](https://github.com/aronfoster/llm-nomic/pull/152#issuecomment-7203821808)
+and the later virtual-first correction: the first live sign-in and
+game run on a VM, starting with the Grok Bot box, not on a personal
+desktop.
+Keep existing LN tickets and reconcile their scope and dependencies
+rather than opening duplicates.
+
+**P0a — First ChatGPT Business game on the Grok Bot VM.**
+The Sign in with ChatGPT open-source application route is implemented
+in three PRs awaiting independent review and integration:
+
+1. [#149](https://github.com/aronfoster/llm-nomic/pull/149): OAuth2
+   sign-in core; establish the credential lifecycle and redaction.
+2. [#150](https://github.com/aronfoster/llm-nomic/pull/150): ChatGPT-plan
+   Responses client; establish completion, error, usage and timeout
+   contracts against the accepted authentication core.
+3. [#151](https://github.com/aronfoster/llm-nomic/pull/151):
+   live_run openai-chatgpt-plan and docs/LIVE_RUN.md; establish the
+   integrated bounded game path. Review and merge in this order,
+   carrying upstream fixes forward. All three are High-tier changes
+   under LN-A-1; no self-merge. Do not make integration depend on the
+   Grok CLI workstream.
+
+Before live execution, require offline fake-provider full-game and
+dry-run evidence, bounded retries and timeouts, isolated credentials,
+distinct game directories, logging, usage accounting, and clean refusal
+on auth/quota/network failures. Preserve existing API-key modes without
+silent paid fallback. Verify exact-head CI and independent review.
+
+After merge, start ``login`` on the Grok Bot VM so that VM's browser
+opens the consent page. The SIWC loopback is
+``http://127.0.0.1:1455/auth/callback`` on the VM. Aron approves the
+sign-in in that browser (the coordinator hands him the box desktop for
+this step). The credential file stays on the VM
+(``~/.config/llm-nomic/``). Then run the documented dry-run and first
+bounded game on that same VM, following docs/LIVE_RUN.md. The target is
+the enabled ChatGPT Business plan without an API key. For a headless
+VM, forward port 1455 over SSH and open the printed URL in a browser
+that can reach the forwarded loopback. Record actual billing mode,
+model, completed turns, stop reason and sanitized usage in LN-3/LN-1.
+A dry-run or models-list response is not acceptance. The first live
+game does not depend on a ChatGPT Dot, Drive integration, or a sign-in
+on a personal desktop.
+
+**P0b — CLI context-isolation contract and offline harness.**
+Independent offline planning and fixture work can proceed without
+resuming the held Grok PRs. Before any live CLI trial, establish a
+shared adapter contract against the engine's API input path:
+
+- One fresh stateless invocation per call: no session continuation,
+  CLI memory, or resume. Engine-owned game memory remains authoritative.
+- Isolated working directory and HOME; no automatic project or context
+  files (AGENTS.md, CLAUDE.md, GEMINI.md, rules directories or equivalent).
+- Disable tools, MCP servers, hooks and web access. No arbitrary
+  commands or host tools exposed to players or judges.
+- The engine supplies the full prompt and system instructions. The
+  CLI must not inject undisclosed agent context or change the intended
+  participant information. Compare effective input against API-path
+  fixtures; a fake executable alone cannot establish real CLI behavior.
+- Usage must meet the budget guard's contract; missing usage is
+  unavailable, not zero, and stops further calls. Preserve call,
+  timeout, cancellation, output and process-cleanup safeguards.
+- Share the adapter contract and lifecycle; provider-specific differences
+  should be limited to flags and output parsing wherever practical.
+
+Acceptance: offline tests with synthetic context/memory/tool canaries,
+success/failure and repeated calls demonstrate the engine-side contract;
+document evidence from supported CLI configuration and distinguish it
+from unverified provider-side behavior. If context isolation cannot be
+established, refuse live trial and retain only an eligible API path or
+omit that provider.
+
+**P0c — Grok CLI trial after P0a and P0b.** The existing LN-4/LN-14
+work and [#145](https://github.com/aronfoster/llm-nomic/pull/145) /
+[#147](https://github.com/aronfoster/llm-nomic/pull/147) are on hold,
+not abandoned. Leave the PRs open and untouched until the first OpenAI
+game succeeds. Then reconcile the adapter and bounded runner against
+P0b, including existing LN-10/11 and review findings. Do not assume
+earlier offline tests prove the real CLI contract. Require independent
+review, supported subscription eligibility and owner-authorized live
+trial by Aron. No silent paid fallback or credential extraction.
+
+**P0d — Additional CLI providers, conditional on a successful Grok
+trial.** Investigate Claude Code and Google's Antigravity CLI in
+separate small packets using the same contract, only through supported
+and eligible invocation/authentication mechanisms. Prove isolation,
+prompt fidelity, output/usage and budget compatibility independently
+for each. No assumption that subscriptions permit automated use; do
+not implement unsupported subscription sign-in or undocumented routes.
+Exclude any provider that cannot meet the contract unless an approved
+API path is available. Separately billed inference requires owner approval.
+
+**P0e — Later ChatGPT Dot VM and other host acceptance.** Preserve
+[LN-2](https://foster.youtrack.cloud/issue/LN-2) and
+[LN-6](https://foster.youtrack.cloud/issue/LN-6) as the readiness and
+later host-matrix goals. After P0a succeeds on the Grok Bot VM, pursue
+the same supported subscription-backed path on at least one ChatGPT
+Dot VM, independently of the CLI trial where possible. Verify actual
+supported host/provider combinations, restart behavior, tool isolation,
+usage and session persistence; record unsupported combinations without
+quietly weakening the matrix. Prefer a fresh supported ``login`` on
+each host so the credential file stays on that VM. If an
+owner-authorized credential migration is used, follow the security
+instructions in docs/LIVE_RUN.md: rotating refresh credentials must not
+be used concurrently on different machines; use one machine at a time
+or independent supported sign-ins. Never put credentials in game
+archives, Drive, tickets, logs or Git. Do not copy another
+application's credentials.
+
+Acceptance: a genuine bounded game on a ChatGPT Dot VM (and any other
+required host) using an eligible subscription, with sanitized evidence
+and restart behavior. Do not conflate this later milestone with the
+first Grok Bot VM game.
+
+### P1 — Portable game records (start offline in parallel with P0)
+
+**P1a — Archive contract and local export/import.** PM can schedule now.
+Reuse the existing game instance directory as the authoritative data;
+do not create a second game-state database.
+
+- Export a uniquely identified, versioned snapshot of a game directory,
+  including config, game_state.json, rules.jsonl, rules.md, transcript,
+  structured game log, token_usage.jsonl, and any game-local memory,
+  snapshots or other files needed for review and resume. Include a
+  manifest with game ID, engine commit/version, ruleset, provider/model
+  identifiers, personalities, effective non-secret settings, timestamps,
+  completed turn/checkpoint, status and stop reason, file inventory and
+  checksums. Preserve effective prompts or references plus exact
+  revision sufficient to reconstruct them.
+- Export completed, capped, failed and interrupted games. Make a
+  consistent snapshot at a safe boundary; distinguish a resumable
+  checkpoint from a diagnostic-only partial turn. Never imply a
+  mid-turn state is safe to resume unless verified.
+- Exclude credentials, environment files, provider homes, auth headers
+  and tokens, unrelated files and sensitive diagnostic material. Use
+  an explicit file selection and sanitized output; do not publish runtime
+  game records to the public source repo. Record missing evidence rather
+  than inventing it. Validate archive paths and integrity before import;
+  no path traversal, symlink escapes or overwrite of an existing game.
+- Acceptance: synthetic game export/import round-trip into a fresh
+  directory preserves authoritative state and resumes at a verified
+  checkpoint using fakes; negative tests cover secret canaries,
+  corruption, collision and incomplete games. Reviewers can inspect
+  the archive without executing its contents or invoking a model.
+  Document the format and reproducible commands.
+
+**P1b — Google Drive handoff.** Depends on P1a; investigate authorized
+Drive access on both hosts in parallel. Use an owner-controlled private
+Drive location for game archives, not a public link or source repo.
+Start with a simple supported upload/download workflow; automate only
+where necessary for unattended daily runs. No new storage service.
+
+- Give each snapshot a stable game ID and distinct revision; preserve
+  originals, avoid duplicate uploads on retry, verify readback/checksum,
+  and retain the local archive if upload fails.
+- Acceptance: GrokBot exports a synthetic game, uploads it, and a Dot
+  independently downloads and verifies/imports it (and vice versa).
+  Record Drive file links/IDs and checksums in the relevant LN issue,
+  not credentials. If a host lacks authorized access, record that
+  blocker and retain local export capability.
+
+### P2 — Inexpensive sample games
+
+Depends on P0 for the selected host/provider and P1a for local capture;
+P1b enables unattended cross-host review. Do not delay a locally
+archivable authorized smoke game solely because Drive upload is pending.
+
+- First use the existing cheap profile as a starting point (two players,
+  one LLM judge, three turns; 60 calls, 150000 tokens, 1200 seconds per
+  process, 60-second call timeout, 2048 output tokens). Select an
+  actually supported inexpensive subscription model, adjusting the profile
+  only as needed for its contract. Record exact limits and any differences.
+  The ChatGPT-plan Responses route cannot send max_output_tokens;
+  do not claim a 2048-token output cap for that route. Call, total-token,
+  wall-time and per-call-timeout caps still apply. The token cap is
+  approximate and can overshoot by a call (including its input and
+  output); preserve documented restart semantics. No uncapped or separately billed runs without
+  authorization.
+- Run one short game per ready host, archive every outcome, and review
+  before escalating length. Then run a small set of roughly 5–10-turn
+  games, with varied personalities or proposals where useful to exercise
+  rule changes, scoring and participant information. Increase length
+  only when previous evidence is usable and budgets permit. Do not
+  require games to reach victory; capped games are valuable.
+- Acceptance: at least one genuine archived game from each required host,
+  followed by several reviewable sample games. Each record identifies
+  the exact engine revision, models, limits, usage and outcome. Stop
+  repetitive live runs when a reproducible defect blocks meaningful play;
+  route it to the fix queue instead.
+
+### P3 — Correctness review of every sample game
+
+PM may develop the review checklist and synthetic review fixtures in
+parallel with P0/P1. Actual game review depends on recorded evidence.
+Review against the rules and information in force at the specific turn,
+not the final ruleset. Focus on four categories:
+
+1. **Judge correctness:** Was the judge's ruling consistent with the
+   applicable rules, timing, votes, precedence and available facts?
+   Distinguish ambiguous rules from clear errors.
+2. **Missing engine automation:** Did an enacted rule introduce behavior
+   that the engine should be able to perform automatically but did not?
+   Example: award every player points equal to the turn count at the
+   specified phase. Determine the intended timing, recipients, amount
+   and recurrence; identify the missing engine capability. Do not
+   prohibit legitimate game-breaking rule changes merely because the
+   engine cannot yet automate them.
+3. **Scoring correctness:** Independently calculate expected point
+   awards/deductions, recipients, timing, totals and victory consequences
+   from applicable rules and events. Distinguish wrong judge output
+   from wrong application of correct output, missing automation, or
+   incorrect persisted state.
+4. **Participant information:** Did a player or judge lack information
+   a human in that role would reasonably know (e.g. turn order, current
+   proposer, public rules, scores, prior rulings or relevant public
+   history)? Inspect the actual effective input, not merely the final
+   transcript. Do not reveal information a participant should not know.
+
+For every finding record game/archive ID, engine revision, turn and
+phase, rule IDs and applicable text, evidence pointers, expected versus
+actual behavior, impact, suspected component and proposed next action.
+Mark uncertainty and missing evidence explicitly; do not infer hidden
+reasoning. Review artifacts are separate from authoritative game state.
+An unusual but valid strategic move is not itself a defect.
+
+**P3a — Evidence sufficiency:** verify a reviewer can reconstruct rules,
+scores and turn order at each relevant step and inspect the public
+information supplied to each participant, using existing logs first.
+If necessary add minimal structured events/snapshots and sanitized
+prompt-input records; test them offline. No hidden chain-of-thought
+capture is required.
+
+**P3b — Review workflow:** establish a repeatable Markdown review
+template/checklist with the four categories and a sample reviewed
+synthetic archive. Store reviews separately alongside the game in Drive
+and reference actionable findings in LN. Independent review is useful
+for disputed rulings; avoid duplicate tickets.
+
+### P4 — Gameplay-driven fixes and regression loop
+
+- Triage concrete findings into existing or new LN issues. Prioritize
+  incorrect rulings, corrupted state or scores, missing executable rule
+  behavior and missing participant context over speculative features.
+  Group duplicate manifestations by root cause, while retaining game
+  evidence. Existing LN-8/9/13 and other open work remain in the queue
+  with their existing dependencies and containment.
+- For each fix, reproduce the smallest relevant game state and recorded
+  model output offline; add regression tests that fail before the fix
+  and pass afterward. Separate deterministic engine/scoring tests from
+  judge/prompt-input contract tests. A mocked response alone does not
+  establish improved live judge judgment; check that on a later bounded
+  game. Do not rewrite prior game archives or silently change historical
+  scores.
+- For enacted automation, design bounded, validated engine behavior
+  that applies at the correct phase and exactly once, survives resume,
+  and preserves rule authority. Test the demonstrated rule, relevant
+  negative cases and timing/recipient boundaries. Do not execute
+  arbitrary model-generated code or grant access to host tools.
+- Run offline CI and independent review; then use the next authorized
+  short game to confirm practical behavior and discover the next set of
+  issues. Compare against earlier archives; keep unresolved findings
+  visible. This is a recurring loop, not a one-time milestone.
+
+### Scheduling and completion
+
+P0a is the first delivery priority; P1a, P3 planning/fixtures and
+P0b contract planning are independent offline packets. Hold existing
+Grok CLI implementation until P0a succeeds. P1b access discovery can proceed without
+credentials being copied or new permissions being granted. The first P0a Grok Bot VM acceptance game need not wait for P1a; P2
+sample runs begin as soon as an eligible route and local capture are ready. P3/P4 repeat
+after each run. The PM should keep enough small, non-overlapping tickets
+ready for daily work and use actual gameplay evidence to select further
+engine improvements. Defer speculative UI, dynamic game structure and
+other long-term features unless a review finding justifies them.
+
 ## LN-1 container readiness
 
 Container bootstrap and quality checks: done
 ([Container readiness](docs/CONTAINERS.md)). SOCKS proxy support is included
-without changing the container proxy settings. Subscription sign-in, capped
-live games and milestone acceptance remain open in
+without changing the container proxy settings. First Grok Bot VM subscription sign-in, capped live games and later ChatGPT
+Dot host milestone acceptance remain open in
 [LN-1](https://foster.youtrack.cloud/issue/LN-1). This does not replace the
 coordinator/planner roles or close the milestone.
 
@@ -93,9 +402,7 @@ This is the long-term backlog and TODO scratchpad.
 
 ### Visualization (Web app)
 
-* Plan out a end state for visualizing individual game, all games, rules, profiles for player (slice by model and personality), leaaderboard
-* Have badges or awards for players (models)
-* Maybe: Build a `build_site.py` script to convert the game history into a shareable HTML file.
+* Deferred: consider a read-only game viewer only if actual correctness reviews demonstrate that the existing transcript and structured archive are insufficient.
 
 ### Graphical UI
 
