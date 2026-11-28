@@ -70,6 +70,15 @@ LOCK_FILENAME = "chatgpt_credentials.lock"
 # Refresh this long before the access token expires.
 REFRESH_MARGIN_SECONDS = 300
 
+# PyJWT rejects an ID token whose ``iat`` is even a second in the
+# future. A laptop clock a few seconds behind the issuer would fail
+# every sign-in after the authorization code was already spent.
+ID_TOKEN_LEEWAY_SECONDS = 60
+
+# Shown in place of ``id_token_hint`` when a URL is printed. The browser
+# still receives the real hint.
+_REDACTED_QUERY_VALUE = "redacted"
+
 # Refresh errors after which the refresh token can never work again.
 TERMINAL_REFRESH_ERRORS = frozenset(
     {
@@ -133,6 +142,9 @@ class ChatGptCredential:
 
     Field names follow the record in OpenAI's sign-in docs, plus
     ``expires_at`` and ``earliest_refresh_at`` as Unix seconds.
+
+    ``subject`` is empty when the issued client ID was saved after a
+    failed code exchange and no account has been verified yet.
     """
 
     client_id: str
@@ -358,6 +370,24 @@ def build_authorize_url(
     )
 
 
+def redact_authorize_url(url: str) -> str:
+    """Return ``url`` with any ``id_token_hint`` value replaced.
+
+    The hint is the user's ID token. The browser must receive it, but
+    the copy printed in the terminal must not.
+    """
+    parts = urllib.parse.urlsplit(url)
+    pairs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+    if not any(key == "id_token_hint" and value for key, value in pairs):
+        return url
+    redacted = [
+        (key, _REDACTED_QUERY_VALUE if key == "id_token_hint" else value)
+        for key, value in pairs
+    ]
+    query = urllib.parse.urlencode(redacted, quote_via=urllib.parse.quote)
+    return urllib.parse.urlunsplit(parts._replace(query=query))
+
+
 @dataclasses.dataclass(frozen=True)
 class CallbackResult:
     code: str
@@ -404,11 +434,38 @@ def parse_callback(
 # --------------------------------------------------------------------------
 
 
+_ACCEPTED_PAGE = (
+    b"<html><body><p>llm-nomic sign-in finished. "
+    b"You can close this window.</p></body></html>"
+)
+_IGNORED_PAGE = (
+    b"<html><body><p>This page does not match the current "
+    b"llm-nomic sign-in. You can close this window.</p></body></html>"
+)
+
+
+def _callback_matches(
+    query: dict[str, str], expected_state: str | None
+) -> bool:
+    """True when ``query`` carries the state for the current attempt."""
+    if expected_state is None:
+        return False
+    return hmac.compare_digest(
+        query.get("state", "").encode(), expected_state.encode()
+    )
+
+
 class LoopbackListener:
-    """One-shot HTTP listener on 127.0.0.1 for the OAuth redirect."""
+    """One-shot HTTP listener on 127.0.0.1 for the OAuth redirect.
+
+    A request whose ``state`` does not match the current attempt is
+    answered and ignored, so a stale tab or another local client cannot
+    end the sign-in.
+    """
 
     def __init__(self, port: int = DEFAULT_CALLBACK_PORT) -> None:
         self._result: dict[str, str] | None = None
+        self._expected_state: str | None = None
         self._event = threading.Event()
         listener = self
 
@@ -419,31 +476,45 @@ class LoopbackListener:
                     self.send_error(404)
                     return
                 query = dict(urllib.parse.parse_qsl(parsed.query))
-                body = (
-                    b"<html><body><p>llm-nomic sign-in finished. "
-                    b"You can close this window.</p></body></html>"
-                )
+                accepted = listener._take_callback(query)
+                body = _ACCEPTED_PAGE if accepted else _IGNORED_PAGE
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-                if listener._result is None:
-                    listener._result = query
-                    listener._event.set()
 
             def log_message(self, *args: Any) -> None:  # no code in logs
                 return
 
+        self.handler_class = Handler
         try:
-            self._server = http.server.HTTPServer(("127.0.0.1", port), Handler)
+            self._server = http.server.HTTPServer(
+                ("127.0.0.1", port), self.handler_class
+            )
         except OSError:
             # Only the port may vary between sign-ins.
-            self._server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+            self._server = http.server.HTTPServer(
+                ("127.0.0.1", 0), self.handler_class
+            )
         self._thread = threading.Thread(
             target=self._server.serve_forever, daemon=True
         )
         self._thread.start()
+
+    def expect_state(self, state: str) -> None:
+        """Accept only a callback that echoes ``state``."""
+        self._expected_state = state
+
+    def _take_callback(self, query: dict[str, str]) -> bool:
+        """Record ``query`` when it belongs to this attempt."""
+        if self._result is not None:
+            return False
+        if not _callback_matches(query, self._expected_state):
+            return False
+        self._result = query
+        self._event.set()
+        return True
 
     @property
     def redirect_uri(self) -> str:
@@ -500,7 +571,14 @@ def _post_token(
         )
     if response.status_code != 200:
         code, message = _token_error(response)
-        if code in TERMINAL_REFRESH_ERRORS:
+        # These codes mean the refresh token is dead. An authorization
+        # code that is rejected is not a refresh failure: the caller
+        # still has the issued client ID from the callback and must
+        # keep it for the next attempt.
+        if (
+            form.get("grant_type") == "refresh_token"
+            and code in TERMINAL_REFRESH_ERRORS
+        ):
             raise ReauthRequired(
                 f"Token endpoint refused the grant ({code}). "
                 "Run the login command again."
@@ -509,10 +587,33 @@ def _post_token(
             f"Token endpoint returned HTTP {response.status_code} "
             f"{code} {message}".strip()
         )
-    data = response.json()
+    try:
+        data = response.json()
+    except ValueError:
+        raise ChatGptAuthError("Token response was not valid JSON.") from None
     if not isinstance(data, dict) or not data.get("access_token"):
         raise ChatGptAuthError("Token response had no access_token.")
     return data
+
+
+def _get_json(http: httpx.Client, url: str, what: str) -> Any:
+    """GET JSON. Network errors, HTTP 5xx, and bad bodies are transient."""
+    try:
+        response = http.get(url, headers={"Accept": "application/json"})
+    except httpx.HTTPError as exc:
+        raise TransientAuthError(
+            f"{what} unreachable: {type(exc).__name__}"
+        ) from None
+    if response.status_code >= 500:
+        raise TransientAuthError(
+            f"{what} returned HTTP {response.status_code}."
+        )
+    if response.status_code != 200:
+        raise ChatGptAuthError(f"{what} returned HTTP {response.status_code}.")
+    try:
+        return response.json()
+    except ValueError:
+        raise TransientAuthError(f"{what} was not valid JSON.") from None
 
 
 class IdTokenValidator:
@@ -524,9 +625,11 @@ class IdTokenValidator:
         self._jwks: jwt.PyJWKSet | None = None
 
     def _discovery(self) -> dict[str, Any]:
-        response = self._http.get(self._endpoints.discovery_url)
-        response.raise_for_status()
-        data = response.json()
+        data = _get_json(
+            self._http,
+            self._endpoints.discovery_url,
+            "OpenID configuration",
+        )
         if not isinstance(data, dict):
             raise ChatGptAuthError("OpenID configuration is not an object.")
         return data
@@ -536,9 +639,9 @@ class IdTokenValidator:
             jwks_uri = self._discovery().get("jwks_uri")
             if not isinstance(jwks_uri, str):
                 raise ChatGptAuthError("OpenID configuration has no jwks_uri.")
-            response = self._http.get(jwks_uri)
-            response.raise_for_status()
-            self._jwks = jwt.PyJWKSet.from_dict(response.json())
+            self._jwks = jwt.PyJWKSet.from_dict(
+                _get_json(self._http, jwks_uri, "JWKS")
+            )
         return self._jwks
 
     def revocation_endpoint(self) -> str | None:
@@ -564,6 +667,7 @@ class IdTokenValidator:
                 algorithms=["RS256"],
                 audience=client_id,
                 issuer=self._endpoints.issuer,
+                leeway=ID_TOKEN_LEEWAY_SECONDS,
                 options={"require": ["exp", "iat", "iss", "aud", "sub"]},
             )
         except jwt.PyJWTError as exc:
@@ -634,6 +738,9 @@ def sign_in(
         listener = listener_factory(port)
         try:
             attempt = new_attempt(listener.redirect_uri)
+            expect_state = getattr(listener, "expect_state", None)
+            if expect_state is not None:
+                expect_state(attempt.state)
             url = build_authorize_url(
                 endpoints,
                 attempt,
@@ -646,31 +753,45 @@ def sign_in(
                 "Opening your browser for Sign in with ChatGPT. If it does "
                 "not open, paste this URL into a browser on this computer:"
             )
-            notify(url)
+            notify(redact_authorize_url(url))
             open_browser(url)
             query = listener.wait(timeout_seconds)
         finally:
             listener.close()
         result = parse_callback(query, attempt, issued_client_id=issued)
-        token_data = _post_token(
-            client,
-            endpoints,
-            {
-                "grant_type": "authorization_code",
-                "client_id": result.client_id,
-                "code": result.code,
-                "code_verifier": attempt.code_verifier,
-                "redirect_uri": attempt.redirect_uri,
-                "resource": RESOURCE,
-            },
-        )
+        try:
+            token_data = _post_token(
+                client,
+                endpoints,
+                {
+                    "grant_type": "authorization_code",
+                    "client_id": result.client_id,
+                    "code": result.code,
+                    "code_verifier": attempt.code_verifier,
+                    "redirect_uri": attempt.redirect_uri,
+                    "resource": RESOURCE,
+                },
+            )
+        except ChatGptAuthError:
+            if previous is None:
+                _remember_issued_client(
+                    store,
+                    client_id=result.client_id,
+                    host_id=host_id,
+                    issuer=endpoints.issuer,
+                )
+            raise
         id_token = token_data.get("id_token")
         if not isinstance(id_token, str):
             raise ChatGptAuthError("Token response had no id_token.")
         claims = IdTokenValidator(client, endpoints).validate(
             id_token, client_id=result.client_id, nonce=attempt.nonce
         )
-        if previous is not None and claims["sub"] != previous.subject:
+        if (
+            previous is not None
+            and previous.subject
+            and claims["sub"] != previous.subject
+        ):
             raise ChatGptAuthError(
                 "Signed in as a different ChatGPT account than the saved "
                 "registration. Use a different config directory for it."
@@ -768,6 +889,39 @@ def refresh_credential(
         return updated
 
 
+def _remember_issued_client(
+    store: CredentialStore,
+    *,
+    client_id: str,
+    host_id: str,
+    issuer: str,
+) -> None:
+    """Save an issued client ID when the code exchange does not finish.
+
+    The next sign-in must reuse this client instead of registering again
+    with ``dynamic_agent_client``. No account is verified yet, so
+    ``subject`` is empty and no tokens are stored.
+    """
+    now = _utc_now()
+    store.save(
+        ChatGptCredential(
+            client_id=client_id,
+            ext_agent_host_id=host_id,
+            issuer=issuer,
+            subject="",
+            email=None,
+            id_token=None,
+            access_token=None,
+            refresh_token=None,
+            token_type="Bearer",
+            expires_in=0,
+            expires_at=0.0,
+            scopes=[],
+            saved_at=_iso(now),
+        )
+    )
+
+
 def sign_out(
     store: CredentialStore,
     *,
@@ -776,31 +930,38 @@ def sign_out(
 ) -> bool:
     """Revoke the refresh token, then clear tokens. True if revoked.
 
-    The issued client ID and host ID are kept for a later sign-in.
+    Load, revocation, and the local clear share the refresh lock so a
+    refresh in another process cannot write a new session after sign-out
+    returns. Access, refresh, and ID tokens are cleared. The issued
+    client ID, host ID, and account mapping (subject and email) stay.
     """
-    current = store.load()
-    if current is None:
-        return True
-    revoked = current.refresh_token is None
-    if current.refresh_token:
-        try:
-            endpoint = IdTokenValidator(http, endpoints).revocation_endpoint()
-            if endpoint:
-                response = http.post(
-                    endpoint,
-                    data={
-                        "token": current.refresh_token,
-                        "token_type_hint": "refresh_token",
-                        "client_id": current.client_id,
-                    },
-                )
-                revoked = response.status_code == 200
-        except httpx.HTTPError:
-            revoked = False
-    current.access_token = None
-    current.refresh_token = None
-    store.save(current)
-    return revoked
+    with store.refresh_lock():
+        current = store.load()
+        if current is None:
+            return True
+        revoked = current.refresh_token is None
+        if current.refresh_token:
+            try:
+                endpoint = IdTokenValidator(
+                    http, endpoints
+                ).revocation_endpoint()
+                if endpoint:
+                    response = http.post(
+                        endpoint,
+                        data={
+                            "token": current.refresh_token,
+                            "token_type_hint": "refresh_token",
+                            "client_id": current.client_id,
+                        },
+                    )
+                    revoked = response.status_code == 200
+            except (httpx.HTTPError, ChatGptAuthError):
+                revoked = False
+        current.access_token = None
+        current.refresh_token = None
+        current.id_token = None
+        store.save(current)
+        return revoked
 
 
 class ChatGptTokenProvider:

@@ -51,6 +51,12 @@ class FakeAuthServer:
         self.refresh_tokens: set[str] = set()
         self.refresh_error: str | None = None
         self.refresh_status = 400
+        self.code_exchange_error: str | None = None
+        self.discovery_status = 200
+        self.discovery_raw: bytes | None = None
+        self.discovery_disconnect = False
+        self.jwks_status = 200
+        self.token_raw: bytes | None = None
         self.token_counter = 0
         self.expires_in = 3600
         self.base = "https://auth.fake.invalid"
@@ -75,12 +81,29 @@ class FakeAuthServer:
         path = request.url.path
         if request.method == "GET":
             if path == "/.well-known/openid-configuration":
-                return httpx.Response(200, json=self.discovery())
+                if self.discovery_disconnect:
+                    raise httpx.ConnectError("discovery down", request=request)
+                if self.discovery_raw is not None:
+                    return httpx.Response(
+                        self.discovery_status,
+                        content=self.discovery_raw,
+                        headers={"Content-Type": "application/json"},
+                    )
+                return httpx.Response(
+                    self.discovery_status, json=self.discovery()
+                )
             if path == "/jwks":
-                return httpx.Response(200, json=self.jwks())
+                return httpx.Response(self.jwks_status, json=self.jwks())
             return httpx.Response(404, json={"error": "not_found"})
         form = dict(urllib.parse.parse_qsl(request.content.decode()))
         if path == "/api/accounts/oauth/token":
+            if self.token_raw is not None:
+                self.token_requests.append(form)
+                return httpx.Response(
+                    200,
+                    content=self.token_raw,
+                    headers={"Content-Type": "application/json"},
+                )
             status, payload = self.token(form)
             return httpx.Response(status, json=payload)
         if path == "/revoke":
@@ -104,7 +127,12 @@ class FakeAuthServer:
         return {"keys": [jwk]}
 
     def id_token(
-        self, nonce: str, *, client_id: str, sub: str | None = None
+        self,
+        nonce: str,
+        *,
+        client_id: str,
+        sub: str | None = None,
+        iat_offset: int = 0,
     ) -> str:
         now = int(time.time())
         claims = {
@@ -113,7 +141,7 @@ class FakeAuthServer:
             "sub": sub or self.subject,
             "email": self.email,
             "nonce": nonce,
-            "iat": now,
+            "iat": now + iat_offset,
             "exp": now + 3600,
         }
         return jwt.encode(
@@ -135,6 +163,9 @@ class FakeAuthServer:
             return 400, {"error": "invalid_target"}
         grant = form.get("grant_type")
         if grant == "authorization_code":
+            if self.code_exchange_error:
+                self.codes.pop(form.get("code", ""), None)
+                return 400, {"error": self.code_exchange_error}
             pending = self.codes.pop(form.get("code", ""), None)
             if pending is None:
                 return 400, {"error": "invalid_grant"}
